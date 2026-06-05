@@ -27,11 +27,14 @@ PocketBase admin UI: <http://localhost:8090/_/>
 
 ## Status
 
-Early development. v1 scope:
+v1 feature-complete (verified against a live backend; APK builds):
 
-- Multi-user auth
-- Offline-first sync (last-write-wins per note)
-- Text + checklist notes
-- Pin / archive
-- Image attachments
-- Full-text search
+- [x] Multi-user auth
+- [x] Offline-first sync (last-write-wins per note)
+- [x] Text + checklist notes
+- [x] Pin / archive
+- [x] Image attachments
+- [x] Note search (title / body / checklist text)
+
+Next: protect attachment files server-side, FTS5 search, labels/colors,
+reminders, release-signed APK, Flutter web polish.
