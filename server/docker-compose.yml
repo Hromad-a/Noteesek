@@ -1,7 +1,10 @@
 services:
   pocketbase:
     build:
-      context: .
+      # Context is the repo root so the image can also build the Flutter web app
+      # (app/). Bind-mount paths below stay relative to this compose file.
+      context: ..
+      dockerfile: server/Dockerfile
       args:
         PB_VERSION: "0.39.1"
     container_name: noteesek-pocketbase

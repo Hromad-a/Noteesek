@@ -1,9 +1,13 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
+
 /// Static configuration and persisted-preference keys.
 class AppConfig {
-  /// Default PocketBase server URL shown on the login screen. Users self-host,
-  /// so this is only a starting suggestion — the field is editable and the
-  /// chosen value is persisted.
-  static const String defaultServerUrl = 'http://localhost:8090';
+  /// Default PocketBase server URL prefilled on the Connect screen. Editable and
+  /// persisted. On the web build (which is served *by* the server itself), this
+  /// defaults to the page's own origin so it works out of the box; on mobile it
+  /// falls back to localhost.
+  static String defaultServerUrl() =>
+      kIsWeb ? Uri.base.origin : 'http://localhost:8090';
 
   /// Owner tag for notes created while not connected to a server. These are
   /// "claimed" (reassigned to the account) when the user connects.

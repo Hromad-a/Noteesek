@@ -24,7 +24,8 @@ class ServerUrlNotifier extends Notifier<String> {
   @override
   String build() {
     final prefs = ref.watch(sharedPreferencesProvider);
-    return prefs.getString(AppConfig.kServerUrl) ?? AppConfig.defaultServerUrl;
+    return prefs.getString(AppConfig.kServerUrl) ??
+        AppConfig.defaultServerUrl();
   }
 
   /// Persist and apply a new server URL.

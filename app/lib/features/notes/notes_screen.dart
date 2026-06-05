@@ -31,6 +31,26 @@ class NotesScreen extends ConsumerWidget {
     );
   }
 
+  /// Trigger a manual sync and show a bottom message describing the result.
+  Future<void> _manualSync(BuildContext context, WidgetRef ref) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final outcome =
+        await ref.read(syncControllerProvider.notifier).syncNow(manual: true);
+    if (!context.mounted) return;
+    final text = switch (outcome) {
+      SyncOutcome.ok => 'Synced',
+      SyncOutcome.busy => 'Sync already in progress',
+      SyncOutcome.notConnected => 'Connect a server to sync',
+      SyncOutcome.unreachable =>
+        'Server not responding — your notes are saved on this device',
+      SyncOutcome.failed =>
+        ref.read(syncControllerProvider).message ?? 'Sync failed',
+    };
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(text)));
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final notesAsync = ref.watch(activeNotesProvider);
@@ -39,21 +59,20 @@ class NotesScreen extends ConsumerWidget {
     final connected = ref.watch(isAuthenticatedProvider);
     final sync = ref.watch(syncControllerProvider);
 
-    // Surface sync errors unobtrusively.
-    ref.listen(syncControllerProvider, (prev, next) {
-      if (next.error != null && next.error != prev?.error) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Sync failed: ${next.error}')),
-        );
-      }
-    });
-
     return Scaffold(
       drawer: _AppDrawer(email: email, connected: connected),
       appBar: AppBar(
         title: const Text('Notes'),
         actions: [
-          if (sync.syncing)
+          if (connected && !sync.reachable && !sync.syncing)
+            IconButton(
+              // Server unreachable — non-fatal; tap to retry.
+              tooltip: 'Server not responding — tap to retry',
+              icon: Icon(Icons.cloud_off,
+                  color: Theme.of(context).colorScheme.error),
+              onPressed: () => _manualSync(context, ref),
+            )
+          else if (sync.syncing)
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 16),
               child: Center(
@@ -67,12 +86,10 @@ class NotesScreen extends ConsumerWidget {
           else
             IconButton(
               // Disabled (greyed) until a server is connected.
-              tooltip:
-                  connected ? 'Sync now' : 'Connect a server to sync',
+              tooltip: connected ? 'Sync now' : 'Connect a server to sync',
               icon: const Icon(Icons.sync),
-              onPressed: connected
-                  ? () => ref.read(syncControllerProvider.notifier).syncNow()
-                  : null,
+              onPressed:
+                  connected ? () => _manualSync(context, ref) : null,
             ),
         ],
       ),
