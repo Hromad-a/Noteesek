@@ -42,6 +42,36 @@ class NotesRepository {
         .watchSingleOrNull();
   }
 
+  /// Offline search over active notes: matches the title, body, or any of the
+  /// note's checklist items (case-insensitive substring). Empty query returns
+  /// the normal active list.
+  Stream<List<NoteRow>> searchActive(String raw) {
+    final q = raw.trim().toLowerCase();
+    if (q.isEmpty) return watchActive();
+    final pattern = '%$q%';
+
+    final itemMatch = existsQuery(
+      _db.select(_db.checklistItems)
+        ..where((i) =>
+            i.note.equalsExp(_db.notes.id) &
+            i.deleted.equals(false) &
+            i.content.lower().like(pattern)),
+    );
+
+    return (_db.select(_db.notes)
+          ..where((t) =>
+              t.deleted.equals(false) &
+              t.archived.equals(false) &
+              (t.title.lower().like(pattern) |
+                  t.body.lower().like(pattern) |
+                  itemMatch))
+          ..orderBy([
+            (t) => OrderingTerm(expression: t.pinned, mode: OrderingMode.desc),
+            (t) => OrderingTerm(expression: t.updated, mode: OrderingMode.desc),
+          ]))
+        .watch();
+  }
+
   // ---- Notes: mutations ----
 
   Future<String> createNote({required String type}) async {
@@ -149,9 +179,20 @@ final notesRepositoryProvider = Provider<NotesRepository>((ref) {
   return NotesRepository(db, ownerId);
 });
 
-/// Active notes stream for the grid.
+/// Current search query for the notes grid.
+class SearchQueryNotifier extends Notifier<String> {
+  @override
+  String build() => '';
+  void set(String value) => state = value;
+}
+
+final searchQueryProvider =
+    NotifierProvider<SearchQueryNotifier, String>(SearchQueryNotifier.new);
+
+/// Active notes stream for the grid, filtered by the current search query.
 final activeNotesProvider = StreamProvider<List<NoteRow>>((ref) {
-  return ref.watch(notesRepositoryProvider).watchActive();
+  final query = ref.watch(searchQueryProvider);
+  return ref.watch(notesRepositoryProvider).searchActive(query);
 });
 
 /// Archived notes stream.

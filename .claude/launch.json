@@ -3,15 +3,12 @@
   "configurations": [
     {
       "name": "noteesek-web",
-      "runtimeExecutable": "flutter",
+      "runtimeExecutable": "bash",
       "runtimeArgs": [
-        "run",
-        "-d",
-        "web-server",
-        "--web-port=9099",
-        "--web-hostname=127.0.0.1"
+        "-lc",
+        "cd app && exec flutter run -d web-server --web-port=8088 --web-hostname=127.0.0.1"
       ],
-      "port": 9099
+      "port": 8088
     }
   ]
 }

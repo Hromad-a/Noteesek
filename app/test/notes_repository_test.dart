@@ -47,6 +47,25 @@ void main() {
     expect(items, isEmpty); // soft-deleted, filtered out
   });
 
+  test('search matches title, body and checklist item content', () async {
+    final a = await repo.createNote(type: 'text');
+    await repo.updateNoteFields(a, title: 'Shopping', body: 'eggs and bread');
+    final b = await repo.createNote(type: 'text');
+    await repo.updateNoteFields(b, title: 'Ideas', body: 'paint the fence');
+    final c = await repo.createNote(type: 'checklist');
+    await repo.addItem(c, content: 'call the dentist');
+
+    Future<Set<String>> search(String q) async =>
+        (await repo.searchActive(q).first).map((n) => n.id).toSet();
+
+    expect(await search('eggs'), {a}); // body match
+    expect(await search('IDEAS'), {b}); // case-insensitive title match
+    expect(await search('dentist'), {c}); // checklist item match
+    expect(await search('the'), {b, c}); // body + item
+    expect(await search('zzz'), isEmpty);
+    expect(await search(''), {a, b, c}); // empty -> all active
+  });
+
   test('pin sorts first; archive and delete leave the active list', () async {
     final a = await repo.createNote(type: 'text');
     await repo.updateNoteFields(a, title: 'A');

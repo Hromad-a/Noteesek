@@ -18,7 +18,8 @@ that syncs to a self-hosted backend. Multi-user.
 - **Backend:** PocketBase (single self-hosted Go binary: multi-user auth,
   SQLite, file storage, REST API)
 - **On-device storage:** SQLite via `drift` (offline-first)
-- **Search:** SQLite FTS5 (runs locally on device; mirrored server-side)
+- **Search:** local offline search over title/body/checklist text (v1 uses a
+  case-insensitive substring query; FTS5 is a future optimization)
 - **Sync:** hand-rolled **last-write-wins per note**
 - **Deployment:** backend runs via **Docker Compose** (single PocketBase service)
 

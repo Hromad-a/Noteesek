@@ -79,27 +79,45 @@ class NotesScreen extends ConsumerWidget {
           ),
         ],
       ),
-      body: notesAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
-        data: (notes) {
-          if (notes.isEmpty) return const _EmptyState();
-          return SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.all(8),
-              child: MasonryGridView.extent(
-                maxCrossAxisExtent: 240,
-                mainAxisSpacing: 8,
-                crossAxisSpacing: 8,
-                itemCount: notes.length,
-                itemBuilder: (context, i) {
-                  final NoteRow note = notes[i];
-                  return NoteCard(note: note, onTap: () => _open(context, note.id));
+      body: SafeArea(
+        child: Column(
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(12, 8, 12, 4),
+              child: _SearchField(),
+            ),
+            Expanded(
+              child: notesAsync.when(
+                loading: () =>
+                    const Center(child: CircularProgressIndicator()),
+                error: (e, _) => Center(child: Text('Error: $e')),
+                data: (notes) {
+                  if (notes.isEmpty) {
+                    final searching =
+                        ref.watch(searchQueryProvider).trim().isNotEmpty;
+                    return searching
+                        ? const _NoMatches()
+                        : const _EmptyState();
+                  }
+                  return Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: MasonryGridView.extent(
+                      maxCrossAxisExtent: 240,
+                      mainAxisSpacing: 8,
+                      crossAxisSpacing: 8,
+                      itemCount: notes.length,
+                      itemBuilder: (context, i) {
+                        final NoteRow note = notes[i];
+                        return NoteCard(
+                            note: note, onTap: () => _open(context, note.id));
+                      },
+                    ),
+                  );
                 },
               ),
             ),
-          );
-        },
+          ],
+        ),
       ),
       floatingActionButton: _CreateFab(
         onText: () => _create(context, ref, 'text'),
@@ -134,6 +152,64 @@ class _CreateFab extends StatelessWidget {
           child: const Icon(Icons.edit),
         ),
       ],
+    );
+  }
+}
+
+class _SearchField extends ConsumerStatefulWidget {
+  const _SearchField();
+
+  @override
+  ConsumerState<_SearchField> createState() => _SearchFieldState();
+}
+
+class _SearchFieldState extends ConsumerState<_SearchField> {
+  final _ctrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final query = ref.watch(searchQueryProvider);
+    return SearchBar(
+      controller: _ctrl,
+      hintText: 'Search notes',
+      leading: const Icon(Icons.search),
+      trailing: [
+        if (query.isNotEmpty)
+          IconButton(
+            icon: const Icon(Icons.clear),
+            tooltip: 'Clear',
+            onPressed: () {
+              _ctrl.clear();
+              ref.read(searchQueryProvider.notifier).set('');
+            },
+          ),
+      ],
+      onChanged: (v) => ref.read(searchQueryProvider.notifier).set(v),
+    );
+  }
+}
+
+class _NoMatches extends StatelessWidget {
+  const _NoMatches();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.search_off,
+              size: 56, color: Theme.of(context).disabledColor),
+          const SizedBox(height: 8),
+          const Text('No matching notes'),
+        ],
+      ),
     );
   }
 }
