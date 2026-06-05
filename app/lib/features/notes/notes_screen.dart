@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
@@ -57,40 +58,42 @@ class NotesScreen extends ConsumerWidget {
     final pb = ref.watch(pocketBaseProvider);
     final email = pb.authStore.record?.data['email'] as String? ?? '';
     final connected = ref.watch(isAuthenticatedProvider);
-    final sync = ref.watch(syncControllerProvider);
+    // Sync only exists on mobile (local-first). Web is online, server-backed.
+    final sync = kIsWeb ? null : ref.watch(syncControllerProvider);
 
     return Scaffold(
       drawer: _AppDrawer(email: email, connected: connected),
       appBar: AppBar(
         title: const Text('Notes'),
         actions: [
-          if (connected && !sync.reachable && !sync.syncing)
-            IconButton(
-              // Server unreachable — non-fatal; tap to retry.
-              tooltip: 'Server not responding — tap to retry',
-              icon: Icon(Icons.cloud_off,
-                  color: Theme.of(context).colorScheme.error),
-              onPressed: () => _manualSync(context, ref),
-            )
-          else if (sync.syncing)
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16),
-              child: Center(
-                child: SizedBox(
-                  height: 18,
-                  width: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
+          if (sync != null) ...[
+            if (connected && !sync.reachable && !sync.syncing)
+              IconButton(
+                // Server unreachable — non-fatal; tap to retry.
+                tooltip: 'Server not responding — tap to retry',
+                icon: Icon(Icons.cloud_off,
+                    color: Theme.of(context).colorScheme.error),
+                onPressed: () => _manualSync(context, ref),
+              )
+            else if (sync.syncing)
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16),
+                child: Center(
+                  child: SizedBox(
+                    height: 18,
+                    width: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
                 ),
+              )
+            else
+              IconButton(
+                // Disabled (greyed) until a server is connected.
+                tooltip: connected ? 'Sync now' : 'Connect a server to sync',
+                icon: const Icon(Icons.sync),
+                onPressed: connected ? () => _manualSync(context, ref) : null,
               ),
-            )
-          else
-            IconButton(
-              // Disabled (greyed) until a server is connected.
-              tooltip: connected ? 'Sync now' : 'Connect a server to sync',
-              icon: const Icon(Icons.sync),
-              onPressed:
-                  connected ? () => _manualSync(context, ref) : null,
-            ),
+          ],
         ],
       ),
       body: SafeArea(
@@ -236,7 +239,17 @@ class _AppDrawer extends ConsumerWidget {
             ),
             const Spacer(),
             const Divider(height: 1),
-            if (connected)
+            if (kIsWeb)
+              // Web is always signed in (server-backed); just sign out.
+              ListTile(
+                leading: const Icon(Icons.logout),
+                title: const Text('Sign out'),
+                onTap: () {
+                  Navigator.of(context).pop();
+                  ref.read(pocketBaseProvider).authStore.clear();
+                },
+              )
+            else if (connected)
               ListTile(
                 leading: const Icon(Icons.logout),
                 title: const Text('Disconnect'),

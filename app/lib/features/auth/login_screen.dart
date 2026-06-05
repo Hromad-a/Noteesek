@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pocketbase/pocketbase.dart';
@@ -67,12 +68,19 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       await pb.collection('users').authWithPassword(email, password);
 
       // Claim local notes for this account and kick off the first sync.
+      // (No-ops on web, where there are no local notes and no sync engine.)
       final userId = pb.authStore.record!.id;
       await ref.read(activeOwnerProvider.notifier).set(userId);
       await ref.read(notesRepositoryProvider).claimLocalNotes(userId);
-      unawaited(ref.read(syncControllerProvider.notifier).syncNow());
+      if (!kIsWeb) {
+        unawaited(ref.read(syncControllerProvider.notifier).syncNow());
+      }
 
-      if (mounted) Navigator.of(context).pop(true);
+      // Mobile: this screen was pushed → pop back. Web: it's the gate, so the
+      // app rebuilds into the notes screen reactively once authenticated.
+      if (mounted && Navigator.of(context).canPop()) {
+        Navigator.of(context).pop(true);
+      }
       return;
     } on ClientException catch (e) {
       setState(() => _error = _humanizeError(e));
@@ -93,7 +101,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Connect to server')),
+      // On mobile this is pushed (a back arrow appears); on web it's the gate.
+      appBar: AppBar(
+        title: Text(kIsWeb ? 'Noteesek' : 'Connect to server'),
+        automaticallyImplyLeading: !kIsWeb,
+      ),
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),

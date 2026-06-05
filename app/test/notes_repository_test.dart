@@ -2,6 +2,7 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:noteesek/data/local/database.dart';
+import 'package:noteesek/data/local_notes_repository.dart';
 import 'package:noteesek/data/notes_repository.dart';
 
 void main() {
@@ -10,7 +11,7 @@ void main() {
 
   setUp(() {
     db = AppDatabase(NativeDatabase.memory());
-    repo = NotesRepository(db, 'owner1');
+    repo = LocalNotesRepository(db, 'owner1');
   });
 
   tearDown(() => db.close());
@@ -67,7 +68,7 @@ void main() {
   });
 
   test('claimLocalNotes reassigns local-owned notes to the account', () async {
-    final localRepo = NotesRepository(db, 'local');
+    final localRepo = LocalNotesRepository(db, 'local');
     final id = await localRepo.createNote(type: 'text');
     await localRepo.updateNoteFields(id, title: 'made offline');
 
@@ -93,8 +94,7 @@ void main() {
     expect((await repo.watchActive().first).map((n) => n.id), contains(id));
 
     await repo.softDelete(id);
-    final purged = await repo.purgeLocal(id);
-    expect(purged, contains(id));
+    await repo.deleteForever(id);
     expect((await repo.watchTrash().first), isEmpty);
     // Children removed too.
     expect(await repo.watchItems(id).first, isEmpty);

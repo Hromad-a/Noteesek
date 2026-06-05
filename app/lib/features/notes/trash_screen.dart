@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -11,9 +12,14 @@ class TrashScreen extends ConsumerWidget {
   const TrashScreen({super.key});
 
   Future<void> _deleteForever(WidgetRef ref, String noteId) async {
-    // Remove on the server first (best-effort), then purge locally.
-    await ref.read(syncEngineProvider).deleteNoteRemote(noteId);
-    await ref.read(notesRepositoryProvider).purgeLocal(noteId);
+    if (kIsWeb) {
+      // Web: the repository deletes directly on the server.
+      await ref.read(notesRepositoryProvider).deleteForever(noteId);
+    } else {
+      // Mobile: remove the server record (best-effort) then purge locally.
+      await ref.read(syncEngineProvider).deleteNoteRemote(noteId);
+      await ref.read(notesRepositoryProvider).deleteForever(noteId);
+    }
   }
 
   Future<void> _emptyTrash(WidgetRef ref) async {

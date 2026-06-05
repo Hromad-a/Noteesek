@@ -8,7 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pocketbase/pocketbase.dart';
 
 import 'package:noteesek/data/local/database.dart';
-import 'package:noteesek/data/notes_repository.dart';
+import 'package:noteesek/data/local_notes_repository.dart';
 import 'package:noteesek/sync/sync_engine.dart';
 
 // Requires the PocketBase backend running at this URL (server/docker compose up).
@@ -34,7 +34,7 @@ void main() {
       () async {
     // Device A: create a text note and a checklist with one item.
     final dbA = AppDatabase(NativeDatabase.memory());
-    final repoA = NotesRepository(dbA, userId);
+    final repoA = LocalNotesRepository(dbA, userId);
     final engineA = SyncEngine(dbA, pb);
 
     final noteId = await repoA.createNote(type: 'text');
@@ -51,7 +51,7 @@ void main() {
     // Device B: fresh local DB, same account → pull.
     final dbB = AppDatabase(NativeDatabase.memory());
     final engineB = SyncEngine(dbB, pb);
-    final repoB = NotesRepository(dbB, userId);
+    final repoB = LocalNotesRepository(dbB, userId);
     await engineB.syncOnce();
 
     final notesB = await repoB.watchActive().first;
@@ -67,7 +67,7 @@ void main() {
 
   test('server change overwrites a clean local copy on pull', () async {
     final dbA = AppDatabase(NativeDatabase.memory());
-    final repoA = NotesRepository(dbA, userId);
+    final repoA = LocalNotesRepository(dbA, userId);
     final engineA = SyncEngine(dbA, pb);
     final id = await repoA.createNote(type: 'text');
     await repoA.updateNoteFields(id, title: 'v1');
@@ -75,7 +75,7 @@ void main() {
 
     // Device B pulls v1 (clean copy).
     final dbB = AppDatabase(NativeDatabase.memory());
-    final repoB = NotesRepository(dbB, userId);
+    final repoB = LocalNotesRepository(dbB, userId);
     final engineB = SyncEngine(dbB, pb);
     await engineB.syncOnce();
     expect((await repoB.watchNote(id).first)!.title, 'v1');
@@ -94,7 +94,7 @@ void main() {
 
   test('image attachment uploads then downloads to a 2nd device', () async {
     final dbA = AppDatabase(NativeDatabase.memory());
-    final repoA = NotesRepository(dbA, userId);
+    final repoA = LocalNotesRepository(dbA, userId);
     final engineA = SyncEngine(dbA, pb);
 
     final noteId = await repoA.createNote(type: 'text');
@@ -131,14 +131,14 @@ void main() {
 
   test('soft delete propagates to the other device', () async {
     final dbA = AppDatabase(NativeDatabase.memory());
-    final repoA = NotesRepository(dbA, userId);
+    final repoA = LocalNotesRepository(dbA, userId);
     final engineA = SyncEngine(dbA, pb);
     final id = await repoA.createNote(type: 'text');
     await repoA.updateNoteFields(id, title: 'to delete');
     await engineA.syncOnce();
 
     final dbB = AppDatabase(NativeDatabase.memory());
-    final repoB = NotesRepository(dbB, userId);
+    final repoB = LocalNotesRepository(dbB, userId);
     final engineB = SyncEngine(dbB, pb);
     await engineB.syncOnce();
     expect((await repoB.watchActive().first).map((n) => n.id), contains(id));
