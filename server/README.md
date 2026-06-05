@@ -40,11 +40,14 @@ docker compose exec pocketbase /pb/pocketbase superuser upsert you@example.com '
 | `users`           | auth (built-in)                           |
 | `notes`           | text/checklist note + pin/archive/deleted |
 | `checklist_items` | rows of a checklist note                  |
-| `attachments`     | images/files attached to a note           |
+| `attachments`     | images/files attached to a note (**protected** file) |
 
 All app collections are **owner-scoped**: every rule resolves to
 `owner = @request.auth.id` (directly on `notes`, or via `note.owner` on the
 child collections). A user can only ever read or write their own data.
+
+The `attachments.file` field is **protected** — files can't be fetched by plain
+URL; clients pass a short-lived token (`pb.files.getToken()`) to download them.
 
 Each record carries `created` + `updated` autodate fields; `updated` is the
 cursor the client uses for last-write-wins sync. Deletes are **soft**

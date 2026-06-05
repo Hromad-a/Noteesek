@@ -1,19 +1,25 @@
 # Noteesek
 
-A self-hosted, Google Keep–style notes app. Offline-first native Android client
-that syncs to a self-hosted [PocketBase](https://pocketbase.io) backend.
-Multi-user.
+A self-hosted, Google Keep–style notes app. One Flutter codebase, two clients,
+backed by a self-hosted [PocketBase](https://pocketbase.io) server. Multi-user.
 
-See [PLAN.md](PLAN.md) for the full design and decisions.
+- **Android** — **local-first**: works fully offline with no account; an
+  optional server connection enables last-write-wins sync.
+- **Web** — **online**: login-gated, reads/writes notes directly on the server
+  with live realtime updates. Served by the server itself.
+
+See [CLAUDE.md](CLAUDE.md) for the current architecture and [PLAN.md](PLAN.md)
+for the original design narrative.
 
 ## Layout
 
 ```
 Noteesek/
-├── PLAN.md            # design & decisions
-├── server/            # PocketBase backend (Docker Compose)
-├── app/               # Flutter client (Android-first, web later)
-└── docs/              # protocol & self-hosting notes
+├── CLAUDE.md          # current architecture (source of truth)
+├── PLAN.md            # original design & decisions
+├── server/            # PocketBase backend (Docker; also serves the web app)
+├── app/               # Flutter client (Android local-first + web online)
+└── docs/              # sync protocol & notes
 ```
 
 ## Deploy (any machine with Docker)
@@ -68,14 +74,14 @@ Play-Store-ready); add a release keystore + `signingConfig` for store builds.
 
 ## Status
 
-v1 feature-complete (verified against a live backend; APK builds):
+Feature-complete and verified against a live backend (APK + web image build):
 
 - [x] Multi-user auth
-- [x] Offline-first sync (last-write-wins per note)
+- [x] Android local-first; optional server with last-write-wins sync
+- [x] Web online client (login-gated, realtime, served by the server)
 - [x] Text + checklist notes
-- [x] Pin / archive
-- [x] Image attachments
+- [x] Pin / archive / trash (restore · delete-forever · empty)
+- [x] Image attachments (server-side **protected** files)
 - [x] Note search (title / body / checklist text)
 
-Next: protect attachment files server-side, FTS5 search, labels/colors,
-reminders, release-signed APK, Flutter web polish.
+Next: FTS5 search, labels/colors, reminders, release-signed APK, HTTPS.

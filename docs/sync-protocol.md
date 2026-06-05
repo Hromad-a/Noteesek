@@ -1,8 +1,12 @@
 # Sync protocol
 
-Noteesek is **offline-first**. The phone holds a local SQLite mirror (via
-`drift`) and is fully usable with no network. Changes sync to PocketBase when a
-connection is available, using **last-write-wins (LWW) per record**.
+> **Applies to the mobile (Android) client only.** The web client is online and
+> server-backed — it reads/writes PocketBase directly with realtime updates and
+> has no local store or sync. See [CLAUDE.md](../CLAUDE.md).
+
+The **mobile** client is **offline-first**. The phone holds a local SQLite mirror
+(via `drift`) and is fully usable with no network. When a server is connected,
+changes sync to PocketBase using **last-write-wins (LWW) per record**.
 
 This document is the spec the Flutter sync engine implements. It is intentionally
 simple — adequate for a single user editing across their own devices, where

@@ -1,5 +1,10 @@
 # Noteesek — Plan
 
+> **Historical design doc.** This captures the original plan and the decisions
+> made while building v1. Some things have since evolved (most notably: the web
+> client is now an online, login-gated, server-backed client — *not* local-first
+> like mobile). For the current architecture see [CLAUDE.md](CLAUDE.md).
+
 A self-hosted, Google Keep–style notes app. Offline-first native Android app
 that syncs to a self-hosted backend. Multi-user.
 
