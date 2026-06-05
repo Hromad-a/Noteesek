@@ -26,12 +26,12 @@ class NoteesekApp extends ConsumerWidget {
       title: 'Noteesek',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        colorSchemeSeed: const Color(0xFFFFC107),
+        colorSchemeSeed: const Color(0xFFCEB1E8),
         brightness: Brightness.light,
         useMaterial3: true,
       ),
       darkTheme: ThemeData(
-        colorSchemeSeed: const Color(0xFFFFC107),
+        colorSchemeSeed: const Color(0xFFCEB1E8),
         brightness: Brightness.dark,
         useMaterial3: true,
       ),
