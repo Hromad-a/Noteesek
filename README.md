@@ -59,6 +59,13 @@ git push origin v0.2.0
 That builds and pushes `ghcr.io/hromad-a/noteesek` tagged `0.2.0`, `0.2`, `0`,
 and `latest`. Use full `vX.Y.Z` tags so the version tags are derived correctly.
 
+The same tag also triggers
+[`.github/workflows/release-apk.yml`](.github/workflows/release-apk.yml), which
+builds the Android APK and attaches it to the tag's GitHub Release as
+`noteesek-<version>.apk` — downloadable from the repo's **Releases** page. The
+APK is currently signed with the debug key (installable directly, not
+Play-Store-ready); add a release keystore + `signingConfig` for store builds.
+
 ## Status
 
 v1 feature-complete (verified against a live backend; APK builds):

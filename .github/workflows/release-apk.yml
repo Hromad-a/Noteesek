@@ -1,0 +1,64 @@
+name: Build & publish APK
+
+# On a semver tag push, builds the Android release APK and attaches it to the
+# GitHub Release for that tag, e.g.:
+#
+#   git tag v0.2.0 && git push origin v0.2.0
+#   -> Release v0.2.0 with asset noteesek-0.2.0.apk
+#
+# The APK uses the app's current (debug) signing config — installable directly
+# on a device ("allow unknown sources"), but not Play-Store-ready. Swap in a
+# release keystore + signingConfig later for store distribution.
+#
+# `workflow_dispatch` lets you re-run against an existing tag from the Actions
+# tab (pick the tag as the ref).
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the Release and upload the APK asset
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Resolve version (strip leading v)
+        id: ver
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build release APK
+        working-directory: app
+        run: |
+          flutter pub get
+          dart run build_runner build --delete-conflicting-outputs
+          flutter build apk --release
+
+      - name: Stage APK with versioned name
+        run: |
+          mkdir -p dist
+          cp app/build/app/outputs/flutter-apk/app-release.apk \
+             "dist/noteesek-${{ steps.ver.outputs.version }}.apk"
+
+      - name: Attach APK to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/noteesek-${{ steps.ver.outputs.version }}.apk
+          fail_on_unmatched_files: true
