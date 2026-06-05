@@ -1,8 +1,14 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Needed to reach the self-hosted PocketBase server. Flutter only adds
+         this automatically for debug builds, so it must be declared here for
+         release APKs to have network access. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+
     <application
-        android:label="noteesek"
+        android:label="Noteesek"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:usesCleartextTraffic="true">
         <activity
             android:name=".MainActivity"
             android:exported="true"
