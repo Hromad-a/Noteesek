@@ -73,11 +73,13 @@ class Attachments extends Table {
   /// FK to [Notes.id].
   TextColumn get note => text()();
 
-  /// Server-side stored filename (within the attachments record).
+  /// Server-side stored filename (within the attachments record). Empty until
+  /// the local image has been uploaded.
   TextColumn get file => text().withDefault(const Constant(''))();
 
-  /// Local cached file path once downloaded (lazy). Null until fetched.
-  TextColumn get localPath => text().nullable()();
+  /// The image bytes, kept locally so attachments render offline and on every
+  /// platform (mobile + web). Populated on attach, and on pull after download.
+  BlobColumn get data => blob().nullable()();
 
   BoolColumn get deleted => boolean().withDefault(const Constant(false))();
   TextColumn get created => text().nullable()();
@@ -103,5 +105,16 @@ class AppDatabase extends _$AppDatabase {
       : super(executor ?? driftDatabase(name: 'noteesek'));
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
+
+  @override
+  MigrationStrategy get migration => MigrationStrategy(
+        onCreate: (m) => m.createAll(),
+        onUpgrade: (m, from, to) async {
+          if (from < 2) {
+            // Added local image bytes for attachments.
+            await m.addColumn(attachments, attachments.data);
+          }
+        },
+      );
 }

@@ -1,6 +1,8 @@
 @Tags(['integration'])
 library;
 
+import 'dart:typed_data';
+
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pocketbase/pocketbase.dart';
@@ -85,6 +87,43 @@ void main() {
     // B pulls again → clean local is overwritten with v2.
     await engineB.syncOnce();
     expect((await repoB.watchNote(id).first)!.title, 'v2');
+
+    await dbA.close();
+    await dbB.close();
+  });
+
+  test('image attachment uploads then downloads to a 2nd device', () async {
+    final dbA = AppDatabase(NativeDatabase.memory());
+    final repoA = NotesRepository(dbA, userId);
+    final engineA = SyncEngine(dbA, pb);
+
+    final noteId = await repoA.createNote(type: 'text');
+    await repoA.updateNoteFields(noteId, title: 'with image');
+    final bytes = Uint8List.fromList(List.generate(512, (i) => i % 256));
+    final attId = await repoA.addAttachment(noteId, bytes);
+
+    await engineA.syncOnce();
+
+    // Server now has the file; local A row records the filename and is clean.
+    final rec = await pb.collection('attachments').getOne(attId);
+    expect(rec.getStringValue('file'), isNotEmpty);
+    final aRow = await (dbA.select(dbA.attachments)
+          ..where((t) => t.id.equals(attId)))
+        .getSingle();
+    expect(aRow.file, isNotEmpty);
+    expect(aRow.dirty, isFalse);
+
+    // Device B pulls and downloads the bytes.
+    final dbB = AppDatabase(NativeDatabase.memory());
+    final engineB = SyncEngine(dbB, pb);
+    await engineB.syncOnce();
+
+    final bRow = await (dbB.select(dbB.attachments)
+          ..where((t) => t.id.equals(attId)))
+        .getSingle();
+    expect(bRow.note, noteId);
+    expect(bRow.data, isNotNull);
+    expect(bRow.data, equals(bytes));
 
     await dbA.close();
     await dbB.close();

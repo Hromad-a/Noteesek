@@ -169,6 +169,42 @@ class NotesRepository {
       patch.copyWith(updated: Value(pbNow()), dirty: const Value(true)),
     );
   }
+
+  // ---- Attachments ----
+
+  Stream<List<AttachmentRow>> watchAttachments(String noteId) {
+    return (_db.select(_db.attachments)
+          ..where((t) => t.note.equals(noteId) & t.deleted.equals(false))
+          ..orderBy([(t) => OrderingTerm(expression: t.created)]))
+        .watch();
+  }
+
+  /// Attach an image. Bytes are stored locally so it renders immediately and
+  /// offline; the sync engine uploads it to PocketBase file storage later.
+  Future<String> addAttachment(String noteId, Uint8List bytes) async {
+    final id = newPbId();
+    final now = pbNow();
+    await _db.into(_db.attachments).insert(AttachmentsCompanion.insert(
+          id: id,
+          note: noteId,
+          data: Value(bytes),
+          created: Value(now),
+          updated: Value(now),
+          dirty: const Value(true),
+        ));
+    await _patch(noteId, const NotesCompanion()); // touch parent
+    return id;
+  }
+
+  Future<void> deleteAttachment(String id) async {
+    await (_db.update(_db.attachments)..where((t) => t.id.equals(id))).write(
+      AttachmentsCompanion(
+        deleted: const Value(true),
+        updated: Value(pbNow()),
+        dirty: const Value(true),
+      ),
+    );
+  }
 }
 
 /// Provides a [NotesRepository] bound to the current authenticated user.
@@ -210,4 +246,10 @@ final checklistItemsProvider =
 final noteProvider =
     StreamProvider.family<NoteRow?, String>((ref, id) {
   return ref.watch(notesRepositoryProvider).watchNote(id);
+});
+
+/// Attachments for a given note.
+final attachmentsProvider =
+    StreamProvider.family<List<AttachmentRow>, String>((ref, noteId) {
+  return ref.watch(notesRepositoryProvider).watchAttachments(noteId);
 });

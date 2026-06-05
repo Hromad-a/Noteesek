@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../data/local/database.dart';
 import '../../data/notes_repository.dart';
@@ -43,6 +44,17 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     _seeded = true;
   }
 
+  Future<void> _pickImage(String noteId) async {
+    final picked = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1600,
+      imageQuality: 85,
+    );
+    if (picked == null) return;
+    final bytes = await picked.readAsBytes();
+    await _repo.addAttachment(noteId, bytes);
+  }
+
   TextEditingController _itemCtrl(ChecklistItemRow item) {
     final existing = _itemCtrls[item.id];
     if (existing != null) return existing;
@@ -76,6 +88,11 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
         return Scaffold(
           appBar: AppBar(
             actions: [
+              IconButton(
+                tooltip: 'Add image',
+                icon: const Icon(Icons.image_outlined),
+                onPressed: () => _pickImage(note.id),
+              ),
               IconButton(
                 tooltip: note.pinned ? 'Unpin' : 'Pin',
                 icon: Icon(
@@ -112,6 +129,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
                 onChanged: (v) => _repo.updateNoteFields(note.id, title: v),
               ),
               const SizedBox(height: 8),
+              _AttachmentsSection(noteId: note.id),
               if (note.type == 'checklist')
                 _ChecklistEditor(
                   noteId: note.id,
@@ -133,6 +151,64 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
           ),
         );
       },
+    );
+  }
+}
+
+class _AttachmentsSection extends ConsumerWidget {
+  const _AttachmentsSection({required this.noteId});
+
+  final String noteId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final repo = ref.read(notesRepositoryProvider);
+    final async = ref.watch(attachmentsProvider(noteId));
+
+    return async.maybeWhen(
+      data: (items) {
+        if (items.isEmpty) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final a in items)
+                Stack(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: SizedBox(
+                        width: 110,
+                        height: 110,
+                        child: a.data != null
+                            ? Image.memory(a.data!, fit: BoxFit.cover)
+                            : Container(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .surfaceContainerHighest,
+                                child: const Icon(Icons.image_outlined),
+                              ),
+                      ),
+                    ),
+                    Positioned(
+                      top: -4,
+                      right: -4,
+                      child: IconButton(
+                        icon: const Icon(Icons.cancel),
+                        tooltip: 'Remove image',
+                        color: Colors.black54,
+                        onPressed: () => repo.deleteAttachment(a.id),
+                      ),
+                    ),
+                  ],
+                ),
+            ],
+          ),
+        );
+      },
+      orElse: () => const SizedBox.shrink(),
     );
   }
 }

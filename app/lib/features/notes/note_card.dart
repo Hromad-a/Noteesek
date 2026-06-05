@@ -20,42 +20,71 @@ class NoteCard extends ConsumerWidget {
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (hasTitle)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 6),
-                  child: Text(
-                    note.title,
-                    style: theme.textTheme.titleMedium,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              if (note.type == 'checklist')
-                _ChecklistPreview(noteId: note.id)
-              else if (note.body.trim().isNotEmpty)
-                Text(
-                  note.body,
-                  style: theme.textTheme.bodyMedium,
-                  maxLines: 10,
-                  overflow: TextOverflow.ellipsis,
-                )
-              else if (!hasTitle)
-                Text(
-                  'Empty note',
-                  style: theme.textTheme.bodyMedium
-                      ?.copyWith(color: theme.disabledColor),
-                ),
-              _CardFooter(note: note),
-            ],
-          ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _CardImage(noteId: note.id),
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (hasTitle)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Text(
+                        note.title,
+                        style: theme.textTheme.titleMedium,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  if (note.type == 'checklist')
+                    _ChecklistPreview(noteId: note.id)
+                  else if (note.body.trim().isNotEmpty)
+                    Text(
+                      note.body,
+                      style: theme.textTheme.bodyMedium,
+                      maxLines: 10,
+                      overflow: TextOverflow.ellipsis,
+                    )
+                  else if (!hasTitle)
+                    Text(
+                      'Empty note',
+                      style: theme.textTheme.bodyMedium
+                          ?.copyWith(color: theme.disabledColor),
+                    ),
+                  _CardFooter(note: note),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
+    );
+  }
+}
+
+class _CardImage extends ConsumerWidget {
+  const _CardImage({required this.noteId});
+
+  final String noteId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final async = ref.watch(attachmentsProvider(noteId));
+    return async.maybeWhen(
+      data: (items) {
+        final withData = items.where((a) => a.data != null).toList();
+        if (withData.isEmpty) return const SizedBox.shrink();
+        return AspectRatio(
+          aspectRatio: 16 / 10,
+          child: Image.memory(withData.first.data!, fit: BoxFit.cover),
+        );
+      },
+      orElse: () => const SizedBox.shrink(),
     );
   }
 }

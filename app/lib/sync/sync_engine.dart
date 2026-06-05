@@ -1,4 +1,5 @@
 import 'package:drift/drift.dart';
+import 'package:http/http.dart' as http;
 import 'package:pocketbase/pocketbase.dart';
 
 import '../data/local/database.dart';
@@ -17,6 +18,7 @@ class SyncEngine {
 
   static const _notes = 'notes';
   static const _items = 'checklist_items';
+  static const _attachments = 'attachments';
 
   bool _running = false;
 
@@ -30,9 +32,11 @@ class SyncEngine {
       // Push parents before children so a child's `note` relation resolves.
       await _pushNotes();
       await _pushItems();
+      await _pushAttachments();
       // Pull in the same order.
       await _pullNotes();
       await _pullItems();
+      await _pullAttachments();
       return true;
     } finally {
       _running = false;
@@ -88,6 +92,46 @@ class SyncEngine {
           created: Value(saved.getStringValue('created')),
           dirty: const Value(false),
         ));
+      }
+    }
+  }
+
+  Future<void> _pushAttachments() async {
+    final dirty = await (_db.select(_db.attachments)
+          ..where((t) => t.dirty.equals(true)))
+        .get();
+    for (final a in dirty) {
+      try {
+        RecordModel saved;
+        if (a.file.isEmpty && a.data != null && !a.deleted) {
+          // Not yet uploaded: create with the image bytes (multipart).
+          saved = await _pb.collection(_attachments).create(
+            body: {'id': a.id, 'note': a.note, 'deleted': false},
+            files: [
+              http.MultipartFile.fromBytes('file', a.data!,
+                  filename: 'img_${a.id}.jpg'),
+            ],
+          );
+        } else {
+          // Metadata-only change (e.g. soft delete) on an existing record.
+          saved = await _pb
+              .collection(_attachments)
+              .update(a.id, body: {'deleted': a.deleted});
+        }
+        await (_db.update(_db.attachments)..where((t) => t.id.equals(a.id)))
+            .write(AttachmentsCompanion(
+          file: Value(saved.getStringValue('file')),
+          created: Value(saved.getStringValue('created')),
+          updated: Value(saved.getStringValue('updated')),
+          dirty: const Value(false),
+        ));
+      } on ClientException catch (e) {
+        // A delete of something never uploaded → nothing to do server-side.
+        if (e.statusCode == 404 && a.deleted) {
+          await (_db.update(_db.attachments)..where((t) => t.id.equals(a.id)))
+              .write(const AttachmentsCompanion(dirty: Value(false)));
+        }
+        // else: transient error, leave dirty and retry next cycle.
       }
     }
   }
@@ -150,6 +194,54 @@ class SyncEngine {
             dirty: const Value(false),
           ));
     }, _localItemUpdated);
+  }
+
+  Future<void> _pullAttachments() async {
+    await _pull(_attachments, (rec) async {
+      // Upsert metadata; omit `data` so locally-held bytes are preserved.
+      await _db
+          .into(_db.attachments)
+          .insertOnConflictUpdate(AttachmentsCompanion(
+            id: Value(rec.id),
+            note: Value(rec.getStringValue('note')),
+            file: Value(rec.getStringValue('file')),
+            deleted: Value(rec.getBoolValue('deleted')),
+            created: Value(rec.getStringValue('created')),
+            updated: Value(rec.getStringValue('updated')),
+            dirty: const Value(false),
+          ));
+
+      // If we don't have the bytes yet (came from another device), download.
+      final filename = rec.getStringValue('file');
+      if (filename.isEmpty || rec.getBoolValue('deleted')) return;
+      final existing = await (_db.select(_db.attachments)
+            ..where((t) => t.id.equals(rec.id)))
+          .getSingleOrNull();
+      if (existing?.data != null) return;
+
+      final bytes = await _downloadFile(rec, filename);
+      if (bytes != null) {
+        await (_db.update(_db.attachments)..where((t) => t.id.equals(rec.id)))
+            .write(AttachmentsCompanion(data: Value(bytes)));
+      }
+    }, _localAttachmentUpdated);
+  }
+
+  Future<Uint8List?> _downloadFile(RecordModel rec, String filename) async {
+    try {
+      final url = _pb.files.getUrl(rec, filename);
+      final resp = await http.get(url);
+      return resp.statusCode == 200 ? resp.bodyBytes : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<({String updated, bool dirty})?> _localAttachmentUpdated(
+      String id) async {
+    final row = await (_db.select(_db.attachments)..where((t) => t.id.equals(id)))
+        .getSingleOrNull();
+    return row == null ? null : (updated: row.updated, dirty: row.dirty);
   }
 
   /// Generic pull loop: fetch records changed since the cursor, apply each with
