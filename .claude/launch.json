@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "noteesek-web",
+      "runtimeExecutable": "flutter",
+      "runtimeArgs": [
+        "run",
+        "-d",
+        "web-server",
+        "--web-port=9099",
+        "--web-hostname=127.0.0.1"
+      ],
+      "port": 9099
+    }
+  ]
+}
