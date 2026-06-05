@@ -6,6 +6,7 @@ import '../../data/local/database.dart';
 import '../../data/notes_repository.dart';
 import '../../providers.dart';
 import '../../sync/sync_controller.dart';
+import 'archive_screen.dart';
 import 'note_card.dart';
 import 'note_editor_screen.dart';
 
@@ -44,6 +45,7 @@ class NotesScreen extends ConsumerWidget {
     });
 
     return Scaffold(
+      drawer: _AppDrawer(email: email),
       appBar: AppBar(
         title: const Text('Notes'),
         actions: [
@@ -152,6 +154,69 @@ class _CreateFab extends StatelessWidget {
           child: const Icon(Icons.edit),
         ),
       ],
+    );
+  }
+}
+
+class _AppDrawer extends ConsumerWidget {
+  const _AppDrawer({required this.email});
+
+  final String email;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Drawer(
+      child: SafeArea(
+        child: Column(
+          children: [
+            DrawerHeader(
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primaryContainer,
+              ),
+              child: Align(
+                alignment: Alignment.bottomLeft,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    const Text('Noteesek',
+                        style: TextStyle(
+                            fontSize: 22, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 4),
+                    Text(email,
+                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                  ],
+                ),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.notes),
+              title: const Text('Notes'),
+              onTap: () => Navigator.of(context).pop(),
+            ),
+            ListTile(
+              leading: const Icon(Icons.archive_outlined),
+              title: const Text('Archive'),
+              onTap: () {
+                Navigator.of(context).pop(); // close drawer
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const ArchiveScreen()),
+                );
+              },
+            ),
+            const Spacer(),
+            const Divider(height: 1),
+            ListTile(
+              leading: const Icon(Icons.logout),
+              title: const Text('Sign out'),
+              onTap: () {
+                Navigator.of(context).pop();
+                ref.read(pocketBaseProvider).authStore.clear();
+              },
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
