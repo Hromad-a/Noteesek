@@ -38,6 +38,9 @@ class Notes extends Table {
   /// True when the row has local changes not yet pushed to the server.
   BoolColumn get dirty => boolean().withDefault(const Constant(false))();
 
+  /// Manual sort order within the pinned/unpinned section. Lower = higher in list.
+  IntColumn get position => integer().withDefault(const Constant(0))();
+
   @override
   Set<Column> get primaryKey => {id};
 }
@@ -114,15 +117,17 @@ class AppDatabase extends _$AppDatabase {
             ));
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
         onCreate: (m) => m.createAll(),
         onUpgrade: (m, from, to) async {
           if (from < 2) {
-            // Added local image bytes for attachments.
             await m.addColumn(attachments, attachments.data);
+          }
+          if (from < 3) {
+            await m.addColumn(notes, notes.position);
           }
         },
       );

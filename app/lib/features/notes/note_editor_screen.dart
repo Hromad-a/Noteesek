@@ -5,6 +5,8 @@ import 'package:image_picker/image_picker.dart';
 import '../../data/local/database.dart';
 import '../../data/notes_repository.dart';
 
+enum _OverflowAction { archive, delete }
+
 /// Create/edit a single note. Edits autosave to the local database (which marks
 /// the row dirty for the next sync). Controllers are seeded once from the note
 /// so live DB updates don't reset the cursor.
@@ -99,20 +101,36 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
                     note.pinned ? Icons.push_pin : Icons.push_pin_outlined),
                 onPressed: () => _repo.setPinned(note.id, !note.pinned),
               ),
-              IconButton(
-                tooltip: note.archived ? 'Unarchive' : 'Archive',
-                icon: Icon(note.archived
-                    ? Icons.unarchive_outlined
-                    : Icons.archive_outlined),
-                onPressed: () => _repo.setArchived(note.id, !note.archived),
-              ),
-              IconButton(
-                tooltip: 'Delete',
-                icon: const Icon(Icons.delete_outline),
-                onPressed: () async {
-                  await _repo.softDelete(note.id);
-                  if (context.mounted) Navigator.of(context).maybePop();
+              PopupMenuButton<_OverflowAction>(
+                onSelected: (action) async {
+                  switch (action) {
+                    case _OverflowAction.archive:
+                      await _repo.setArchived(note.id, !note.archived);
+                    case _OverflowAction.delete:
+                      await _repo.softDelete(note.id);
+                      if (context.mounted) Navigator.of(context).maybePop();
+                  }
                 },
+                itemBuilder: (context) => [
+                  PopupMenuItem(
+                    value: _OverflowAction.archive,
+                    child: ListTile(
+                      leading: Icon(note.archived
+                          ? Icons.unarchive_outlined
+                          : Icons.archive_outlined),
+                      title: Text(note.archived ? 'Unarchive' : 'Archive'),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                  PopupMenuItem(
+                    value: _OverflowAction.delete,
+                    child: const ListTile(
+                      leading: Icon(Icons.delete_outline),
+                      title: Text('Delete'),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -213,7 +231,7 @@ class _AttachmentsSection extends ConsumerWidget {
   }
 }
 
-class _ChecklistEditor extends ConsumerWidget {
+class _ChecklistEditor extends ConsumerStatefulWidget {
   const _ChecklistEditor({
     required this.noteId,
     required this.controllerFor,
@@ -225,9 +243,28 @@ class _ChecklistEditor extends ConsumerWidget {
   final void Function(String id) onForgetController;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_ChecklistEditor> createState() => _ChecklistEditorState();
+}
+
+class _ChecklistEditorState extends ConsumerState<_ChecklistEditor> {
+  final Map<String, FocusNode> _focusNodes = {};
+  String? _pendingFocusId;
+
+  FocusNode _focusNodeFor(String id) =>
+      _focusNodes.putIfAbsent(id, () => FocusNode());
+
+  @override
+  void dispose() {
+    for (final fn in _focusNodes.values) {
+      fn.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final repo = ref.read(notesRepositoryProvider);
-    final itemsAsync = ref.watch(checklistItemsProvider(noteId));
+    final itemsAsync = ref.watch(checklistItemsProvider(widget.noteId));
 
     return itemsAsync.when(
       loading: () => const Padding(
@@ -236,6 +273,16 @@ class _ChecklistEditor extends ConsumerWidget {
       ),
       error: (e, _) => Text('Error: $e'),
       data: (items) {
+        // When a new item was just created via Enter, focus it once rendered.
+        if (_pendingFocusId != null &&
+            items.any((i) => i.id == _pendingFocusId)) {
+          final id = _pendingFocusId!;
+          _pendingFocusId = null;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) _focusNodeFor(id).requestFocus();
+          });
+        }
+
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
@@ -251,7 +298,9 @@ class _ChecklistEditor extends ConsumerWidget {
                   ),
                   Expanded(
                     child: TextField(
-                      controller: controllerFor(it),
+                      controller: widget.controllerFor(it),
+                      focusNode: _focusNodeFor(it.id),
+                      textInputAction: TextInputAction.next,
                       decoration: const InputDecoration(
                         isDense: true,
                         border: InputBorder.none,
@@ -262,6 +311,13 @@ class _ChecklistEditor extends ConsumerWidget {
                               decoration: TextDecoration.lineThrough)
                           : null,
                       onChanged: (v) => repo.setItemContent(it.id, v),
+                      onSubmitted: (_) async {
+                        final newId =
+                            await repo.addItem(widget.noteId);
+                        if (mounted) {
+                          setState(() => _pendingFocusId = newId);
+                        }
+                      },
                     ),
                   ),
                   IconButton(
@@ -270,7 +326,8 @@ class _ChecklistEditor extends ConsumerWidget {
                     tooltip: 'Remove',
                     onPressed: () {
                       repo.deleteItem(it.id);
-                      onForgetController(it.id);
+                      widget.onForgetController(it.id);
+                      _focusNodes.remove(it.id)?.dispose();
                     },
                   ),
                 ],
@@ -278,7 +335,7 @@ class _ChecklistEditor extends ConsumerWidget {
             TextButton.icon(
               icon: const Icon(Icons.add),
               label: const Text('Add item'),
-              onPressed: () => repo.addItem(noteId),
+              onPressed: () => repo.addItem(widget.noteId),
             ),
           ],
         );

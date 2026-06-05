@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -6,18 +7,32 @@ import '../../data/notes_repository.dart';
 
 /// A single Keep-style note card shown in the grid.
 class NoteCard extends ConsumerWidget {
-  const NoteCard({super.key, required this.note, required this.onTap});
+  const NoteCard({
+    super.key,
+    required this.note,
+    required this.onTap,
+    this.isDragTarget = false,
+  });
 
   final NoteRow note;
   final VoidCallback onTap;
+
+  /// True while another note is being dragged over this one.
+  final bool isDragTarget;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final hasTitle = note.title.trim().isNotEmpty;
 
-    return Card(
+    final cardContent = Card(
       clipBehavior: Clip.antiAlias,
+      shape: isDragTarget
+          ? RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: theme.colorScheme.primary, width: 2),
+            )
+          : null,
       child: InkWell(
         onTap: onTap,
         child: Column(
@@ -63,6 +78,40 @@ class NoteCard extends ConsumerWidget {
           ],
         ),
       ),
+    );
+
+    final feedback = Material(
+      elevation: 8,
+      borderRadius: BorderRadius.circular(12),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 160),
+        child: Card(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            child: Text(
+              note.title.isEmpty ? 'Note' : note.title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodyMedium,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    // Web: short hold (150ms) so it feels like click-drag while still
+    // letting quick taps through to InkWell.onTap.
+    // Mobile: standard long-press (500ms default).
+    return LongPressDraggable<String>(
+      data: note.id,
+      delay: kIsWeb
+          ? const Duration(milliseconds: 150)
+          : const Duration(milliseconds: 500),
+      feedback: feedback,
+      childWhenDragging: Opacity(opacity: 0.35, child: cardContent),
+      child: kIsWeb
+          ? MouseRegion(cursor: SystemMouseCursors.grab, child: cardContent)
+          : cardContent,
     );
   }
 }
@@ -170,23 +219,25 @@ class _CardFooter extends ConsumerWidget {
             icon: Icon(note.pinned ? Icons.push_pin : Icons.push_pin_outlined),
             onPressed: () => repo.setPinned(note.id, !note.pinned),
           ),
-          const Spacer(),
-          IconButton(
-            visualDensity: VisualDensity.compact,
-            iconSize: 18,
-            tooltip: note.archived ? 'Unarchive' : 'Archive',
-            icon: Icon(note.archived
-                ? Icons.unarchive_outlined
-                : Icons.archive_outlined),
-            onPressed: () => repo.setArchived(note.id, !note.archived),
-          ),
-          IconButton(
-            visualDensity: VisualDensity.compact,
-            iconSize: 18,
-            tooltip: 'Delete',
-            icon: const Icon(Icons.delete_outline),
-            onPressed: () => repo.softDelete(note.id),
-          ),
+          if (kIsWeb) ...[
+            const Spacer(),
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              iconSize: 18,
+              tooltip: note.archived ? 'Unarchive' : 'Archive',
+              icon: Icon(note.archived
+                  ? Icons.unarchive_outlined
+                  : Icons.archive_outlined),
+              onPressed: () => repo.setArchived(note.id, !note.archived),
+            ),
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              iconSize: 18,
+              tooltip: 'Delete',
+              icon: const Icon(Icons.delete_outline),
+              onPressed: () => repo.softDelete(note.id),
+            ),
+          ],
         ],
       ),
     );

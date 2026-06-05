@@ -22,7 +22,7 @@ class LocalNotesRepository implements NotesRepository {
           ..where((t) => t.deleted.equals(false) & t.archived.equals(false))
           ..orderBy([
             (t) => OrderingTerm(expression: t.pinned, mode: OrderingMode.desc),
-            (t) => OrderingTerm(expression: t.updated, mode: OrderingMode.desc),
+            (t) => OrderingTerm(expression: t.position, mode: OrderingMode.asc),
           ]))
         .watch();
   }
@@ -66,7 +66,7 @@ class LocalNotesRepository implements NotesRepository {
                   itemMatch))
           ..orderBy([
             (t) => OrderingTerm(expression: t.pinned, mode: OrderingMode.desc),
-            (t) => OrderingTerm(expression: t.updated, mode: OrderingMode.desc),
+            (t) => OrderingTerm(expression: t.position, mode: OrderingMode.asc),
           ]))
         .watch();
   }
@@ -75,12 +75,20 @@ class LocalNotesRepository implements NotesRepository {
 
   @override
   Future<String> createNote({required String type}) async {
+    final maxPos = await (_db.selectOnly(_db.notes)
+          ..addColumns([_db.notes.position.max()])
+          ..where(_db.notes.owner.equals(_ownerId) &
+              _db.notes.deleted.equals(false)))
+        .map((r) => r.read(_db.notes.position.max()))
+        .getSingleOrNull();
+
     final id = newPbId();
     final now = pbNow();
     await _db.into(_db.notes).insert(NotesCompanion.insert(
           id: id,
           owner: _ownerId,
           type: Value(type),
+          position: Value((maxPos ?? -1) + 1),
           created: Value(now),
           updated: Value(now),
           dirty: const Value(true),
@@ -125,6 +133,21 @@ class LocalNotesRepository implements NotesRepository {
   @override
   Future<void> restore(String id) =>
       _patch(id, const NotesCompanion(deleted: Value(false)));
+
+  @override
+  Future<void> reorderNotes(List<String> orderedIds) async {
+    await _db.transaction(() async {
+      for (var i = 0; i < orderedIds.length; i++) {
+        await (_db.update(_db.notes)
+              ..where((t) => t.id.equals(orderedIds[i])))
+            .write(NotesCompanion(
+          position: Value(i),
+          updated: Value(pbNow()),
+          dirty: const Value(true),
+        ));
+      }
+    });
+  }
 
   /// Permanently remove a trashed note and its children from the local DB.
   /// (On mobile the caller also hard-deletes the server record via the sync

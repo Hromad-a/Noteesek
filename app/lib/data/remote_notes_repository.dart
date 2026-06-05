@@ -97,7 +97,7 @@ class RemoteNotesRepository implements NotesRepository {
     final list = ns.toList();
     list.sort((a, b) {
       if (pinnedFirst && a.pinned != b.pinned) return a.pinned ? -1 : 1;
-      return b.updated.compareTo(a.updated);
+      return a.position.compareTo(b.position);
     });
     return list;
   }
@@ -136,6 +136,9 @@ class RemoteNotesRepository implements NotesRepository {
 
   @override
   Future<String> createNote({required String type}) async {
+    final maxPos = _notes.values
+        .where((n) => !n.deleted)
+        .fold<int>(-1, (m, n) => n.position > m ? n.position : m);
     final r = await _pb.collection('notes').create(body: {
       'owner': _ownerId,
       'type': type,
@@ -144,6 +147,7 @@ class RemoteNotesRepository implements NotesRepository {
       'pinned': false,
       'archived': false,
       'deleted': false,
+      'position': maxPos + 1,
     });
     _notes[r.id] = _noteFrom(r);
     _events.add(null);
@@ -192,6 +196,17 @@ class RemoteNotesRepository implements NotesRepository {
   @override
   Future<List<String>> trashedNoteIds() async =>
       _notes.values.where((n) => n.deleted).map((n) => n.id).toList();
+
+  @override
+  Future<void> reorderNotes(List<String> orderedIds) async {
+    for (var i = 0; i < orderedIds.length; i++) {
+      final r = await _pb
+          .collection('notes')
+          .update(orderedIds[i], body: {'position': i});
+      _notes[orderedIds[i]] = _noteFrom(r);
+    }
+    _events.add(null);
+  }
 
   @override
   Future<void> claimLocalNotes(String userId) async {/* no local notes on web */}
@@ -300,6 +315,7 @@ class RemoteNotesRepository implements NotesRepository {
         created: r.getStringValue('created'),
         updated: r.getStringValue('updated'),
         dirty: false,
+        position: r.getIntValue('position'),
       );
 
   ChecklistItemRow _itemFrom(RecordModel r) => ChecklistItemRow(

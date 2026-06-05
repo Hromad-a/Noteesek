@@ -28,6 +28,10 @@ abstract interface class NotesRepository {
   Future<void> setArchived(String id, bool archived);
   Future<void> softDelete(String id);
   Future<void> restore(String id);
+
+  /// Reassign positions so [orderedIds] is sorted 0…n within its section
+  /// (pinned or unpinned — caller passes only IDs from one section).
+  Future<void> reorderNotes(List<String> orderedIds);
   Future<void> deleteForever(String noteId);
   Future<List<String>> trashedNoteIds();
 

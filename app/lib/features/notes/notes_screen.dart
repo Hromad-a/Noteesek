@@ -32,7 +32,6 @@ class NotesScreen extends ConsumerWidget {
     );
   }
 
-  /// Trigger a manual sync and show a bottom message describing the result.
   Future<void> _manualSync(BuildContext context, WidgetRef ref) async {
     final messenger = ScaffoldMessenger.of(context);
     final outcome =
@@ -52,13 +51,33 @@ class NotesScreen extends ConsumerWidget {
       ..showSnackBar(SnackBar(content: Text(text)));
   }
 
+  void _onReorder(WidgetRef ref, String draggedId, String targetId, List<NoteRow> notes) {
+    if (draggedId == targetId) return;
+    final dragged = notes.firstWhere((n) => n.id == draggedId,
+        orElse: () => notes.first);
+    final target =
+        notes.firstWhere((n) => n.id == targetId, orElse: () => notes.first);
+    if (dragged.id != draggedId || target.id != targetId) return;
+    if (dragged.pinned != target.pinned) return;
+
+    final section = notes.where((n) => n.pinned == dragged.pinned).toList();
+    final fromIdx = section.indexWhere((n) => n.id == draggedId);
+    final toIdx = section.indexWhere((n) => n.id == targetId);
+    if (fromIdx < 0 || toIdx < 0 || fromIdx == toIdx) return;
+
+    section.removeAt(fromIdx);
+    section.insert(toIdx, dragged);
+    ref
+        .read(notesRepositoryProvider)
+        .reorderNotes(section.map((n) => n.id).toList());
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final notesAsync = ref.watch(activeNotesProvider);
     final pb = ref.watch(pocketBaseProvider);
     final email = pb.authStore.record?.data['email'] as String? ?? '';
     final connected = ref.watch(isAuthenticatedProvider);
-    // Sync only exists on mobile (local-first). Web is online, server-backed.
     final sync = kIsWeb ? null : ref.watch(syncControllerProvider);
 
     return Scaffold(
@@ -69,7 +88,6 @@ class NotesScreen extends ConsumerWidget {
           if (sync != null) ...[
             if (connected && !sync.reachable && !sync.syncing)
               IconButton(
-                // Server unreachable — non-fatal; tap to retry.
                 tooltip: 'Server not responding — tap to retry',
                 icon: Icon(Icons.cloud_off,
                     color: Theme.of(context).colorScheme.error),
@@ -88,7 +106,6 @@ class NotesScreen extends ConsumerWidget {
               )
             else
               IconButton(
-                // Disabled (greyed) until a server is connected.
                 tooltip: connected ? 'Sync now' : 'Connect a server to sync',
                 icon: const Icon(Icons.sync),
                 onPressed: connected ? () => _manualSync(context, ref) : null,
@@ -124,9 +141,20 @@ class NotesScreen extends ConsumerWidget {
                       crossAxisSpacing: 8,
                       itemCount: notes.length,
                       itemBuilder: (context, i) {
-                        final NoteRow note = notes[i];
-                        return NoteCard(
-                            note: note, onTap: () => _open(context, note.id));
+                        final note = notes[i];
+                        return DragTarget<String>(
+                          onWillAcceptWithDetails: (details) =>
+                              details.data != note.id,
+                          onAcceptWithDetails: (details) =>
+                              _onReorder(ref, details.data, note.id, notes),
+                          builder: (context, candidates, _) {
+                            return NoteCard(
+                              note: note,
+                              onTap: () => _open(context, note.id),
+                              isDragTarget: candidates.isNotEmpty,
+                            );
+                          },
+                        );
                       },
                     ),
                   );
@@ -180,7 +208,7 @@ class _AppDrawer extends ConsumerWidget {
   final bool connected;
 
   void _push(BuildContext context, Widget screen) {
-    Navigator.of(context).pop(); // close drawer
+    Navigator.of(context).pop();
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
   }
 
@@ -240,7 +268,6 @@ class _AppDrawer extends ConsumerWidget {
             const Spacer(),
             const Divider(height: 1),
             if (kIsWeb)
-              // Web is always signed in (server-backed); just sign out.
               ListTile(
                 leading: const Icon(Icons.logout),
                 title: const Text('Sign out'),
@@ -298,7 +325,10 @@ class _SearchFieldState extends ConsumerState<_SearchField> {
     return SearchBar(
       controller: _ctrl,
       hintText: 'Search notes',
-      leading: const Icon(Icons.search),
+      leading: const Padding(
+        padding: EdgeInsets.only(left: 8),
+        child: Icon(Icons.search),
+      ),
       trailing: [
         if (query.isNotEmpty)
           IconButton(
