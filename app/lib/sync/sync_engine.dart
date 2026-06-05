@@ -241,7 +241,9 @@ class SyncEngine {
 
   Future<Uint8List?> _downloadFile(RecordModel rec, String filename) async {
     try {
-      final url = _pb.files.getUrl(rec, filename);
+      // Attachment files are protected, so a short-lived file token is required.
+      final token = await _pb.files.getToken();
+      final url = _pb.files.getUrl(rec, filename, token: token);
       final resp = await http.get(url);
       return resp.statusCode == 200 ? resp.bodyBytes : null;
     } catch (_) {
