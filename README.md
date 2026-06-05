@@ -68,9 +68,17 @@ and `latest`. Use full `vX.Y.Z` tags so the version tags are derived correctly.
 The same tag also triggers
 [`.github/workflows/release-apk.yml`](.github/workflows/release-apk.yml), which
 builds the Android APK and attaches it to the tag's GitHub Release as
-`noteesek-<version>.apk` — downloadable from the repo's **Releases** page. The
-APK is currently signed with the debug key (installable directly, not
-Play-Store-ready); add a release keystore + `signingConfig` for store builds.
+`noteesek-<version>.apk` — downloadable from the repo's **Releases** page.
+
+**APK signing.** Bump the build number in `app/pubspec.yaml`
+(`version: 1.0.0+N`) before each release so Android treats it as an update. For
+in-place updates (no uninstall), builds must use one **stable** release keystore
+— see [app/android/key.properties.example](app/android/key.properties.example).
+Locally, copy it to `android/key.properties` and fill it in. In CI, add repo
+secrets `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`,
+`ANDROID_KEY_PASSWORD`, `ANDROID_KEY_ALIAS`. Without a keystore the build falls
+back to debug signing (installable, but each build then needs an uninstall to
+update).
 
 ## Status
 

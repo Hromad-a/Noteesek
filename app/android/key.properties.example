@@ -1,0 +1,17 @@
+# Copy to android/key.properties (gitignored) and fill in your real values to
+# build a release-signed APK locally. Use the SAME keystore for every release so
+# updates install over the previous build without an uninstall.
+#
+# Generate a keystore once (keep it safe and backed up — losing it means you can
+# never update an already-installed app with the same identity):
+#
+#   keytool -genkey -v -keystore ~/noteesek-release.jks \
+#     -keyalg RSA -keysize 2048 -validity 10000 -alias upload
+#
+# storeFile may be an absolute path (recommended for local builds) or a path
+# relative to android/app/.
+
+storePassword=your-store-password
+keyPassword=your-key-password
+keyAlias=upload
+storeFile=/absolute/path/to/noteesek-release.jks
