@@ -9,10 +9,21 @@ Single-binary PocketBase backend, run via Docker Compose. Pinned to PocketBase
 docker compose up -d --build
 ```
 
+The image is **multi-stage**: it builds the Flutter web app and serves it from
+PocketBase's `pb_public`, so one container provides the app, API, and admin:
+
+- Web app: <http://localhost:8090/>
 - REST API: <http://localhost:8090/api/>
 - Admin dashboard: <http://localhost:8090/_/>
 
-Migrations in `pb_migrations/` are applied automatically on startup.
+The web app defaults its server URL to its own origin, so it works out of the
+box. Migrations in `pb_migrations/` are applied automatically on startup.
+
+> The build compiles Flutter inside Docker (pulls the ~2 GB Flutter SDK image at
+> build time only — it is **not** in the final image). The final image is ~120 MB
+> (Alpine + PocketBase + the compiled web bundle). The build needs a Docker disk
+> of ~16 GB+ for the SDK image; bump Docker Desktop → Settings → Resources if a
+> build fails with "no space left on device".
 
 ## First superuser
 

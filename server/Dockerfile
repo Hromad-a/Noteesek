@@ -1,5 +1,7 @@
 # --- Stage 1: build the Flutter web app ---------------------------------------
-FROM ghcr.io/cirruslabs/flutter:3.44.0 AS webbuild
+# `stable` currently tracks Flutter 3.44.1 (Dart 3.12.1), which satisfies the
+# app's SDK constraint. cirruslabs does not publish a pinned 3.44.1 tag.
+FROM ghcr.io/cirruslabs/flutter:stable AS webbuild
 WORKDIR /app
 
 # Pre-fetch dependencies (better layer caching).
