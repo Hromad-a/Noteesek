@@ -1,0 +1,32 @@
+# PocketBase runtime data (never commit — back up the folder instead)
+server/pb_data/
+
+# Flutter / Dart
+app/.dart_tool/
+app/.flutter-plugins
+app/.flutter-plugins-dependencies
+app/build/
+app/.pub-cache/
+app/.pub/
+app/android/.gradle/
+app/android/app/debug/
+app/android/app/profile/
+app/android/app/release/
+app/**/GeneratedPluginRegistrant.*
+app/ios/Flutter/Generated.xcconfig
+app/ios/Flutter/flutter_export_environment.sh
+
+# Generated Dart code (drift, json_serializable, etc.)
+app/**/*.g.dart
+app/**/*.freezed.dart
+
+# Local config / secrets
+*.local
+.env
+.env.*
+
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/
