@@ -5,6 +5,7 @@ import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import '../../data/local/database.dart';
 import '../../data/notes_repository.dart';
 import '../../providers.dart';
+import '../../sync/sync_controller.dart';
 import 'note_card.dart';
 import 'note_editor_screen.dart';
 
@@ -31,11 +32,39 @@ class NotesScreen extends ConsumerWidget {
     final notesAsync = ref.watch(activeNotesProvider);
     final pb = ref.watch(pocketBaseProvider);
     final email = pb.authStore.record?.data['email'] as String? ?? '';
+    final sync = ref.watch(syncControllerProvider);
+
+    // Surface sync errors unobtrusively.
+    ref.listen(syncControllerProvider, (prev, next) {
+      if (next.error != null && next.error != prev?.error) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Sync failed: ${next.error}')),
+        );
+      }
+    });
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Notes'),
         actions: [
+          if (sync.syncing)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16),
+              child: Center(
+                child: SizedBox(
+                  height: 18,
+                  width: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            )
+          else
+            IconButton(
+              tooltip: 'Sync now',
+              icon: const Icon(Icons.sync),
+              onPressed: () =>
+                  ref.read(syncControllerProvider.notifier).syncNow(),
+            ),
           PopupMenuButton<String>(
             tooltip: 'Account',
             icon: const Icon(Icons.account_circle_outlined),
