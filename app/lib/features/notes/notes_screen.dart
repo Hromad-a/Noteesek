@@ -2,13 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 
+import '../../config/app_config.dart';
 import '../../data/local/database.dart';
 import '../../data/notes_repository.dart';
 import '../../providers.dart';
 import '../../sync/sync_controller.dart';
+import '../auth/login_screen.dart';
 import 'archive_screen.dart';
 import 'note_card.dart';
 import 'note_editor_screen.dart';
+import 'trash_screen.dart';
 
 /// Home screen: a Keep-style masonry grid of notes with a create FAB.
 class NotesScreen extends ConsumerWidget {
@@ -33,6 +36,7 @@ class NotesScreen extends ConsumerWidget {
     final notesAsync = ref.watch(activeNotesProvider);
     final pb = ref.watch(pocketBaseProvider);
     final email = pb.authStore.record?.data['email'] as String? ?? '';
+    final connected = ref.watch(isAuthenticatedProvider);
     final sync = ref.watch(syncControllerProvider);
 
     // Surface sync errors unobtrusively.
@@ -45,7 +49,7 @@ class NotesScreen extends ConsumerWidget {
     });
 
     return Scaffold(
-      drawer: _AppDrawer(email: email),
+      drawer: _AppDrawer(email: email, connected: connected),
       appBar: AppBar(
         title: const Text('Notes'),
         actions: [
@@ -62,23 +66,14 @@ class NotesScreen extends ConsumerWidget {
             )
           else
             IconButton(
-              tooltip: 'Sync now',
+              // Disabled (greyed) until a server is connected.
+              tooltip:
+                  connected ? 'Sync now' : 'Connect a server to sync',
               icon: const Icon(Icons.sync),
-              onPressed: () =>
-                  ref.read(syncControllerProvider.notifier).syncNow(),
+              onPressed: connected
+                  ? () => ref.read(syncControllerProvider.notifier).syncNow()
+                  : null,
             ),
-          PopupMenuButton<String>(
-            tooltip: 'Account',
-            icon: const Icon(Icons.account_circle_outlined),
-            onSelected: (v) {
-              if (v == 'logout') pb.authStore.clear();
-            },
-            itemBuilder: (_) => [
-              PopupMenuItem(enabled: false, child: Text(email)),
-              const PopupMenuDivider(),
-              const PopupMenuItem(value: 'logout', child: Text('Sign out')),
-            ],
-          ),
         ],
       ),
       body: SafeArea(
@@ -159,9 +154,15 @@ class _CreateFab extends StatelessWidget {
 }
 
 class _AppDrawer extends ConsumerWidget {
-  const _AppDrawer({required this.email});
+  const _AppDrawer({required this.email, required this.connected});
 
   final String email;
+  final bool connected;
+
+  void _push(BuildContext context, Widget screen) {
+    Navigator.of(context).pop(); // close drawer
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -183,8 +184,20 @@ class _AppDrawer extends ConsumerWidget {
                         style: TextStyle(
                             fontSize: 22, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 4),
-                    Text(email,
-                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                    Row(
+                      children: [
+                        Icon(connected ? Icons.cloud_done : Icons.cloud_off,
+                            size: 16),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            connected ? email : 'Local only — not synced',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
                   ],
                 ),
               ),
@@ -197,23 +210,35 @@ class _AppDrawer extends ConsumerWidget {
             ListTile(
               leading: const Icon(Icons.archive_outlined),
               title: const Text('Archive'),
-              onTap: () {
-                Navigator.of(context).pop(); // close drawer
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const ArchiveScreen()),
-                );
-              },
+              onTap: () => _push(context, const ArchiveScreen()),
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline),
+              title: const Text('Trash'),
+              onTap: () => _push(context, const TrashScreen()),
             ),
             const Spacer(),
             const Divider(height: 1),
-            ListTile(
-              leading: const Icon(Icons.logout),
-              title: const Text('Sign out'),
-              onTap: () {
-                Navigator.of(context).pop();
-                ref.read(pocketBaseProvider).authStore.clear();
-              },
-            ),
+            if (connected)
+              ListTile(
+                leading: const Icon(Icons.logout),
+                title: const Text('Disconnect'),
+                subtitle: const Text('Stop syncing; notes stay on device'),
+                onTap: () async {
+                  Navigator.of(context).pop();
+                  ref.read(pocketBaseProvider).authStore.clear();
+                  await ref
+                      .read(activeOwnerProvider.notifier)
+                      .set(AppConfig.localOwner);
+                },
+              )
+            else
+              ListTile(
+                leading: const Icon(Icons.cloud_sync_outlined),
+                title: const Text('Connect to server'),
+                subtitle: const Text('Enable sync across devices'),
+                onTap: () => _push(context, const LoginScreen()),
+              ),
           ],
         ),
       ),

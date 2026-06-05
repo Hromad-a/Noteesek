@@ -1,11 +1,16 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pocketbase/pocketbase.dart';
 
+import '../../data/notes_repository.dart';
 import '../../providers.dart';
+import '../../sync/sync_controller.dart';
 
-/// Login + registration against a self-hosted PocketBase server. The server URL
-/// is editable and persisted, since every user points at their own backend.
+/// Connect to a self-hosted PocketBase server to enable sync (login or
+/// register). The server URL is editable and persisted. On success, existing
+/// local notes are claimed by the account and an initial sync runs.
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
 
@@ -60,7 +65,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         });
       }
       await pb.collection('users').authWithPassword(email, password);
-      // Auth state change routes us into the app automatically.
+
+      // Claim local notes for this account and kick off the first sync.
+      final userId = pb.authStore.record!.id;
+      await ref.read(activeOwnerProvider.notifier).set(userId);
+      await ref.read(notesRepositoryProvider).claimLocalNotes(userId);
+      unawaited(ref.read(syncControllerProvider.notifier).syncNow());
+
+      if (mounted) Navigator.of(context).pop(true);
+      return;
     } on ClientException catch (e) {
       setState(() => _error = _humanizeError(e));
     } catch (e) {
@@ -80,6 +93,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: AppBar(title: const Text('Connect to server')),
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
@@ -92,15 +106,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Text(
-                    'Noteesek',
+                    _registerMode
+                        ? 'Create an account to sync'
+                        : 'Sign in to sync',
                     textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.headlineMedium,
+                    style: Theme.of(context).textTheme.titleMedium,
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    _registerMode ? 'Create an account' : 'Sign in',
+                    'Your notes stay on this device and also sync to your '
+                    'server.',
                     textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.bodyMedium,
+                    style: Theme.of(context).textTheme.bodySmall,
                   ),
                   const SizedBox(height: 24),
                   TextFormField(

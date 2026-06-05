@@ -59,10 +59,30 @@ final authChangesProvider = StreamProvider<AuthStoreEvent>((ref) {
   return pb.authStore.onChange;
 });
 
-/// Whether a valid (logged-in) auth token currently exists.
+/// Whether a valid (logged-in) auth token currently exists. Also gates syncing:
+/// no account connected ⇒ local-only ⇒ sync disabled.
 final isAuthenticatedProvider = Provider<bool>((ref) {
   // Re-evaluate whenever auth changes.
   ref.watch(authChangesProvider);
   final pb = ref.watch(pocketBaseProvider);
   return pb.authStore.isValid;
 });
+
+/// The owner id stamped on locally-created notes. Defaults to the [local]
+/// sentinel until the user connects a server, after which it's their user id.
+class ActiveOwnerNotifier extends Notifier<String> {
+  @override
+  String build() {
+    final prefs = ref.watch(sharedPreferencesProvider);
+    return prefs.getString(AppConfig.kActiveOwner) ?? AppConfig.localOwner;
+  }
+
+  Future<void> set(String owner) async {
+    final prefs = ref.read(sharedPreferencesProvider);
+    await prefs.setString(AppConfig.kActiveOwner, owner);
+    state = owner;
+  }
+}
+
+final activeOwnerProvider =
+    NotifierProvider<ActiveOwnerNotifier, String>(ActiveOwnerNotifier.new);

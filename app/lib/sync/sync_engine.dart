@@ -43,6 +43,18 @@ class SyncEngine {
     }
   }
 
+  /// Permanently delete a note on the server (children cascade-delete via the
+  /// relation). Best-effort: no-op when offline/not connected; 404 is treated
+  /// as already gone. Used by "delete forever" / "empty trash".
+  Future<void> deleteNoteRemote(String noteId) async {
+    if (!_pb.authStore.isValid) return;
+    try {
+      await _pb.collection(_notes).delete(noteId);
+    } on ClientException catch (e) {
+      if (e.statusCode != 404) rethrow;
+    }
+  }
+
   // ---------------- Push ----------------
 
   Future<void> _pushNotes() async {

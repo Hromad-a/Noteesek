@@ -1,6 +1,7 @@
 import 'package:drift/drift.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../config/app_config.dart';
 import '../providers.dart';
 import 'local/database.dart';
 import 'local/ids.dart';
@@ -109,14 +110,68 @@ class NotesRepository {
   Future<void> setArchived(String id, bool archived) =>
       _patch(id, NotesCompanion(archived: Value(archived)));
 
-  /// Soft delete: tombstone that propagates during sync, then is purged later.
+  /// Move to trash: a soft-delete tombstone that propagates during sync.
   Future<void> softDelete(String id) =>
       _patch(id, const NotesCompanion(deleted: Value(true)));
+
+  /// Trash = soft-deleted, not yet purged. Newest first.
+  Stream<List<NoteRow>> watchTrash() {
+    return (_db.select(_db.notes)
+          ..where((t) => t.deleted.equals(true))
+          ..orderBy([
+            (t) => OrderingTerm(expression: t.updated, mode: OrderingMode.desc),
+          ]))
+        .watch();
+  }
+
+  /// Restore a trashed note back to the active list.
+  Future<void> restore(String id) =>
+      _patch(id, const NotesCompanion(deleted: Value(false)));
+
+  /// Permanently remove a trashed note and its children from the local DB.
+  /// Returns the ids so the caller can also hard-delete them on the server.
+  Future<List<String>> purgeLocal(String noteId) async {
+    final itemIds = await (_db.select(_db.checklistItems)
+          ..where((t) => t.note.equals(noteId)))
+        .map((r) => r.id)
+        .get();
+    final attIds = await (_db.select(_db.attachments)
+          ..where((t) => t.note.equals(noteId)))
+        .map((r) => r.id)
+        .get();
+    await _db.transaction(() async {
+      await (_db.delete(_db.checklistItems)
+            ..where((t) => t.note.equals(noteId)))
+          .go();
+      await (_db.delete(_db.attachments)..where((t) => t.note.equals(noteId)))
+          .go();
+      await (_db.delete(_db.notes)..where((t) => t.id.equals(noteId))).go();
+    });
+    return [noteId, ...itemIds, ...attIds];
+  }
+
+  Future<List<String>> trashedNoteIds() =>
+      (_db.select(_db.notes)..where((t) => t.deleted.equals(true)))
+          .map((r) => r.id)
+          .get();
 
   Future<void> _patch(String id, NotesCompanion patch) async {
     await (_db.update(_db.notes)..where((t) => t.id.equals(id))).write(
       patch.copyWith(updated: Value(pbNow()), dirty: const Value(true)),
     );
+  }
+
+  /// Reassign locally-owned notes to [userId] so they upload on the next sync.
+  /// Called when connecting a server for the first time. Child rows
+  /// (checklist items, attachments) created offline are already dirty.
+  Future<void> claimLocalNotes(String userId) async {
+    await (_db.update(_db.notes)
+          ..where((t) => t.owner.equals(AppConfig.localOwner)))
+        .write(NotesCompanion(
+      owner: Value(userId),
+      updated: Value(pbNow()),
+      dirty: const Value(true),
+    ));
   }
 
   // ---- Checklist items ----
@@ -207,12 +262,12 @@ class NotesRepository {
   }
 }
 
-/// Provides a [NotesRepository] bound to the current authenticated user.
+/// Provides a [NotesRepository] bound to the current active owner — the local
+/// sentinel when not connected, or the account's user id once connected.
 final notesRepositoryProvider = Provider<NotesRepository>((ref) {
   final db = ref.watch(databaseProvider);
-  final pb = ref.watch(pocketBaseProvider);
-  final ownerId = pb.authStore.record?.id ?? '';
-  return NotesRepository(db, ownerId);
+  final owner = ref.watch(activeOwnerProvider);
+  return NotesRepository(db, owner);
 });
 
 /// Current search query for the notes grid.
@@ -234,6 +289,11 @@ final activeNotesProvider = StreamProvider<List<NoteRow>>((ref) {
 /// Archived notes stream.
 final archivedNotesProvider = StreamProvider<List<NoteRow>>((ref) {
   return ref.watch(notesRepositoryProvider).watchArchived();
+});
+
+/// Trashed (soft-deleted, not yet purged) notes stream.
+final trashedNotesProvider = StreamProvider<List<NoteRow>>((ref) {
+  return ref.watch(notesRepositoryProvider).watchTrash();
 });
 
 /// Checklist items for a given note.
