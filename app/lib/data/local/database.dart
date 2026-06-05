@@ -102,7 +102,16 @@ class SyncCursors extends Table {
 @DriftDatabase(tables: [Notes, ChecklistItems, Attachments, SyncCursors])
 class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor])
-      : super(executor ?? driftDatabase(name: 'noteesek'));
+      : super(executor ??
+            driftDatabase(
+              name: 'noteesek',
+              // Required for web builds: assets live in web/ (see README).
+              // Ignored on native platforms.
+              web: DriftWebOptions(
+                sqlite3Wasm: Uri.parse('sqlite3.wasm'),
+                driftWorker: Uri.parse('drift_worker.js'),
+              ),
+            ));
 
   @override
   int get schemaVersion => 2;

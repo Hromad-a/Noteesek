@@ -18,6 +18,19 @@ dart run build_runner build --delete-conflicting-outputs
 After changing any `drift` table or other generated source, re-run the
 `build_runner` command (or use `dart run build_runner watch`).
 
+### Web assets (required for the web build)
+
+The web build runs SQLite via WebAssembly, so two assets must exist in `web/`
+(committed in this repo, must match the dependency versions):
+
+- `web/sqlite3.wasm` — from the `sqlite3` package's GitHub releases
+- `web/drift_worker.js` — from the `drift` package's GitHub releases
+
+`AppDatabase` passes these via `driftDatabase(web: ...)`. Without them, the app
+throws *"When compiling to the web, the `web` parameter needs to be set"* the
+first time it opens the database (i.e. right after login). Native/Android builds
+don't use these.
+
 ## Run
 
 ```bash
