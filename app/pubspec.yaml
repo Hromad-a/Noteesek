@@ -72,6 +72,12 @@ flutter_launcher_icons:
   image_path: "icon.png"
   android: true
   ios: false
+  # Adaptive icon (Android 8+): without these, Android wraps the legacy square
+  # PNG in a white shim and shrinks it inside the launcher's shape mask — the
+  # "white borders / not fully expanded" look. The background fills the whole
+  # masked tile; the foreground is the same full-bleed art so nothing shows white.
+  adaptive_icon_background: "#CEB1E8"
+  adaptive_icon_foreground: "icon.png"
   web:
     generate: true
     image_path: "icon.png"
