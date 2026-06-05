@@ -24,6 +24,10 @@ app/**/*.freezed.dart
 *.local
 .env
 .env.*
+!.env.example
+
+# Deploy data dir created next to the root docker-compose.yml
+/pb_data/
 
 # OS / editor
 .DS_Store

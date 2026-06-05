@@ -16,14 +16,48 @@ Noteesek/
 └── docs/              # protocol & self-hosting notes
 ```
 
-## Quick start (backend)
+## Deploy (any machine with Docker)
+
+Run a published release without checking out the source or building anything.
+Grab the root [`docker-compose.yml`](docker-compose.yml) and run:
 
 ```bash
-cd server
 docker compose up -d
 ```
 
+This pulls a prebuilt multi-arch image (amd64 + arm64) from the GitHub Container
+Registry — `ghcr.io/hromad-a/noteesek` — with the web app, server, and schema
+all bundled in. Then open:
+
+- Web app: <http://localhost:8090/>
+- Admin UI: <http://localhost:8090/_/>
+
+Persistent data is stored in `./pb_data` next to the compose file (back it up by
+copying that folder). To pin a version or change the port, copy `.env.example`
+to `.env` and edit it.
+
+## Quick start (backend, build from source)
+
+```bash
+cd server
+docker compose up -d --build
+```
+
 PocketBase admin UI: <http://localhost:8090/_/>
+
+## Releasing
+
+Images are published automatically by
+[`.github/workflows/docker-publish.yml`](.github/workflows/docker-publish.yml)
+when a semver tag is pushed:
+
+```bash
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+That builds and pushes `ghcr.io/hromad-a/noteesek` tagged `0.2.0`, `0.2`, `0`,
+and `latest`. Use full `vX.Y.Z` tags so the version tags are derived correctly.
 
 ## Status
 
