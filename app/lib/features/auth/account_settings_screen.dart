@@ -28,10 +28,46 @@ class _AccountSettingsScreenState extends ConsumerState<AccountSettingsScreen> {
 
   bool _serverBusy = false;
 
+  /// Reachability of the server we'd talk to. Gates the password change: a
+  /// password change can't succeed (or be confirmed) while the server is down.
+  _Conn _conn = _Conn.unknown;
+
   @override
   void initState() {
     super.initState();
     _serverCtrl = TextEditingController(text: ref.read(serverUrlProvider));
+    // Probe the currently-active server so password changes are gated correctly.
+    _testConnection(ref.read(pocketBaseProvider).baseURL, silent: true);
+  }
+
+  void _snack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  /// Pings `<url>/api/health`. Updates [_conn]; when not [silent], also reports
+  /// the result via a snackbar (used by the manual "Test connection" button).
+  Future<void> _testConnection(String url, {required bool silent}) async {
+    final trimmed = url.trim();
+    final uri = Uri.tryParse(trimmed);
+    if (trimmed.isEmpty || uri == null || !uri.isAbsolute) {
+      setState(() => _conn = _Conn.unreachable);
+      if (!silent) _snack('Enter a valid URL');
+      return;
+    }
+    setState(() => _conn = _Conn.checking);
+    try {
+      await PocketBase(trimmed).health.check();
+      if (!mounted) return;
+      setState(() => _conn = _Conn.ok);
+      if (!silent) _snack('Server is reachable');
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _conn = _Conn.unreachable);
+      if (!silent) _snack('Cannot reach the server');
+    }
   }
 
   @override
@@ -102,9 +138,9 @@ class _AccountSettingsScreenState extends ConsumerState<AccountSettingsScreen> {
     if (!mounted) return;
     setState(() => _serverBusy = false);
     FocusScope.of(context).unfocus();
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(const SnackBar(content: Text('Server URL saved')));
+    _snack('Server URL saved');
+    // Re-probe the now-active server so password gating reflects the new URL.
+    _testConnection(url, silent: true);
   }
 
   Future<void> _signOut() async {
@@ -117,6 +153,25 @@ class _AccountSettingsScreenState extends ConsumerState<AccountSettingsScreen> {
     // Web: the auth gate rebuilds to the login screen reactively. Mobile: pop
     // back to the notes screen.
     if (navigator.canPop()) navigator.pop();
+  }
+
+  /// The status icon shown in the server URL field's "Test connection" button.
+  Widget _connIcon(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    switch (_conn) {
+      case _Conn.checking:
+        return const SizedBox(
+          height: 18,
+          width: 18,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        );
+      case _Conn.ok:
+        return Icon(Icons.check_circle, color: Colors.green.shade600);
+      case _Conn.unreachable:
+        return Icon(Icons.error_outline, color: scheme.error);
+      case _Conn.unknown:
+        return const Icon(Icons.wifi_tethering);
+    }
   }
 
   @override
@@ -178,6 +233,25 @@ class _AccountSettingsScreenState extends ConsumerState<AccountSettingsScreen> {
                   validator: (v) =>
                       v == _newCtrl.text ? null : 'Passwords do not match',
                 ),
+                if (_conn == _Conn.unreachable) ...[
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Icon(Icons.cloud_off,
+                          size: 18,
+                          color: Theme.of(context).colorScheme.error),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          "Server not responding — you can't change your "
+                          'password right now.',
+                          style: TextStyle(
+                              color: Theme.of(context).colorScheme.error),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
                 if (_pwError != null) ...[
                   const SizedBox(height: 12),
                   Text(
@@ -188,7 +262,9 @@ class _AccountSettingsScreenState extends ConsumerState<AccountSettingsScreen> {
                 ],
                 const SizedBox(height: 16),
                 FilledButton(
-                  onPressed: _pwBusy ? null : _changePassword,
+                  onPressed: (_pwBusy || _conn != _Conn.ok)
+                      ? null
+                      : _changePassword,
                   child: Padding(
                     padding: const EdgeInsets.symmetric(vertical: 4),
                     child: _pwBusy
@@ -208,10 +284,17 @@ class _AccountSettingsScreenState extends ConsumerState<AccountSettingsScreen> {
           const _SectionHeader('Server'),
           TextField(
             controller: _serverCtrl,
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               labelText: 'Server URL',
               hintText: 'http://localhost:8090',
-              prefixIcon: Icon(Icons.dns_outlined),
+              prefixIcon: const Icon(Icons.dns_outlined),
+              suffixIcon: IconButton(
+                tooltip: 'Test connection',
+                onPressed: _conn == _Conn.checking
+                    ? null
+                    : () => _testConnection(_serverCtrl.text, silent: false),
+                icon: _connIcon(context),
+              ),
             ),
             keyboardType: TextInputType.url,
             autocorrect: false,
@@ -252,6 +335,10 @@ class _AccountSettingsScreenState extends ConsumerState<AccountSettingsScreen> {
     );
   }
 }
+
+/// Server reachability state used to gate password changes and drive the
+/// "Test connection" status icon.
+enum _Conn { unknown, checking, ok, unreachable }
 
 class _SectionHeader extends StatelessWidget {
   const _SectionHeader(this.label);

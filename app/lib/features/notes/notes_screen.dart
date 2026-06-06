@@ -9,6 +9,8 @@ import '../../providers.dart';
 import '../../sync/sync_controller.dart';
 import '../auth/account_settings_screen.dart';
 import '../auth/login_screen.dart';
+import '../export/export_delivery.dart';
+import '../export/export_service.dart';
 import 'archive_screen.dart';
 import 'label_notes_screen.dart';
 import 'manage_labels_screen.dart';
@@ -214,6 +216,32 @@ class _AppDrawer extends ConsumerWidget {
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
   }
 
+  /// Build a zip of all notes (active + archived) as Markdown and hand it to the
+  /// platform: share sheet on mobile, download on web.
+  Future<void> _exportNotes(BuildContext context, WidgetRef ref) async {
+    final messenger = ScaffoldMessenger.of(context);
+    Navigator.of(context).pop();
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(const SnackBar(content: Text('Preparing export…')));
+    try {
+      final bytes = await NoteExportService(ref.read(notesRepositoryProvider))
+          .buildZip();
+      if (bytes == null) {
+        messenger
+          ..hideCurrentSnackBar()
+          ..showSnackBar(const SnackBar(content: Text('No notes to export')));
+        return;
+      }
+      await deliverExport(bytes, exportFileName());
+      messenger.hideCurrentSnackBar();
+    } catch (e) {
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text('Export failed: $e')));
+    }
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return Drawer(
@@ -270,6 +298,12 @@ class _AppDrawer extends ConsumerWidget {
                     leading: const Icon(Icons.delete_outline),
                     title: const Text('Trash'),
                     onTap: () => _push(context, const TrashScreen()),
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.download_outlined),
+                    title: const Text('Export notes'),
+                    subtitle: const Text('Download all notes as Markdown'),
+                    onTap: () => _exportNotes(context, ref),
                   ),
                   const _LabelsSection(),
                 ],

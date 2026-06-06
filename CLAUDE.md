@@ -96,7 +96,27 @@ delete-forever / empty) · image attachments (protected) · offline substring
 search (title/body/checklist) · **note colors** (curated themed palette,
 `note_colors.dart`) · **labels** (create/assign/filter via drawer, manage on
 `ManageLabelsScreen`) · **account settings** (change password / server URL /
-sign out) · empty notes auto-move to Trash on close.
+sign out) · **Markdown export** (bulk: all active+archived notes → one zip of
+`notes/*.md` + `attachments/*`, share sheet on mobile / download on web) · empty
+notes auto-move to Trash on close.
+
+### Markdown export (`features/export/`)
+- `markdown_export.dart` — pure renderer: YAML frontmatter (title, labels, color,
+  pinned, timestamps) + heading + body; checklists as `- [ ]/[x]` task lists;
+  images as `![](attachments/<id>.jpg)`. Unit-tested, no I/O.
+- `export_service.dart` — `NoteExportService.buildZip()` gathers notes/items/
+  attachments/labels via the repo (`.first` on the streams) and zips with
+  `archive`. Trashed notes excluded.
+- `export_delivery.dart` — platform delivery via conditional import:
+  `_io` (share_plus) / `_web` (blob + anchor download) / `_stub`.
+- Triggered from the drawer "Export notes" row.
+
+### Account settings (`features/auth/account_settings_screen.dart`)
+- "Test connection" button by the Server URL field pings `<typed-url>/api/health`
+  (`pb.health.check()` on a throwaway client) and shows a status icon.
+- Password change is **gated on reachability**: the button is disabled (with an
+  inline "server not responding" notice) unless the active server is reachable.
+  Probed on open and re-probed after saving a new URL.
 
 ## Build / run / test
 ```bash
