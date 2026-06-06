@@ -1,11 +1,30 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../data/local/database.dart';
 import '../../data/notes_repository.dart';
+import 'note_colors.dart';
 
 enum _OverflowAction { archive, delete }
+
+const _months = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+];
+
+/// Formats a PocketBase-style ISO timestamp (e.g. "2026-06-05 00:14:58.581Z")
+/// into a short local string like "6 Jun 2026, 14:30". Returns '' if unparseable.
+String _fmtTimestamp(String? iso) {
+  if (iso == null || iso.isEmpty) return '';
+  final dt = DateTime.tryParse(iso)?.toLocal();
+  if (dt == null) return '';
+  final h = dt.hour.toString().padLeft(2, '0');
+  final m = dt.minute.toString().padLeft(2, '0');
+  return '${dt.day} ${_months[dt.month - 1]} ${dt.year}, $h:$m';
+}
 
 /// Create/edit a single note. Edits autosave to the local database (which marks
 /// the row dirty for the next sync). Controllers are seeded once from the note
@@ -22,6 +41,7 @@ class NoteEditorScreen extends ConsumerStatefulWidget {
 class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
   final _titleCtrl = TextEditingController();
   final _bodyCtrl = TextEditingController();
+  final _bodyFocus = FocusNode();
   bool _seeded = false;
 
   // Per-item text controllers for checklists, keyed by item id.
@@ -33,6 +53,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
   void dispose() {
     _titleCtrl.dispose();
     _bodyCtrl.dispose();
+    _bodyFocus.dispose();
     for (final c in _itemCtrls.values) {
       c.dispose();
     }
@@ -44,6 +65,70 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     _titleCtrl.text = note.title;
     _bodyCtrl.text = note.body;
     _seeded = true;
+  }
+
+  /// On leaving the editor, send the note to Trash if it's entirely empty:
+  /// no title, no body / no non-blank checklist items, and no attachments.
+  /// Lets a note created-and-abandoned vanish without clutter (restorable).
+  void _discardIfEmpty(NoteRow note) {
+    final titleEmpty = _titleCtrl.text.trim().isEmpty;
+    final bool contentEmpty;
+    if (note.type == 'checklist') {
+      final items =
+          ref.read(checklistItemsProvider(note.id)).asData?.value ?? const [];
+      contentEmpty = items.every((i) => i.content.trim().isEmpty);
+    } else {
+      contentEmpty = _bodyCtrl.text.trim().isEmpty;
+    }
+    final atts =
+        ref.read(attachmentsProvider(note.id)).asData?.value ?? const [];
+    if (titleEmpty && contentEmpty && atts.isEmpty) {
+      unawaited(_repo.softDelete(note.id));
+    }
+  }
+
+  Future<void> _pickColor(NoteRow note) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Color', style: Theme.of(sheetContext).textTheme.titleMedium),
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 14,
+                runSpacing: 14,
+                children: [
+                  for (final c in kNoteColors)
+                    _ColorSwatch(
+                      noteColor: c,
+                      selected: c.key == note.color,
+                      onTap: () {
+                        _repo.setColor(note.id, c.key);
+                        Navigator.of(sheetContext).pop();
+                      },
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickLabels(String noteId) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (_) => _LabelPickerSheet(noteId: noteId),
+    );
   }
 
   Future<void> _pickImage(String noteId) async {
@@ -86,89 +171,366 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
           return const Scaffold(body: SizedBox.shrink());
         }
         _seed(note);
+        final bg = noteColorFor(context, note.color);
 
-        return Scaffold(
-          appBar: AppBar(
-            actions: [
-              IconButton(
-                tooltip: 'Add image',
-                icon: const Icon(Icons.image_outlined),
-                onPressed: () => _pickImage(note.id),
-              ),
-              IconButton(
-                tooltip: note.pinned ? 'Unpin' : 'Pin',
-                icon: Icon(
-                    note.pinned ? Icons.push_pin : Icons.push_pin_outlined),
-                onPressed: () => _repo.setPinned(note.id, !note.pinned),
-              ),
-              PopupMenuButton<_OverflowAction>(
-                onSelected: (action) async {
-                  switch (action) {
-                    case _OverflowAction.archive:
-                      await _repo.setArchived(note.id, !note.archived);
-                    case _OverflowAction.delete:
-                      await _repo.softDelete(note.id);
-                      if (context.mounted) Navigator.of(context).maybePop();
-                  }
-                },
-                itemBuilder: (context) => [
-                  PopupMenuItem(
-                    value: _OverflowAction.archive,
-                    child: ListTile(
-                      leading: Icon(note.archived
-                          ? Icons.unarchive_outlined
-                          : Icons.archive_outlined),
-                      title: Text(note.archived ? 'Unarchive' : 'Archive'),
-                      contentPadding: EdgeInsets.zero,
-                    ),
-                  ),
-                  PopupMenuItem(
-                    value: _OverflowAction.delete,
-                    child: const ListTile(
-                      leading: Icon(Icons.delete_outline),
-                      title: Text('Delete'),
-                      contentPadding: EdgeInsets.zero,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-          body: ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              TextField(
-                controller: _titleCtrl,
-                decoration: const InputDecoration(
-                  hintText: 'Title',
-                  border: InputBorder.none,
+        return PopScope(
+          canPop: true,
+          onPopInvokedWithResult: (didPop, _) {
+            if (didPop) _discardIfEmpty(note);
+          },
+          child: Scaffold(
+            backgroundColor: bg,
+            appBar: AppBar(
+              backgroundColor: bg,
+              actions: [
+                IconButton(
+                  tooltip: 'Color',
+                  icon: const Icon(Icons.palette_outlined),
+                  onPressed: () => _pickColor(note),
                 ),
-                style: Theme.of(context).textTheme.titleLarge,
-                onChanged: (v) => _repo.updateNoteFields(note.id, title: v),
-              ),
-              const SizedBox(height: 8),
-              _AttachmentsSection(noteId: note.id),
-              if (note.type == 'checklist')
-                _ChecklistEditor(
-                  noteId: note.id,
-                  controllerFor: _itemCtrl,
-                  onForgetController: (id) => _itemCtrls.remove(id)?.dispose(),
-                )
-              else
-                TextField(
-                  controller: _bodyCtrl,
-                  decoration: const InputDecoration(
-                    hintText: 'Note',
-                    border: InputBorder.none,
-                  ),
-                  maxLines: null,
-                  keyboardType: TextInputType.multiline,
-                  onChanged: (v) => _repo.updateNoteFields(note.id, body: v),
+                IconButton(
+                  tooltip: 'Labels',
+                  icon: const Icon(Icons.label_outline),
+                  onPressed: () => _pickLabels(note.id),
                 ),
-            ],
+                IconButton(
+                  tooltip: 'Add image',
+                  icon: const Icon(Icons.image_outlined),
+                  onPressed: () => _pickImage(note.id),
+                ),
+                IconButton(
+                  tooltip: note.pinned ? 'Unpin' : 'Pin',
+                  icon: Icon(
+                      note.pinned ? Icons.push_pin : Icons.push_pin_outlined),
+                  onPressed: () => _repo.setPinned(note.id, !note.pinned),
+                ),
+                PopupMenuButton<_OverflowAction>(
+                  onSelected: (action) async {
+                    switch (action) {
+                      case _OverflowAction.archive:
+                        await _repo.setArchived(note.id, !note.archived);
+                      case _OverflowAction.delete:
+                        await _repo.softDelete(note.id);
+                        if (context.mounted) Navigator.of(context).maybePop();
+                    }
+                  },
+                  itemBuilder: (context) => [
+                    PopupMenuItem(
+                      value: _OverflowAction.archive,
+                      child: ListTile(
+                        leading: Icon(note.archived
+                            ? Icons.unarchive_outlined
+                            : Icons.archive_outlined),
+                        title: Text(note.archived ? 'Unarchive' : 'Archive'),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: _OverflowAction.delete,
+                      child: const ListTile(
+                        leading: Icon(Icons.delete_outline),
+                        title: Text('Delete'),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            body: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                  child: TextField(
+                    controller: _titleCtrl,
+                    decoration: const InputDecoration(
+                      hintText: 'Title',
+                      border: InputBorder.none,
+                    ),
+                    style: Theme.of(context).textTheme.titleLarge,
+                    onChanged: (v) => _repo.updateNoteFields(note.id, title: v),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: _AttachmentsSection(noteId: note.id),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: _EditorLabels(note: note),
+                ),
+                Expanded(
+                  child: note.type == 'checklist'
+                      ? _ChecklistEditor(
+                          noteId: note.id,
+                          controllerFor: _itemCtrl,
+                          onForgetController: (id) =>
+                              _itemCtrls.remove(id)?.dispose(),
+                        )
+                      : GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () => _bodyFocus.requestFocus(),
+                          child: Padding(
+                            padding:
+                                const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                            child: TextField(
+                              controller: _bodyCtrl,
+                              focusNode: _bodyFocus,
+                              decoration: const InputDecoration(
+                                hintText: 'Note',
+                                border: InputBorder.none,
+                              ),
+                              expands: true,
+                              maxLines: null,
+                              minLines: null,
+                              textAlignVertical: TextAlignVertical.top,
+                              keyboardType: TextInputType.multiline,
+                              onChanged: (v) =>
+                                  _repo.updateNoteFields(note.id, body: v),
+                            ),
+                          ),
+                        ),
+                ),
+              ],
+            ),
+            bottomNavigationBar: _TimestampBar(
+              created: note.created,
+              updated: note.updated,
+              color: bg,
+            ),
+            floatingActionButton: FloatingActionButton(
+              tooltip: 'Save & close',
+              onPressed: () => Navigator.of(context).maybePop(),
+              child: const Icon(Icons.check),
+            ),
           ),
         );
       },
+    );
+  }
+}
+
+/// Bottom bar showing when the note was created and last edited (bottom-left).
+class _TimestampBar extends StatelessWidget {
+  const _TimestampBar({
+    required this.created,
+    required this.updated,
+    this.color,
+  });
+
+  final String? created;
+  final String updated;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final createdStr = _fmtTimestamp(created);
+    final updatedStr = _fmtTimestamp(updated);
+    final style = Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        );
+
+    return BottomAppBar(
+      color: color,
+      height: 56,
+      // Leave room on the right for the floating check button.
+      padding: const EdgeInsets.only(left: 16, right: 88),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (createdStr.isNotEmpty) Text('Created $createdStr', style: style),
+            if (updatedStr.isNotEmpty) Text('Edited $updatedStr', style: style),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Chips for the labels currently assigned to the note, each removable. Hidden
+/// when the note has no labels.
+class _EditorLabels extends ConsumerWidget {
+  const _EditorLabels({required this.note});
+
+  final NoteRow note;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final assigned = labelIdsOf(note);
+    if (assigned.isEmpty) return const SizedBox.shrink();
+    final repo = ref.read(notesRepositoryProvider);
+    final labels = ref.watch(labelsProvider).asData?.value ?? const [];
+    final names = {for (final l in labels) l.id: l.name};
+
+    final chips = [
+      for (final id in assigned)
+        if (names.containsKey(id))
+          Chip(
+            label: Text(names[id]!),
+            visualDensity: VisualDensity.compact,
+            onDeleted: () => repo.setNoteLabels(
+              note.id,
+              assigned.where((e) => e != id).toList(),
+            ),
+          ),
+    ];
+    if (chips.isEmpty) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Wrap(spacing: 8, runSpacing: 4, children: chips),
+    );
+  }
+}
+
+/// Bottom sheet to toggle the note's labels and create new ones inline.
+class _LabelPickerSheet extends ConsumerStatefulWidget {
+  const _LabelPickerSheet({required this.noteId});
+
+  final String noteId;
+
+  @override
+  ConsumerState<_LabelPickerSheet> createState() => _LabelPickerSheetState();
+}
+
+class _LabelPickerSheetState extends ConsumerState<_LabelPickerSheet> {
+  final _newCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _newCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _createAndAssign(List<String> current) async {
+    final name = _newCtrl.text.trim();
+    if (name.isEmpty) return;
+    final repo = ref.read(notesRepositoryProvider);
+    final id = await repo.createLabel(name);
+    await repo.setNoteLabels(widget.noteId, [...current, id]);
+    _newCtrl.clear();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final repo = ref.read(notesRepositoryProvider);
+    final note = ref.watch(noteProvider(widget.noteId)).asData?.value;
+    final labels = ref.watch(labelsProvider).asData?.value ?? const [];
+    final assigned = note == null ? <String>[] : labelIdsOf(note);
+
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.only(
+          left: 16,
+          right: 16,
+          bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Labels', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 8),
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  for (final l in labels)
+                    CheckboxListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      controlAffinity: ListTileControlAffinity.leading,
+                      value: assigned.contains(l.id),
+                      title: Text(l.name),
+                      onChanged: (checked) {
+                        final next = [...assigned];
+                        if (checked ?? false) {
+                          next.add(l.id);
+                        } else {
+                          next.remove(l.id);
+                        }
+                        repo.setNoteLabels(widget.noteId, next);
+                      },
+                    ),
+                ],
+              ),
+            ),
+            const Divider(),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _newCtrl,
+                    decoration: const InputDecoration(
+                      hintText: 'Create new label',
+                      prefixIcon: Icon(Icons.add),
+                      isDense: true,
+                    ),
+                    textInputAction: TextInputAction.done,
+                    onSubmitted: (_) => _createAndAssign(assigned),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => _createAndAssign(assigned),
+                  child: const Text('Add'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A circular color swatch in the editor's palette sheet. The default color
+/// (empty key) is drawn as a "no color" outline with a reset icon.
+class _ColorSwatch extends StatelessWidget {
+  const _ColorSwatch({
+    required this.noteColor,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final NoteColor noteColor;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDefault = noteColor.key.isEmpty;
+    final fill = noteSwatchFor(context, noteColor.key);
+    final outline = Theme.of(context).colorScheme.outline;
+    final primary = Theme.of(context).colorScheme.primary;
+
+    return Tooltip(
+      message: noteColor.label,
+      child: InkWell(
+        onTap: onTap,
+        customBorder: const CircleBorder(),
+        child: Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            color: fill,
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: selected ? primary : outline,
+              width: selected ? 3 : 1,
+            ),
+          ),
+          child: isDefault
+              ? Icon(Icons.format_color_reset_outlined, size: 20, color: outline)
+              : selected
+                  ? Icon(Icons.check, size: 20, color: primary)
+                  : null,
+        ),
+      ),
     );
   }
 }
@@ -187,7 +549,7 @@ class _AttachmentsSection extends ConsumerWidget {
       data: (items) {
         if (items.isEmpty) return const SizedBox.shrink();
         return Padding(
-          padding: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.only(top: 8, bottom: 4),
           child: Wrap(
             spacing: 8,
             runSpacing: 8,
@@ -253,6 +615,13 @@ class _ChecklistEditorState extends ConsumerState<_ChecklistEditor> {
   FocusNode _focusNodeFor(String id) =>
       _focusNodes.putIfAbsent(id, () => FocusNode());
 
+  Future<void> _addAndFocus() async {
+    final newId = await ref.read(notesRepositoryProvider).addItem(widget.noteId);
+    if (mounted) {
+      setState(() => _pendingFocusId = newId);
+    }
+  }
+
   @override
   void dispose() {
     for (final fn in _focusNodes.values) {
@@ -283,61 +652,81 @@ class _ChecklistEditorState extends ConsumerState<_ChecklistEditor> {
           });
         }
 
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (final it in items)
-              Row(
-                key: ValueKey(it.id),
-                children: [
-                  Checkbox(
-                    value: it.checked,
-                    onChanged: (v) =>
-                        repo.setItemChecked(it.id, v ?? false),
-                  ),
-                  Expanded(
-                    child: TextField(
-                      controller: widget.controllerFor(it),
-                      focusNode: _focusNodeFor(it.id),
-                      textInputAction: TextInputAction.next,
-                      decoration: const InputDecoration(
-                        isDense: true,
-                        border: InputBorder.none,
-                        hintText: 'List item',
+        // Fill the available height so a tap anywhere in the empty area below
+        // the list adds (and focuses) a new item, while still scrolling when
+        // the list is long.
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            return SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                child: IntrinsicHeight(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      for (final it in items)
+                        Row(
+                          key: ValueKey(it.id),
+                          children: [
+                            Checkbox(
+                              value: it.checked,
+                              onChanged: (v) =>
+                                  repo.setItemChecked(it.id, v ?? false),
+                            ),
+                            Expanded(
+                              child: TextField(
+                                controller: widget.controllerFor(it),
+                                focusNode: _focusNodeFor(it.id),
+                                textInputAction: TextInputAction.next,
+                                decoration: const InputDecoration(
+                                  isDense: true,
+                                  border: InputBorder.none,
+                                  hintText: 'List item',
+                                ),
+                                style: it.checked
+                                    ? const TextStyle(
+                                        decoration: TextDecoration.lineThrough)
+                                    : null,
+                                onChanged: (v) =>
+                                    repo.setItemContent(it.id, v),
+                                onSubmitted: (_) => _addAndFocus(),
+                              ),
+                            ),
+                            IconButton(
+                              visualDensity: VisualDensity.compact,
+                              icon: const Icon(Icons.close, size: 18),
+                              tooltip: 'Remove',
+                              onPressed: () {
+                                repo.deleteItem(it.id);
+                                widget.onForgetController(it.id);
+                                _focusNodes.remove(it.id)?.dispose();
+                              },
+                            ),
+                          ],
+                        ),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton.icon(
+                          icon: const Icon(Icons.add),
+                          label: const Text('Add item'),
+                          onPressed: _addAndFocus,
+                        ),
                       ),
-                      style: it.checked
-                          ? const TextStyle(
-                              decoration: TextDecoration.lineThrough)
-                          : null,
-                      onChanged: (v) => repo.setItemContent(it.id, v),
-                      onSubmitted: (_) async {
-                        final newId =
-                            await repo.addItem(widget.noteId);
-                        if (mounted) {
-                          setState(() => _pendingFocusId = newId);
-                        }
-                      },
-                    ),
+                      // Tappable filler: tapping below the list adds an item.
+                      Expanded(
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: _addAndFocus,
+                          child: const SizedBox(width: double.infinity),
+                        ),
+                      ),
+                    ],
                   ),
-                  IconButton(
-                    visualDensity: VisualDensity.compact,
-                    icon: const Icon(Icons.close, size: 18),
-                    tooltip: 'Remove',
-                    onPressed: () {
-                      repo.deleteItem(it.id);
-                      widget.onForgetController(it.id);
-                      _focusNodes.remove(it.id)?.dispose();
-                    },
-                  ),
-                ],
+                ),
               ),
-            TextButton.icon(
-              icon: const Icon(Icons.add),
-              label: const Text('Add item'),
-              onPressed: () => repo.addItem(widget.noteId),
-            ),
-          ],
+            );
+          },
         );
       },
     );

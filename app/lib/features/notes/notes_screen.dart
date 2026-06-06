@@ -3,13 +3,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 
-import '../../config/app_config.dart';
 import '../../data/local/database.dart';
 import '../../data/notes_repository.dart';
 import '../../providers.dart';
 import '../../sync/sync_controller.dart';
+import '../auth/account_settings_screen.dart';
 import '../auth/login_screen.dart';
 import 'archive_screen.dart';
+import 'label_notes_screen.dart';
+import 'manage_labels_screen.dart';
 import 'note_card.dart';
 import 'note_editor_screen.dart';
 import 'trash_screen.dart';
@@ -250,44 +252,35 @@ class _AppDrawer extends ConsumerWidget {
                 ),
               ),
             ),
-            ListTile(
-              leading: const Icon(Icons.notes),
-              title: const Text('Notes'),
-              onTap: () => Navigator.of(context).pop(),
+            Expanded(
+              child: ListView(
+                padding: EdgeInsets.zero,
+                children: [
+                  ListTile(
+                    leading: const Icon(Icons.notes),
+                    title: const Text('Notes'),
+                    onTap: () => Navigator.of(context).pop(),
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.archive_outlined),
+                    title: const Text('Archive'),
+                    onTap: () => _push(context, const ArchiveScreen()),
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.delete_outline),
+                    title: const Text('Trash'),
+                    onTap: () => _push(context, const TrashScreen()),
+                  ),
+                  const _LabelsSection(),
+                ],
+              ),
             ),
-            ListTile(
-              leading: const Icon(Icons.archive_outlined),
-              title: const Text('Archive'),
-              onTap: () => _push(context, const ArchiveScreen()),
-            ),
-            ListTile(
-              leading: const Icon(Icons.delete_outline),
-              title: const Text('Trash'),
-              onTap: () => _push(context, const TrashScreen()),
-            ),
-            const Spacer(),
             const Divider(height: 1),
-            if (kIsWeb)
+            if (kIsWeb || connected)
               ListTile(
-                leading: const Icon(Icons.logout),
-                title: const Text('Sign out'),
-                onTap: () {
-                  Navigator.of(context).pop();
-                  ref.read(pocketBaseProvider).authStore.clear();
-                },
-              )
-            else if (connected)
-              ListTile(
-                leading: const Icon(Icons.logout),
-                title: const Text('Disconnect'),
-                subtitle: const Text('Stop syncing; notes stay on device'),
-                onTap: () async {
-                  Navigator.of(context).pop();
-                  ref.read(pocketBaseProvider).authStore.clear();
-                  await ref
-                      .read(activeOwnerProvider.notifier)
-                      .set(AppConfig.localOwner);
-                },
+                leading: const Icon(Icons.manage_accounts_outlined),
+                title: const Text('Account settings'),
+                onTap: () => _push(context, const AccountSettingsScreen()),
               )
             else
               ListTile(
@@ -299,6 +292,53 @@ class _AppDrawer extends ConsumerWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Drawer section listing the user's labels (tap to filter) plus an entry to
+/// manage them. Only the "Edit labels" row shows when there are no labels yet.
+class _LabelsSection extends ConsumerWidget {
+  const _LabelsSection();
+
+  void _push(BuildContext context, Widget screen) {
+    Navigator.of(context).pop();
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final labels = ref.watch(labelsProvider).asData?.value ?? const [];
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Divider(height: 1),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+          child: Text('Labels',
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  )),
+        ),
+        for (final l in labels)
+          ListTile(
+            dense: true,
+            leading: const Icon(Icons.label_outline),
+            title: Text(l.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+            onTap: () => _push(
+              context,
+              LabelNotesScreen(labelId: l.id, labelName: l.name),
+            ),
+          ),
+        ListTile(
+          dense: true,
+          leading: const Icon(Icons.edit_outlined),
+          title: const Text('Edit labels'),
+          onTap: () => _push(context, const ManageLabelsScreen()),
+        ),
+      ],
     );
   }
 }

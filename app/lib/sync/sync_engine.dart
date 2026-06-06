@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:drift/drift.dart';
 import 'package:http/http.dart' as http;
 import 'package:pocketbase/pocketbase.dart';
@@ -19,6 +21,7 @@ class SyncEngine {
   static const _notes = 'notes';
   static const _items = 'checklist_items';
   static const _attachments = 'attachments';
+  static const _labels = 'labels';
 
   bool _running = false;
 
@@ -29,11 +32,14 @@ class SyncEngine {
     if (_running || !_pb.authStore.isValid) return false;
     _running = true;
     try {
-      // Push parents before children so a child's `note` relation resolves.
+      // Push labels first so a note's `labels` relation resolves, then parents
+      // before children so a child's `note` relation resolves.
+      await _pushLabels();
       await _pushNotes();
       await _pushItems();
       await _pushAttachments();
       // Pull in the same order.
+      await _pullLabels();
       await _pullNotes();
       await _pullItems();
       await _pullAttachments();
@@ -55,7 +61,39 @@ class SyncEngine {
     }
   }
 
+  /// Decodes a note's JSON-array `labels` string into a list of label ids.
+  List<String> _decodeIds(String raw) {
+    if (raw.isEmpty) return const [];
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is List) return decoded.map((e) => e.toString()).toList();
+    } catch (_) {/* fall through */}
+    return const [];
+  }
+
   // ---------------- Push ----------------
+
+  Future<void> _pushLabels() async {
+    final dirty =
+        await (_db.select(_db.labels)..where((t) => t.dirty.equals(true))).get();
+    for (final l in dirty) {
+      final body = {
+        'owner': l.owner,
+        'name': l.name,
+        'deleted': l.deleted,
+      };
+      final saved = await _upsert(_labels, l.id, body);
+      if (saved != null) {
+        await (_db.update(_db.labels)..where((t) => t.id.equals(l.id))).write(
+          LabelsCompanion(
+            updated: Value(saved.getStringValue('updated')),
+            created: Value(saved.getStringValue('created')),
+            dirty: const Value(false),
+          ),
+        );
+      }
+    }
+  }
 
   Future<void> _pushNotes() async {
     final dirty =
@@ -68,6 +106,8 @@ class SyncEngine {
         'body': n.body,
         'pinned': n.pinned,
         'archived': n.archived,
+        'color': n.color,
+        'labels': _decodeIds(n.labels),
         'deleted': n.deleted,
       };
       final saved = await _upsert(_notes, n.id, body);
@@ -172,6 +212,20 @@ class SyncEngine {
 
   // ---------------- Pull ----------------
 
+  Future<void> _pullLabels() async {
+    await _pull(_labels, (rec) async {
+      await _db.into(_db.labels).insertOnConflictUpdate(LabelsCompanion(
+            id: Value(rec.id),
+            owner: Value(rec.getStringValue('owner')),
+            name: Value(rec.getStringValue('name')),
+            deleted: Value(rec.getBoolValue('deleted')),
+            created: Value(rec.getStringValue('created')),
+            updated: Value(rec.getStringValue('updated')),
+            dirty: const Value(false),
+          ));
+    }, _localLabelUpdated);
+  }
+
   Future<void> _pullNotes() async {
     await _pull(_notes, (rec) async {
       await _db.into(_db.notes).insertOnConflictUpdate(NotesCompanion(
@@ -182,6 +236,8 @@ class SyncEngine {
             body: Value(rec.getStringValue('body')),
             pinned: Value(rec.getBoolValue('pinned')),
             archived: Value(rec.getBoolValue('archived')),
+            color: Value(rec.getStringValue('color')),
+            labels: Value(jsonEncode(rec.getListValue<String>('labels'))),
             deleted: Value(rec.getBoolValue('deleted')),
             created: Value(rec.getStringValue('created')),
             updated: Value(rec.getStringValue('updated')),
@@ -298,6 +354,12 @@ class SyncEngine {
     if (maxUpdated != cursor) {
       await _setCursor(collection, maxUpdated);
     }
+  }
+
+  Future<({String updated, bool dirty})?> _localLabelUpdated(String id) async {
+    final row = await (_db.select(_db.labels)..where((t) => t.id.equals(id)))
+        .getSingleOrNull();
+    return row == null ? null : (updated: row.updated, dirty: row.dirty);
   }
 
   Future<({String updated, bool dirty})?> _localNoteUpdated(String id) async {

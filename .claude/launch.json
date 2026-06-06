@@ -9,6 +9,12 @@
         "cd app && exec flutter run -d web-server --web-port=8088 --web-hostname=127.0.0.1"
       ],
       "port": 8088
+    },
+    {
+      "name": "noteesek-docker",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-lc", "exec sleep 100000"],
+      "port": 8090
     }
   ]
 }

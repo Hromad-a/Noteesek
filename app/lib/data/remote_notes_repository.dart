@@ -19,6 +19,7 @@ class RemoteNotesRepository implements NotesRepository {
   final Map<String, NoteRow> _notes = {};
   final Map<String, ChecklistItemRow> _items = {};
   final Map<String, AttachmentRow> _attachments = {};
+  final Map<String, LabelRow> _labels = {};
 
   final _events = StreamController<void>.broadcast();
   final List<UnsubscribeFunc> _unsubs = [];
@@ -47,9 +48,16 @@ class RemoteNotesRepository implements NotesRepository {
     for (final r in atts) {
       _attachments[r.id] = _attachmentFrom(r, await _downloadBytes(r));
     }
+    final labels = await _pb.collection('labels').getFullList();
+    for (final r in labels) {
+      _labels[r.id] = _labelFrom(r);
+    }
 
     _unsubs.add(await _pb.collection('notes').subscribe('*', (e) {
       _applyEvent(e, _notes, (r) => _noteFrom(r));
+    }));
+    _unsubs.add(await _pb.collection('labels').subscribe('*', (e) {
+      _applyEvent(e, _labels, (r) => _labelFrom(r));
     }));
     _unsubs.add(await _pb.collection('checklist_items').subscribe('*', (e) {
       _applyEvent(e, _items, (r) => _itemFrom(r));
@@ -173,6 +181,10 @@ class RemoteNotesRepository implements NotesRepository {
       _updateNote(id, {'archived': archived});
 
   @override
+  Future<void> setColor(String id, String color) =>
+      _updateNote(id, {'color': color});
+
+  @override
   Future<void> softDelete(String id) => _updateNote(id, {'deleted': true});
 
   @override
@@ -210,6 +222,58 @@ class RemoteNotesRepository implements NotesRepository {
 
   @override
   Future<void> claimLocalNotes(String userId) async {/* no local notes on web */}
+
+  // ---------------- Labels ----------------
+
+  @override
+  Stream<List<LabelRow>> watchLabels() => _view(() {
+        final list = _labels.values.where((l) => !l.deleted).toList()
+          ..sort((a, b) =>
+              a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+        return list;
+      });
+
+  @override
+  Future<String> createLabel(String name) async {
+    final r = await _pb.collection('labels').create(body: {
+      'owner': _ownerId,
+      'name': name.trim(),
+      'deleted': false,
+    });
+    _labels[r.id] = _labelFrom(r);
+    _events.add(null);
+    return r.id;
+  }
+
+  @override
+  Future<void> renameLabel(String id, String name) async {
+    final r =
+        await _pb.collection('labels').update(id, body: {'name': name.trim()});
+    _labels[id] = _labelFrom(r);
+    _events.add(null);
+  }
+
+  @override
+  Future<void> deleteLabel(String id) async {
+    final r = await _pb.collection('labels').update(id, body: {'deleted': true});
+    _labels[id] = _labelFrom(r);
+    // Strip the id from every note that carries it.
+    for (final note in _notes.values.toList()) {
+      final ids = labelIdsOf(note);
+      if (ids.remove(id)) {
+        await setNoteLabels(note.id, ids);
+      }
+    }
+    _events.add(null);
+  }
+
+  @override
+  Future<void> setNoteLabels(String noteId, List<String> labelIds) async {
+    final r =
+        await _pb.collection('notes').update(noteId, body: {'labels': labelIds});
+    _notes[noteId] = _noteFrom(r);
+    _events.add(null);
+  }
 
   // ---------------- Checklist items ----------------
 
@@ -311,11 +375,23 @@ class RemoteNotesRepository implements NotesRepository {
         body: r.getStringValue('body'),
         pinned: r.getBoolValue('pinned'),
         archived: r.getBoolValue('archived'),
+        color: r.getStringValue('color'),
+        labels: encodeLabelIds(r.getListValue<String>('labels')),
         deleted: r.getBoolValue('deleted'),
         created: r.getStringValue('created'),
         updated: r.getStringValue('updated'),
         dirty: false,
         position: r.getIntValue('position'),
+      );
+
+  LabelRow _labelFrom(RecordModel r) => LabelRow(
+        id: r.id,
+        owner: r.getStringValue('owner'),
+        name: r.getStringValue('name'),
+        deleted: r.getBoolValue('deleted'),
+        created: r.getStringValue('created'),
+        updated: r.getStringValue('updated'),
+        dirty: false,
       );
 
   ChecklistItemRow _itemFrom(RecordModel r) => ChecklistItemRow(

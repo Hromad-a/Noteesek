@@ -117,6 +117,10 @@ class LocalNotesRepository implements NotesRepository {
       _patch(id, NotesCompanion(archived: Value(archived)));
 
   @override
+  Future<void> setColor(String id, String color) =>
+      _patch(id, NotesCompanion(color: Value(color)));
+
+  @override
   Future<void> softDelete(String id) =>
       _patch(id, const NotesCompanion(deleted: Value(true)));
 
@@ -186,6 +190,69 @@ class LocalNotesRepository implements NotesRepository {
       dirty: const Value(true),
     ));
   }
+
+  // ---- Labels ----
+
+  @override
+  Stream<List<LabelRow>> watchLabels() {
+    return (_db.select(_db.labels)
+          ..where((t) => t.deleted.equals(false))
+          ..orderBy([
+            (t) => OrderingTerm(expression: t.name.lower()),
+          ]))
+        .watch();
+  }
+
+  @override
+  Future<String> createLabel(String name) async {
+    final id = newPbId();
+    final now = pbNow();
+    await _db.into(_db.labels).insert(LabelsCompanion.insert(
+          id: id,
+          owner: _ownerId,
+          name: Value(name.trim()),
+          created: Value(now),
+          updated: Value(now),
+          dirty: const Value(true),
+        ));
+    return id;
+  }
+
+  @override
+  Future<void> renameLabel(String id, String name) async {
+    await (_db.update(_db.labels)..where((t) => t.id.equals(id))).write(
+      LabelsCompanion(
+        name: Value(name.trim()),
+        updated: Value(pbNow()),
+        dirty: const Value(true),
+      ),
+    );
+  }
+
+  @override
+  Future<void> deleteLabel(String id) async {
+    await _db.transaction(() async {
+      await (_db.update(_db.labels)..where((t) => t.id.equals(id))).write(
+        LabelsCompanion(
+          deleted: const Value(true),
+          updated: Value(pbNow()),
+          dirty: const Value(true),
+        ),
+      );
+      // Strip the id from every note that carries it.
+      final notes = await _db.select(_db.notes).get();
+      for (final n in notes) {
+        final ids = labelIdsOfRaw(n.labels);
+        if (ids.remove(id)) {
+          await _patch(n.id, NotesCompanion(labels: Value(encodeLabelIds(ids))));
+        }
+      }
+    });
+  }
+
+  @override
+  Future<void> setNoteLabels(String noteId, List<String> labelIds) =>
+      _patch(noteId, NotesCompanion(labels: Value(encodeLabelIds(labelIds))));
 
   // ---- Checklist items ----
 

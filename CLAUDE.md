@@ -61,12 +61,16 @@ Noteesek/
 ### Backend (PocketBase v0.39, single binary)
 Collections, all **owner-scoped** (`owner = @request.auth.id`, or `note.owner`
 for children):
-- `notes`: type (text|checklist), title, body, pinned, archived, deleted, created, updated
+- `notes`: type (text|checklist), title, body, pinned, archived, **color**,
+  **labels (multi-rel → labels)**, deleted, created, updated
 - `checklist_items`: note (rel), text, checked, position, deleted, …
 - `attachments`: note (rel), **file (protected)**, deleted, … (image bytes)
+- `labels`: name, deleted, created, updated (user tags; assigned via
+  `notes.labels`, stored locally as a JSON id array string)
 
 Protected files require a short-lived token (`pb.files.getToken()`) to download.
-`created`/`updated` are autodate; `updated` drives last-write-wins sync.
+`created`/`updated` are autodate; `updated` drives last-write-wins sync. Labels
+sync first each cycle so a note's `labels` relation resolves server-side.
 
 ### Sync (mobile only) — see docs/sync-protocol.md
 Last-write-wins per record. Local rows carry `dirty` + `updated`. Push dirty
@@ -89,7 +93,10 @@ responding" indicator + snackbar.
 Multi-user auth · offline-first mobile + optional sync · web online/realtime ·
 text + checklist notes · pin · **archive** (drawer) · **trash** (restore /
 delete-forever / empty) · image attachments (protected) · offline substring
-search (title/body/checklist).
+search (title/body/checklist) · **note colors** (curated themed palette,
+`note_colors.dart`) · **labels** (create/assign/filter via drawer, manage on
+`ManageLabelsScreen`) · **account settings** (change password / server URL /
+sign out) · empty notes auto-move to Trash on close.
 
 ## Build / run / test
 ```bash
@@ -126,6 +133,6 @@ flutter analyze
   use `Notifier`).
 
 ## Deferred / ideas
-Release-signed APK, iOS, FTS5 search, labels/colors, reminders, HTTPS (then
+Release-signed APK, iOS, FTS5 search, reminders, per-label colors, HTTPS (then
 tighten cleartext). CI publishes multi-arch images to `ghcr.io/hromad-a/noteesek`
 on version tags.

@@ -27,6 +27,13 @@ class Notes extends Table {
   BoolColumn get pinned => boolean().withDefault(const Constant(false))();
   BoolColumn get archived => boolean().withDefault(const Constant(false))();
 
+  /// Background color key (see note_colors.dart). Empty = default surface.
+  TextColumn get color => text().withDefault(const Constant(''))();
+
+  /// Assigned label ids as a JSON array string (e.g. '["id1","id2"]').
+  /// Membership rides this note's last-write-wins sync.
+  TextColumn get labels => text().withDefault(const Constant('[]'))();
+
   /// Soft delete tombstone so removals propagate before being purged.
   BoolColumn get deleted => boolean().withDefault(const Constant(false))();
 
@@ -93,6 +100,22 @@ class Attachments extends Table {
   Set<Column> get primaryKey => {id};
 }
 
+@DataClassName('LabelRow')
+class Labels extends Table {
+  TextColumn get id => text()();
+  TextColumn get owner => text()();
+  TextColumn get name => text().withDefault(const Constant(''))();
+
+  /// Soft delete tombstone so removals propagate before being purged.
+  BoolColumn get deleted => boolean().withDefault(const Constant(false))();
+  TextColumn get created => text().nullable()();
+  TextColumn get updated => text().withDefault(const Constant(''))();
+  BoolColumn get dirty => boolean().withDefault(const Constant(false))();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
 /// Per-collection pull cursor: the newest server `updated` seen on last pull.
 class SyncCursors extends Table {
   TextColumn get collection => text()();
@@ -102,7 +125,8 @@ class SyncCursors extends Table {
   Set<Column> get primaryKey => {collection};
 }
 
-@DriftDatabase(tables: [Notes, ChecklistItems, Attachments, SyncCursors])
+@DriftDatabase(
+    tables: [Notes, ChecklistItems, Attachments, Labels, SyncCursors])
 class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor])
       : super(executor ??
@@ -117,7 +141,7 @@ class AppDatabase extends _$AppDatabase {
             ));
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 5;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -128,6 +152,13 @@ class AppDatabase extends _$AppDatabase {
           }
           if (from < 3) {
             await m.addColumn(notes, notes.position);
+          }
+          if (from < 4) {
+            await m.addColumn(notes, notes.color);
+          }
+          if (from < 5) {
+            await m.addColumn(notes, notes.labels);
+            await m.createTable(labels);
           }
         },
       );

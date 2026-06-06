@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/local/database.dart';
 import '../../data/notes_repository.dart';
+import 'note_colors.dart';
 
 /// A single Keep-style note card shown in the grid.
 class NoteCard extends ConsumerWidget {
@@ -27,6 +28,7 @@ class NoteCard extends ConsumerWidget {
 
     final cardContent = Card(
       clipBehavior: Clip.antiAlias,
+      color: noteColorFor(context, note.color),
       shape: isDragTarget
           ? RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),
@@ -71,6 +73,7 @@ class NoteCard extends ConsumerWidget {
                       style: theme.textTheme.bodyMedium
                           ?.copyWith(color: theme.disabledColor),
                     ),
+                  _CardLabels(note: note),
                   _CardFooter(note: note),
                 ],
               ),
@@ -196,6 +199,52 @@ class _ChecklistPreview extends ConsumerWidget {
         );
       },
       orElse: () => const SizedBox.shrink(),
+    );
+  }
+}
+
+/// Compact label chips on a card. Shows up to 3 names, then "+N".
+class _CardLabels extends ConsumerWidget {
+  const _CardLabels({required this.note});
+
+  final NoteRow note;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final assigned = labelIdsOf(note);
+    if (assigned.isEmpty) return const SizedBox.shrink();
+    final labels = ref.watch(labelsProvider).asData?.value ?? const [];
+    final names = {for (final l in labels) l.id: l.name};
+    final visible =
+        assigned.where(names.containsKey).map((id) => names[id]!).toList();
+    if (visible.isEmpty) return const SizedBox.shrink();
+
+    final theme = Theme.of(context);
+    final shown = visible.take(3).toList();
+    final extra = visible.length - shown.length;
+
+    Widget chip(String text) => Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text(text,
+              style: theme.textTheme.labelSmall,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis),
+        );
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Wrap(
+        spacing: 4,
+        runSpacing: 4,
+        children: [
+          for (final name in shown) chip(name),
+          if (extra > 0) chip('+$extra'),
+        ],
+      ),
     );
   }
 }
