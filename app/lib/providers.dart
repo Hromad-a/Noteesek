@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:pocketbase/pocketbase.dart';
@@ -106,6 +107,25 @@ final isAuthenticatedProvider = Provider<bool>((ref) {
   final pb = ref.watch(pocketBaseProvider);
   return pb.authStore.isValid;
 });
+
+/// On web, a password-reset token captured from the launch URL (`?reset=…`),
+/// set when the user opens the link from a reset email. Routes the app to the
+/// reset-confirm screen ahead of the login gate. Null on mobile or when absent;
+/// [clear] it once the reset flow is done so the app returns to login.
+class PendingResetTokenNotifier extends Notifier<String?> {
+  @override
+  String? build() {
+    if (!kIsWeb) return null;
+    final token = Uri.base.queryParameters['reset'];
+    return (token != null && token.isNotEmpty) ? token : null;
+  }
+
+  void clear() => state = null;
+}
+
+final pendingResetTokenProvider =
+    NotifierProvider<PendingResetTokenNotifier, String?>(
+        PendingResetTokenNotifier.new);
 
 /// The owner id stamped on locally-created notes. Defaults to the [local]
 /// sentinel until the user connects a server, after which it's their user id.

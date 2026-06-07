@@ -8,6 +8,7 @@ import 'package:pocketbase/pocketbase.dart';
 import '../../data/notes_repository.dart';
 import '../../providers.dart';
 import '../../sync/sync_controller.dart';
+import 'password_reset_screen.dart';
 
 /// Connect to a self-hosted PocketBase server to enable sync (login or
 /// register). The server URL is editable and persisted. On success, existing
@@ -96,6 +97,98 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     if (msg != null && msg.isNotEmpty) return msg;
     if (e.statusCode == 0) return 'Cannot reach the server. Check the URL.';
     return 'Request failed (${e.statusCode}).';
+  }
+
+  /// Sends a password-reset email, then opens the confirm screen so the user can
+  /// enter the emailed code and a new password. Requires a reachable server URL.
+  Future<void> _forgotPassword() async {
+    if ((_serverCtrl.text.trim().isEmpty) ||
+        !(Uri.tryParse(_serverCtrl.text.trim())?.isAbsolute ?? false)) {
+      setState(() => _error = 'Enter your server URL first.');
+      return;
+    }
+
+    final emailCtrl = TextEditingController(text: _emailCtrl.text.trim());
+    final formKey = GlobalKey<FormState>();
+    final email = await showDialog<String>(
+      context: context,
+      builder: (ctx) {
+        void submit() {
+          if (formKey.currentState!.validate()) {
+            Navigator.pop(ctx, emailCtrl.text.trim());
+          }
+        }
+
+        return AlertDialog(
+          title: const Text('Reset password'),
+          content: Form(
+            key: formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                    "Enter your account email and we'll send a reset link."),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: emailCtrl,
+                  autofocus: true,
+                  keyboardType: TextInputType.emailAddress,
+                  autocorrect: false,
+                  decoration: const InputDecoration(
+                    labelText: 'Email',
+                    prefixIcon: Icon(Icons.email_outlined),
+                  ),
+                  validator: (v) =>
+                      (v?.contains('@') ?? false) ? null : 'Enter your email',
+                  onFieldSubmitted: (_) => submit(),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: submit,
+              child: const Text('Send reset email'),
+            ),
+          ],
+        );
+      },
+    );
+    emailCtrl.dispose();
+    if (email == null || !mounted) return;
+
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      // Point the client at the typed server first (mobile may not be connected).
+      await ref.read(serverUrlProvider.notifier).set(_serverCtrl.text.trim());
+      await ref
+          .read(pocketBaseProvider)
+          .collection('users')
+          .requestPasswordReset(email);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(
+          content: Text('If that email has an account, a reset link is on its '
+              'way. Enter the code on the next screen.'),
+        ));
+      await Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => const PasswordResetScreen(),
+      ));
+    } on ClientException catch (e) {
+      setState(() => _error = _humanizeError(e));
+    } catch (e) {
+      setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   @override
@@ -213,6 +306,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         ? 'Have an account? Sign in'
                         : 'New here? Create an account'),
                   ),
+                  if (!_registerMode)
+                    TextButton(
+                      onPressed: _busy ? null : _forgotPassword,
+                      child: const Text('Forgot password?'),
+                    ),
                 ],
               ),
             ),

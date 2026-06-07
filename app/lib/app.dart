@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'features/auth/login_screen.dart';
+import 'features/auth/password_reset_screen.dart';
 import 'features/notes/notes_screen.dart';
 import 'providers.dart';
 
@@ -15,9 +16,16 @@ class NoteesekApp extends ConsumerWidget {
     // local-first → opens straight to local notes.
     final Widget home;
     if (kIsWeb) {
-      home = ref.watch(isAuthenticatedProvider)
-          ? const NotesScreen()
-          : const LoginScreen();
+      // A reset token in the launch URL (?reset=…) takes priority over the login
+      // gate so users completing a password reset land on the confirm screen.
+      final resetToken = ref.watch(pendingResetTokenProvider);
+      if (resetToken != null) {
+        home = PasswordResetScreen(initialToken: resetToken);
+      } else {
+        home = ref.watch(isAuthenticatedProvider)
+            ? const NotesScreen()
+            : const LoginScreen();
+      }
     } else {
       home = const NotesScreen();
     }
