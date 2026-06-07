@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart' as http;
 import 'package:pocketbase/pocketbase.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -30,8 +31,13 @@ class ServerUrlNotifier extends Notifier<String> {
 
   /// Persist and apply a new server URL.
   Future<void> set(String url) async {
+    if (url == state) return;
     final prefs = ref.read(sharedPreferencesProvider);
     await prefs.setString(AppConfig.kServerUrl, url);
+    // A session is only valid against the server that issued its token. Pointing
+    // at a different server invalidates it, so drop the persisted auth — the
+    // rebuilt client starts unauthenticated and the user must sign in again.
+    await prefs.remove(AppConfig.kPbAuth);
     state = url;
   }
 }
@@ -50,8 +56,40 @@ final pocketBaseProvider = Provider<PocketBase>((ref) {
     initial: prefs.getString(AppConfig.kPbAuth),
   );
 
-  return PocketBase(baseUrl, authStore: authStore);
+  // Globally detect an invalidated session: any API response of 401 means the
+  // stored token is no longer accepted by this server (expired, or issued by a
+  // different server). Clear auth so the web app falls back to the login gate
+  // instead of silently showing an empty, unsyncable notes screen.
+  return PocketBase(
+    baseUrl,
+    authStore: authStore,
+    httpClientFactory: () => _AuthGuardClient(http.Client(), authStore),
+  );
 });
+
+/// Wraps an [http.Client], clearing [_authStore] on any 401 response so an
+/// invalid/stale token can't strand the user on a dead session.
+class _AuthGuardClient extends http.BaseClient {
+  _AuthGuardClient(this._inner, this._authStore);
+
+  final http.Client _inner;
+  final AuthStore _authStore;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    final resp = await _inner.send(request);
+    // Only react when we actually sent a token; a 401 with no auth is just a
+    // normal "must log in" response (e.g. the login request itself on bad creds
+    // is 400, but guard against unauthenticated calls regardless).
+    if (resp.statusCode == 401 && _authStore.isValid) {
+      _authStore.clear();
+    }
+    return resp;
+  }
+
+  @override
+  void close() => _inner.close();
+}
 
 /// Emits on every auth change (login/logout/token refresh). The widget tree
 /// watches this to route between the login screen and the app.

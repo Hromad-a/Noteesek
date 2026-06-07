@@ -162,4 +162,19 @@ class AppDatabase extends _$AppDatabase {
           }
         },
       );
+
+  /// Deletes ALL locally-stored data — notes, checklist items, attachments,
+  /// labels and the sync cursors — resetting the device to a fresh-install
+  /// state. Irreversible; used by the Settings "wipe data" action. Clearing the
+  /// cursors means a subsequent sync (if a server is still connected) re-pulls
+  /// from scratch rather than assuming the local mirror is current.
+  Future<void> wipeAllLocal() async {
+    await transaction(() async {
+      await delete(checklistItems).go();
+      await delete(attachments).go();
+      await delete(notes).go();
+      await delete(labels).go();
+      await delete(syncCursors).go();
+    });
+  }
 }

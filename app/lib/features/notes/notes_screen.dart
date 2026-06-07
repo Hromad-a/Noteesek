@@ -7,8 +7,8 @@ import '../../data/local/database.dart';
 import '../../data/notes_repository.dart';
 import '../../providers.dart';
 import '../../sync/sync_controller.dart';
-import '../auth/account_settings_screen.dart';
 import '../auth/login_screen.dart';
+import '../auth/settings_screen.dart';
 import '../export/export_delivery.dart';
 import '../export/export_service.dart';
 import 'archive_screen.dart';
@@ -310,19 +310,18 @@ class _AppDrawer extends ConsumerWidget {
               ),
             ),
             const Divider(height: 1),
-            if (kIsWeb || connected)
-              ListTile(
-                leading: const Icon(Icons.manage_accounts_outlined),
-                title: const Text('Account settings'),
-                onTap: () => _push(context, const AccountSettingsScreen()),
-              )
-            else
+            if (!kIsWeb && !connected)
               ListTile(
                 leading: const Icon(Icons.cloud_sync_outlined),
                 title: const Text('Connect to server'),
                 subtitle: const Text('Enable sync across devices'),
                 onTap: () => _push(context, const LoginScreen()),
               ),
+            ListTile(
+              leading: const Icon(Icons.settings_outlined),
+              title: const Text('Settings'),
+              onTap: () => _push(context, const SettingsScreen()),
+            ),
           ],
         ),
       ),

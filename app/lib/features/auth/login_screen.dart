@@ -126,8 +126,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Your notes stay on this device and also sync to your '
-                    'server.',
+                    kIsWeb
+                        ? 'Your notes are stored on your server and kept in '
+                            'sync in real time.'
+                        : 'Your notes stay on this device and also sync to '
+                            'your server.',
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
