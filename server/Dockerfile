@@ -45,6 +45,11 @@ COPY --from=webbuild /app/build/web /pb/pb_public
 COPY server/pb_migrations /pb/pb_migrations
 COPY server/pb_hooks /pb/pb_hooks
 
+# Entrypoint can bootstrap a superuser from PB_SUPERUSER_EMAIL/PASSWORD env vars
+# (see entrypoint.sh) before handing off to the serve CMD below.
+COPY server/entrypoint.sh /pb/entrypoint.sh
+RUN chmod +x /pb/entrypoint.sh
+
 # OCI metadata (the CI build adds version-specific labels via metadata-action).
 LABEL org.opencontainers.image.title="Noteesek" \
       org.opencontainers.image.description="Noteesek — Flutter web app served by a PocketBase backend" \
@@ -55,4 +60,5 @@ EXPOSE 8080
 
 # pb_data is provided externally (volume/bind mount). pb_migrations and pb_hooks
 # are baked in above but can still be overridden by a bind mount for development.
+ENTRYPOINT ["/pb/entrypoint.sh"]
 CMD ["/pb/pocketbase", "serve", "--http=0.0.0.0:8080"]
