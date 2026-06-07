@@ -139,6 +139,76 @@ class LocalNotesRepository implements NotesRepository {
       _patch(id, const NotesCompanion(deleted: Value(false)));
 
   @override
+  Future<void> convertNoteType(String id, String type) async {
+    final note =
+        await (_db.select(_db.notes)..where((t) => t.id.equals(id)))
+            .getSingleOrNull();
+    if (note == null || note.type == type) return;
+    final now = pbNow();
+
+    await _db.transaction(() async {
+      if (type == 'checklist') {
+        // Text → checklist: each non-blank body line becomes an item.
+        final lines = note.body
+            .split('\n')
+            .map((l) => l.trim())
+            .where((l) => l.isNotEmpty)
+            .toList();
+        var pos = 0;
+        for (final line in lines) {
+          await _db.into(_db.checklistItems).insert(
+                ChecklistItemsCompanion.insert(
+                  id: newPbId(),
+                  note: id,
+                  content: Value(line),
+                  position: Value(pos++),
+                  created: Value(now),
+                  updated: Value(now),
+                  dirty: const Value(true),
+                ),
+              );
+        }
+        await (_db.update(_db.notes)..where((t) => t.id.equals(id))).write(
+          NotesCompanion(
+            type: const Value('checklist'),
+            body: const Value(''),
+            updated: Value(now),
+            dirty: const Value(true),
+          ),
+        );
+      } else {
+        // Checklist → text: items become body lines (order preserved), then are
+        // tombstoned so their removal propagates on the next sync.
+        final items = await (_db.select(_db.checklistItems)
+              ..where((t) => t.note.equals(id) & t.deleted.equals(false))
+              ..orderBy([(t) => OrderingTerm(expression: t.position)]))
+            .get();
+        final body = items
+            .map((i) => i.content.trim())
+            .where((c) => c.isNotEmpty)
+            .join('\n');
+        for (final it in items) {
+          await (_db.update(_db.checklistItems)
+                ..where((t) => t.id.equals(it.id)))
+              .write(ChecklistItemsCompanion(
+            deleted: const Value(true),
+            updated: Value(now),
+            dirty: const Value(true),
+          ));
+        }
+        await (_db.update(_db.notes)..where((t) => t.id.equals(id))).write(
+          NotesCompanion(
+            type: const Value('text'),
+            body: Value(body),
+            updated: Value(now),
+            dirty: const Value(true),
+          ),
+        );
+      }
+    });
+  }
+
+  @override
   Future<void> reorderNotes(List<String> orderedIds) async {
     await _db.transaction(() async {
       for (var i = 0; i < orderedIds.length; i++) {

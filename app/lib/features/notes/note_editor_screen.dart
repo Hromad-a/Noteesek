@@ -8,7 +8,7 @@ import '../../data/local/database.dart';
 import '../../data/notes_repository.dart';
 import 'note_colors.dart';
 
-enum _OverflowAction { archive, delete }
+enum _OverflowAction { convert, archive, delete }
 
 const _months = [
   'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
@@ -43,6 +43,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
   final _bodyCtrl = TextEditingController();
   final _bodyFocus = FocusNode();
   bool _seeded = false;
+  String? _seededType;
 
   // Per-item text controllers for checklists, keyed by item id.
   final Map<String, TextEditingController> _itemCtrls = {};
@@ -61,10 +62,20 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
   }
 
   void _seed(NoteRow note) {
-    if (_seeded) return;
-    _titleCtrl.text = note.title;
-    _bodyCtrl.text = note.body;
-    _seeded = true;
+    if (!_seeded) {
+      _titleCtrl.text = note.title;
+      _bodyCtrl.text = note.body;
+      _seeded = true;
+      _seededType = note.type;
+      return;
+    }
+    // After a type conversion, re-seed the body when the note became a text
+    // note (its body was just rebuilt from the checklist items). Converting to
+    // a checklist needs nothing here — the checklist editor reads items live.
+    if (_seededType != note.type) {
+      _seededType = note.type;
+      if (note.type != 'checklist') _bodyCtrl.text = note.body;
+    }
   }
 
   /// On leaving the editor, send the note to Trash if it's entirely empty:
@@ -207,6 +218,11 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
                 PopupMenuButton<_OverflowAction>(
                   onSelected: (action) async {
                     switch (action) {
+                      case _OverflowAction.convert:
+                        await _repo.convertNoteType(
+                          note.id,
+                          note.type == 'checklist' ? 'text' : 'checklist',
+                        );
                       case _OverflowAction.archive:
                         await _repo.setArchived(note.id, !note.archived);
                       case _OverflowAction.delete:
@@ -215,6 +231,18 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
                     }
                   },
                   itemBuilder: (context) => [
+                    PopupMenuItem(
+                      value: _OverflowAction.convert,
+                      child: ListTile(
+                        leading: Icon(note.type == 'checklist'
+                            ? Icons.notes_outlined
+                            : Icons.checklist_outlined),
+                        title: Text(note.type == 'checklist'
+                            ? 'Convert to text'
+                            : 'Convert to checklist'),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
                     PopupMenuItem(
                       value: _OverflowAction.archive,
                       child: ListTile(
@@ -615,11 +643,34 @@ class _ChecklistEditorState extends ConsumerState<_ChecklistEditor> {
   FocusNode _focusNodeFor(String id) =>
       _focusNodes.putIfAbsent(id, () => FocusNode());
 
-  Future<void> _addAndFocus() async {
-    final newId = await ref.read(notesRepositoryProvider).addItem(widget.noteId);
+  Future<void> _addAndFocus({String content = ''}) async {
+    final newId = await ref
+        .read(notesRepositoryProvider)
+        .addItem(widget.noteId, content: content);
     if (mounted) {
       setState(() => _pendingFocusId = newId);
     }
+  }
+
+  /// Handles edits to an item. The field is multi-line (so long text wraps), so
+  /// a newline means the user pressed Enter: keep the text before the break on
+  /// this item and push the remainder into a new item below (preserving the
+  /// single-line "Enter adds the next item" feel).
+  void _onItemChanged(ChecklistItemRow item, String value) {
+    final repo = ref.read(notesRepositoryProvider);
+    final br = value.indexOf('\n');
+    if (br < 0) {
+      repo.setItemContent(item.id, value);
+      return;
+    }
+    final head = value.substring(0, br);
+    final tail = value.substring(br + 1).replaceAll('\n', '');
+    widget.controllerFor(item).value = TextEditingValue(
+      text: head,
+      selection: TextSelection.collapsed(offset: head.length),
+    );
+    repo.setItemContent(item.id, head);
+    _addAndFocus(content: tail);
   }
 
   @override
@@ -668,6 +719,9 @@ class _ChecklistEditorState extends ConsumerState<_ChecklistEditor> {
                       for (final it in items)
                         Row(
                           key: ValueKey(it.id),
+                          // Top-align so the checkbox/remove button stay on the
+                          // first line when an item wraps to multiple lines.
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Checkbox(
                               value: it.checked,
@@ -678,7 +732,12 @@ class _ChecklistEditorState extends ConsumerState<_ChecklistEditor> {
                               child: TextField(
                                 controller: widget.controllerFor(it),
                                 focusNode: _focusNodeFor(it.id),
-                                textInputAction: TextInputAction.next,
+                                // Multi-line so long items wrap and stay fully
+                                // visible; Enter is intercepted in _onItemChanged
+                                // to add the next item instead of a line break.
+                                minLines: 1,
+                                maxLines: null,
+                                keyboardType: TextInputType.multiline,
                                 decoration: const InputDecoration(
                                   isDense: true,
                                   border: InputBorder.none,
@@ -688,9 +747,7 @@ class _ChecklistEditorState extends ConsumerState<_ChecklistEditor> {
                                     ? const TextStyle(
                                         decoration: TextDecoration.lineThrough)
                                     : null,
-                                onChanged: (v) =>
-                                    repo.setItemContent(it.id, v),
-                                onSubmitted: (_) => _addAndFocus(),
+                                onChanged: (v) => _onItemChanged(it, v),
                               ),
                             ),
                             IconButton(

@@ -49,6 +49,11 @@ abstract interface class NotesRepository {
   Future<void> softDelete(String id);
   Future<void> restore(String id);
 
+  /// Convert a note between 'text' and 'checklist', migrating content in place:
+  /// non-blank body lines become checklist items and vice-versa. No-op if the
+  /// note is already [type].
+  Future<void> convertNoteType(String id, String type);
+
   /// Reassign positions so [orderedIds] is sorted 0…n within its section
   /// (pinned or unpinned — caller passes only IDs from one section).
   Future<void> reorderNotes(List<String> orderedIds);

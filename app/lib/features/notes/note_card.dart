@@ -177,7 +177,9 @@ class _ChecklistPreview extends ConsumerWidget {
                   Expanded(
                     child: Text(
                       it.content,
-                      maxLines: 1,
+                      // Wrap long items onto a few lines, then ellipsize so the
+                      // card preview stays reasonably compact.
+                      maxLines: 3,
                       overflow: TextOverflow.ellipsis,
                       style: it.checked
                           ? TextStyle(

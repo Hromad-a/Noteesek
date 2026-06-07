@@ -197,6 +197,58 @@ class RemoteNotesRepository implements NotesRepository {
   }
 
   @override
+  Future<void> convertNoteType(String id, String type) async {
+    final note = _notes[id];
+    if (note == null || note.type == type) return;
+
+    if (type == 'checklist') {
+      // Text → checklist: each non-blank body line becomes an item.
+      final lines = note.body
+          .split('\n')
+          .map((l) => l.trim())
+          .where((l) => l.isNotEmpty)
+          .toList();
+      var pos = 0;
+      for (final line in lines) {
+        final r = await _pb.collection('checklist_items').create(body: {
+          'note': id,
+          'text': line,
+          'checked': false,
+          'position': pos++,
+          'deleted': false,
+        });
+        _items[r.id] = _itemFrom(r);
+      }
+      final r = await _pb
+          .collection('notes')
+          .update(id, body: {'type': 'checklist', 'body': ''});
+      _notes[id] = _noteFrom(r);
+    } else {
+      // Checklist → text: items become body lines (order preserved), then are
+      // soft-deleted.
+      final items = _items.values
+          .where((i) => i.note == id && !i.deleted)
+          .toList()
+        ..sort((a, b) => a.position.compareTo(b.position));
+      final body = items
+          .map((i) => i.content.trim())
+          .where((c) => c.isNotEmpty)
+          .join('\n');
+      for (final it in items) {
+        final r = await _pb
+            .collection('checklist_items')
+            .update(it.id, body: {'deleted': true});
+        _items[it.id] = _itemFrom(r);
+      }
+      final r = await _pb
+          .collection('notes')
+          .update(id, body: {'type': 'text', 'body': body});
+      _notes[id] = _noteFrom(r);
+    }
+    _events.add(null);
+  }
+
+  @override
   Future<void> deleteForever(String noteId) async {
     await _pb.collection('notes').delete(noteId); // children cascade server-side
     _notes.remove(noteId);
