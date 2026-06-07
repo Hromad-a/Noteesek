@@ -4,7 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pocketbase/pocketbase.dart';
 
 import '../../config/app_config.dart';
+import '../../data/notes_repository.dart';
 import '../../providers.dart';
+import '../export/export_delivery.dart';
+import '../export/export_service.dart';
 
 /// App settings, organised into sections: Account (change password, sign out),
 /// Server (connection URL), and Data & storage (wipe). Reached from the drawer:
@@ -131,6 +134,27 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     // Web: the auth gate rebuilds to the login screen reactively. Mobile: pop
     // back to the notes screen.
     if (navigator.canPop()) navigator.pop();
+  }
+
+  // ---------------- Export ----------------
+
+  /// Builds a Markdown zip of all active + archived notes and hands it to the
+  /// platform (share sheet on mobile / download on web).
+  Future<void> _exportNotes() async {
+    _snack('Preparing export…');
+    try {
+      final bytes =
+          await NoteExportService(ref.read(notesRepositoryProvider)).buildZip();
+      if (!mounted) return;
+      if (bytes == null) {
+        _snack('No notes to export');
+        return;
+      }
+      await deliverExport(bytes, exportFileName());
+      if (mounted) ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    } catch (e) {
+      if (mounted) _snack('Export failed: $e');
+    }
   }
 
   // ---------------- Wipe data ----------------
@@ -471,6 +495,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           const SizedBox(height: 24),
 
           const _SectionHeader('Data & storage'),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.download_outlined),
+            title: const Text('Export notes'),
+            subtitle: const Text('Download all notes as Markdown'),
+            onTap: _exportNotes,
+          ),
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: _wipeBusy
