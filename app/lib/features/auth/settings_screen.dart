@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:file_picker/file_picker.dart';
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -198,19 +198,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
     if (source == null) return;
 
-    final picked = await FilePicker.pickFiles(
-      type: FileType.custom,
-      allowedExtensions:
-          source == _ImportSource.keep ? ['zip'] : ['md', 'zip', 'markdown'],
-      withData: true,
+    final group = XTypeGroup(
+      label: source == _ImportSource.keep ? 'Takeout zip' : 'Markdown',
+      extensions:
+          source == _ImportSource.keep ? ['zip'] : ['md', 'markdown', 'zip'],
+      // Map to MIME/UTI so the picker filters correctly on Android/iOS/macOS.
+      mimeTypes: source == _ImportSource.keep
+          ? const ['application/zip']
+          : const ['text/markdown', 'text/plain', 'application/zip'],
     );
-    if (picked == null || picked.files.isEmpty) return;
-    final file = picked.files.single;
-    final bytes = file.bytes;
-    if (bytes == null) {
-      _snack('Could not read the selected file');
-      return;
-    }
+    final XFile? file = await openFile(acceptedTypeGroups: [group]);
+    if (file == null) return;
+    final bytes = await file.readAsBytes();
 
     final List<ParsedNote> notes;
     try {

@@ -55,7 +55,10 @@ dependencies:
   # Single-note PDF export (cross-platform share/print/download).
   pdf: ^3.11.0
   printing: ^5.13.0
-  file_picker: ^11.0.2
+  # Import file picking. file_selector (first-party, flutter/packages) is used
+  # instead of file_picker, whose Android module broke the release build
+  # (v11 Kotlin plugin unresolved; v8 hardcodes an old compileSdk).
+  file_selector: ^1.1.0
 
 dev_dependencies:
   flutter_test:
