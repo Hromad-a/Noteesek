@@ -74,7 +74,7 @@ class LocalNotesRepository implements NotesRepository {
   // ---- Notes: mutations ----
 
   @override
-  Future<String> createNote({required String type}) async {
+  Future<String> createNote({required String type, String notebook = ''}) async {
     final maxPos = await (_db.selectOnly(_db.notes)
           ..addColumns([_db.notes.position.max()])
           ..where(_db.notes.owner.equals(_ownerId) &
@@ -88,6 +88,7 @@ class LocalNotesRepository implements NotesRepository {
           id: id,
           owner: _ownerId,
           type: Value(type),
+          notebook: Value(notebook),
           position: Value((maxPos ?? -1) + 1),
           created: Value(now),
           updated: Value(now),
@@ -259,6 +260,16 @@ class LocalNotesRepository implements NotesRepository {
       updated: Value(pbNow()),
       dirty: const Value(true),
     ));
+    // Claim locally-created notebooks too so the default (and any others) sync
+    // up under the account. Duplicate defaults are reconciled by
+    // [ensureDefaultNotebook] once the server's default is pulled.
+    await (_db.update(_db.notebooks)
+          ..where((t) => t.owner.equals(AppConfig.localOwner)))
+        .write(NotebooksCompanion(
+      owner: Value(userId),
+      updated: Value(pbNow()),
+      dirty: const Value(true),
+    ));
   }
 
   // ---- Labels ----
@@ -323,6 +334,120 @@ class LocalNotesRepository implements NotesRepository {
   @override
   Future<void> setNoteLabels(String noteId, List<String> labelIds) =>
       _patch(noteId, NotesCompanion(labels: Value(encodeLabelIds(labelIds))));
+
+  // ---- Notebooks ----
+
+  @override
+  Stream<List<NotebookRow>> watchNotebooks() {
+    return (_db.select(_db.notebooks)
+          ..where((t) => t.deleted.equals(false) & t.owner.equals(_ownerId))
+          ..orderBy([
+            // Oldest first so the default notebook (created first) stays on top.
+            (t) => OrderingTerm(expression: t.created),
+          ]))
+        .watch();
+  }
+
+  @override
+  Future<String> ensureDefaultNotebook() async {
+    final existing = await (_db.select(_db.notebooks)
+          ..where((t) =>
+              t.deleted.equals(false) &
+              t.owner.equals(_ownerId) &
+              t.isDefault.equals(true))
+          ..orderBy([(t) => OrderingTerm(expression: t.created)]))
+        .get();
+
+    if (existing.isNotEmpty) {
+      // Reconcile any duplicate defaults (e.g. one created offline + one pulled
+      // from the server) down to the earliest-created. Soft-delete the rest;
+      // their notes fall back to the survivor via [effectiveNotebookId].
+      final keep = existing.first;
+      for (final dup in existing.skip(1)) {
+        await (_db.update(_db.notebooks)..where((t) => t.id.equals(dup.id)))
+            .write(NotebooksCompanion(
+          deleted: const Value(true),
+          updated: Value(pbNow()),
+          dirty: const Value(true),
+        ));
+      }
+      return keep.id;
+    }
+
+    final id = newPbId();
+    final now = pbNow();
+    await _db.into(_db.notebooks).insert(NotebooksCompanion.insert(
+          id: id,
+          owner: _ownerId,
+          name: const Value('Notebook'),
+          isDefault: const Value(true),
+          created: Value(now),
+          updated: Value(now),
+          dirty: const Value(true),
+        ));
+    return id;
+  }
+
+  @override
+  Future<String> createNotebook(String name) async {
+    final id = newPbId();
+    final now = pbNow();
+    await _db.into(_db.notebooks).insert(NotebooksCompanion.insert(
+          id: id,
+          owner: _ownerId,
+          name: Value(name.trim()),
+          created: Value(now),
+          updated: Value(now),
+          dirty: const Value(true),
+        ));
+    return id;
+  }
+
+  @override
+  Future<void> renameNotebook(String id, String name) async {
+    await (_db.update(_db.notebooks)..where((t) => t.id.equals(id))).write(
+      NotebooksCompanion(
+        name: Value(name.trim()),
+        updated: Value(pbNow()),
+        dirty: const Value(true),
+      ),
+    );
+  }
+
+  @override
+  Future<void> deleteNotebook(String id,
+      {required bool moveNotesToDefault}) async {
+    final nb = await (_db.select(_db.notebooks)..where((t) => t.id.equals(id)))
+        .getSingleOrNull();
+    if (nb == null || nb.isDefault) return; // never delete the default
+
+    await _db.transaction(() async {
+      final defaultId =
+          moveNotesToDefault ? await ensureDefaultNotebook() : '';
+      final notes = await (_db.select(_db.notes)
+            ..where((t) => t.notebook.equals(id) & t.deleted.equals(false)))
+          .get();
+      for (final n in notes) {
+        await _patch(
+          n.id,
+          moveNotesToDefault
+              ? NotesCompanion(notebook: Value(defaultId))
+              : const NotesCompanion(deleted: Value(true)),
+        );
+      }
+      await (_db.update(_db.notebooks)..where((t) => t.id.equals(id))).write(
+        NotebooksCompanion(
+          deleted: const Value(true),
+          updated: Value(pbNow()),
+          dirty: const Value(true),
+        ),
+      );
+    });
+  }
+
+  @override
+  Future<void> setNoteNotebook(String noteId, String notebookId) =>
+      _patch(noteId, NotesCompanion(notebook: Value(notebookId)));
 
   // ---- Checklist items ----
 

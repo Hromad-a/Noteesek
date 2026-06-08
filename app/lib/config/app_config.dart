@@ -17,4 +17,8 @@ class AppConfig {
   static const String kServerUrl = 'server_url';
   static const String kPbAuth = 'pb_auth';
   static const String kActiveOwner = 'active_owner';
+
+  /// Id of the notebook currently shown in the grid (persists the user's last
+  /// selection). Empty falls back to the default notebook.
+  static const String kSelectedNotebook = 'selected_notebook';
 }

@@ -12,16 +12,34 @@ import '../auth/settings_screen.dart';
 import 'archive_screen.dart';
 import 'label_notes_screen.dart';
 import 'manage_labels_screen.dart';
+import 'manage_notebooks_screen.dart';
 import 'note_card.dart';
 import 'note_editor_screen.dart';
 import 'trash_screen.dart';
 
 /// Home screen: a Keep-style masonry grid of notes with a create FAB.
-class NotesScreen extends ConsumerWidget {
+class NotesScreen extends ConsumerStatefulWidget {
   const NotesScreen({super.key});
 
+  @override
+  ConsumerState<NotesScreen> createState() => _NotesScreenState();
+}
+
+class _NotesScreenState extends ConsumerState<NotesScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // Make sure the user has a default notebook (and reconcile duplicates).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(notesRepositoryProvider).ensureDefaultNotebook();
+    });
+  }
+
   Future<void> _create(BuildContext context, WidgetRef ref, String type) async {
-    final id = await ref.read(notesRepositoryProvider).createNote(type: type);
+    final notebook = ref.read(activeNotebookIdProvider);
+    final id = await ref
+        .read(notesRepositoryProvider)
+        .createNote(type: type, notebook: notebook);
     if (type == 'checklist') {
       await ref.read(notesRepositoryProvider).addItem(id);
     }
@@ -75,7 +93,7 @@ class NotesScreen extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final notesAsync = ref.watch(activeNotesProvider);
     final pb = ref.watch(pocketBaseProvider);
     final email = pb.authStore.record?.data['email'] as String? ?? '';
@@ -166,7 +184,7 @@ class NotesScreen extends ConsumerWidget {
           ],
         ),
       ),
-      floatingActionButton: _CreateFab(
+      bottomNavigationBar: _BottomBar(
         onText: () => _create(context, ref, 'text'),
         onChecklist: () => _create(context, ref, 'checklist'),
       ),
@@ -174,31 +192,156 @@ class NotesScreen extends ConsumerWidget {
   }
 }
 
-class _CreateFab extends StatelessWidget {
-  const _CreateFab({required this.onText, required this.onChecklist});
+/// Bottom bar: the notebook selector on the left (switch / create / manage),
+/// the new-checklist and new-note buttons on the right.
+class _BottomBar extends ConsumerWidget {
+  const _BottomBar({required this.onText, required this.onChecklist});
 
   final VoidCallback onText;
   final VoidCallback onChecklist;
 
   @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        FloatingActionButton.small(
-          heroTag: 'fab-checklist',
-          tooltip: 'New checklist',
-          onPressed: onChecklist,
-          child: const Icon(Icons.checklist),
+  Widget build(BuildContext context, WidgetRef ref) {
+    return BottomAppBar(
+      height: 64,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: Row(
+        children: [
+          const Expanded(child: _NotebookSelector()),
+          const SizedBox(width: 8),
+          IconButton.filledTonal(
+            tooltip: 'New checklist',
+            onPressed: onChecklist,
+            icon: const Icon(Icons.checklist),
+          ),
+          const SizedBox(width: 8),
+          IconButton.filled(
+            tooltip: 'New note',
+            onPressed: onText,
+            icon: const Icon(Icons.edit),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A pill showing the current notebook; tapping opens a menu to switch
+/// notebooks, create a new one, or manage them.
+class _NotebookSelector extends ConsumerWidget {
+  const _NotebookSelector();
+
+  // Sentinel values for the non-notebook menu entries.
+  static const _newValue = '__new_notebook__';
+  static const _manageValue = '__manage_notebooks__';
+
+  Future<void> _createNotebook(BuildContext context, WidgetRef ref) async {
+    final ctrl = TextEditingController();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('New notebook'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          decoration: const InputDecoration(labelText: 'Notebook name'),
+          onSubmitted: (v) => Navigator.of(ctx).pop(v.trim()),
         ),
-        const SizedBox(width: 12),
-        FloatingActionButton(
-          heroTag: 'fab-text',
-          tooltip: 'New note',
-          onPressed: onText,
-          child: const Icon(Icons.edit),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(ctrl.text.trim()),
+            child: const Text('Create'),
+          ),
+        ],
+      ),
+    );
+    ctrl.dispose();
+    if (name == null || name.isEmpty) return;
+    final id = await ref.read(notesRepositoryProvider).createNotebook(name);
+    await ref.read(selectedNotebookIdProvider.notifier).set(id);
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final notebooks = ref.watch(notebooksProvider).asData?.value ?? const [];
+    final activeId = ref.watch(activeNotebookIdProvider);
+    final active = notebooks.where((n) => n.id == activeId).firstOrNull;
+    final name = active?.name ?? 'Notebook';
+
+    return PopupMenuButton<String>(
+      tooltip: 'Switch notebook',
+      position: PopupMenuPosition.over,
+      onSelected: (value) async {
+        if (value == _newValue) {
+          await _createNotebook(context, ref);
+        } else if (value == _manageValue) {
+          if (context.mounted) {
+            Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => const ManageNotebooksScreen(),
+            ));
+          }
+        } else {
+          await ref.read(selectedNotebookIdProvider.notifier).set(value);
+        }
+      },
+      itemBuilder: (context) => [
+        for (final nb in notebooks)
+          PopupMenuItem(
+            value: nb.id,
+            child: ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(nb.id == activeId
+                  ? Icons.book
+                  : Icons.book_outlined),
+              title: Text(nb.name,
+                  maxLines: 1, overflow: TextOverflow.ellipsis),
+              trailing: nb.id == activeId ? const Icon(Icons.check) : null,
+            ),
+          ),
+        const PopupMenuDivider(),
+        const PopupMenuItem(
+          value: _newValue,
+          child: ListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(Icons.add),
+            title: Text('New notebook'),
+          ),
+        ),
+        const PopupMenuItem(
+          value: _manageValue,
+          child: ListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(Icons.edit_outlined),
+            title: Text('Manage notebooks'),
+          ),
         ),
       ],
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Theme.of(context).colorScheme.outline),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.book_outlined, size: 18),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(name,
+                  maxLines: 1, overflow: TextOverflow.ellipsis),
+            ),
+            const Icon(Icons.arrow_drop_down),
+          ],
+        ),
+      ),
     );
   }
 }

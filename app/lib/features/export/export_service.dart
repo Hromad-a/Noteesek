@@ -26,6 +26,8 @@ class NoteExportService {
 
     final labels = await _repo.watchLabels().first;
     final labelNames = {for (final l in labels) l.id: l.name};
+    final notebooks = await _repo.watchNotebooks().first;
+    final notebookNames = {for (final n in notebooks) n.id: n.name};
 
     final archive = Archive();
     final usedNames = <String>{};
@@ -41,6 +43,7 @@ class NoteExportService {
         items: items,
         attachments: attachments,
         labelNames: labelNames,
+        notebookNames: notebookNames,
       );
 
       final fileName = _uniqueName(usedNames, noteSlug(note));

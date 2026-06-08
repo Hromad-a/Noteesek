@@ -1,3 +1,4 @@
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -98,6 +99,78 @@ void main() {
     expect((await repo.watchTrash().first), isEmpty);
     // Children removed too.
     expect(await repo.watchItems(id).first, isEmpty);
+  });
+
+  group('notebooks', () {
+    test('ensureDefaultNotebook creates one default named "Notebook"',
+        () async {
+      final id = await repo.ensureDefaultNotebook();
+      final notebooks = await repo.watchNotebooks().first;
+      expect(notebooks, hasLength(1));
+      expect(notebooks.single.id, id);
+      expect(notebooks.single.name, 'Notebook');
+      expect(notebooks.single.isDefault, isTrue);
+
+      // Idempotent: a second call returns the same id, no duplicate created.
+      expect(await repo.ensureDefaultNotebook(), id);
+      expect(await repo.watchNotebooks().first, hasLength(1));
+    });
+
+    test('ensureDefaultNotebook reconciles duplicate defaults to the earliest',
+        () async {
+      final first = await repo.ensureDefaultNotebook();
+      // Simulate a second default arriving (e.g. pulled from the server) by
+      // forcing another default row in directly.
+      final second = await repo.createNotebook('Other');
+      await (db.update(db.notebooks)..where((t) => t.id.equals(second)))
+          .write(const NotebooksCompanion(isDefault: Value(true)));
+
+      final kept = await repo.ensureDefaultNotebook();
+      expect(kept, first, reason: 'earliest-created default wins');
+      final live = await repo.watchNotebooks().first;
+      expect(live.map((n) => n.id), isNot(contains(second)));
+    });
+
+    test('createNote stamps the notebook', () async {
+      final nb = await repo.createNotebook('Work');
+      final id = await repo.createNote(type: 'text', notebook: nb);
+      final note = await (db.select(db.notes)..where((t) => t.id.equals(id)))
+          .getSingle();
+      expect(note.notebook, nb);
+    });
+
+    test('deleteNotebook moves notes to the default', () async {
+      final defaultId = await repo.ensureDefaultNotebook();
+      final nb = await repo.createNotebook('Work');
+      final id = await repo.createNote(type: 'text', notebook: nb);
+
+      await repo.deleteNotebook(nb, moveNotesToDefault: true);
+
+      final note = await (db.select(db.notes)..where((t) => t.id.equals(id)))
+          .getSingle();
+      expect(note.notebook, defaultId);
+      expect(note.deleted, isFalse);
+      expect((await repo.watchNotebooks().first).map((n) => n.id),
+          isNot(contains(nb)));
+    });
+
+    test('deleteNotebook can trash its notes instead', () async {
+      final nb = await repo.createNotebook('Work');
+      final id = await repo.createNote(type: 'text', notebook: nb);
+
+      await repo.deleteNotebook(nb, moveNotesToDefault: false);
+
+      final note = await (db.select(db.notes)..where((t) => t.id.equals(id)))
+          .getSingle();
+      expect(note.deleted, isTrue);
+    });
+
+    test('the default notebook cannot be deleted', () async {
+      final defaultId = await repo.ensureDefaultNotebook();
+      await repo.deleteNotebook(defaultId, moveNotesToDefault: false);
+      expect((await repo.watchNotebooks().first).map((n) => n.id),
+          contains(defaultId));
+    });
   });
 
   test('pin sorts first; archive and delete leave the active list', () async {

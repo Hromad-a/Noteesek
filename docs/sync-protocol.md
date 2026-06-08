@@ -105,10 +105,26 @@ devices without a central clock.
 
 ## Ordering & integrity
 
-- Push/pull **`notes` before `checklist_items` and `attachments`** so a child's
-  `note` relation always resolves to an existing parent.
+- Push/pull **`labels` and `notebooks` before `notes`**, and **`notes` before
+  `checklist_items` and `attachments`**, so a note's `labels`/`notebook`
+  relations and a child's `note` relation always resolve to an existing record.
 - A checklist item or attachment whose parent note is `deleted` is treated as
   deleted locally (the server cascade-deletes children on hard purge).
+
+## Notebooks & the default notebook
+
+A note belongs to **exactly one** notebook (`notes.notebook`, a single relation).
+Notebooks sync as ordinary owner-scoped, soft-deletable records (LWW like
+everything else). An empty or unknown `notebook` value resolves to the user's
+**default notebook** on the client, so a note never disappears if its notebook
+was deleted before it was reassigned.
+
+Each user has one default notebook (`is_default = true`, named "Notebook",
+rename-only). Because a device can create a local default offline *and* later
+pull the account's existing default, duplicate defaults are possible briefly.
+They are reconciled deterministically: the **earliest-created** default (tie-broken
+by `id`) is kept and the rest are soft-deleted. Every device makes the same
+choice, so they converge.
 
 ## What v1 deliberately omits
 

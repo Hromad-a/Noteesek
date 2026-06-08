@@ -13,6 +13,7 @@ NoteRow _note({
   bool archived = false,
   String color = '',
   String labels = '[]',
+  String notebook = '',
 }) =>
     NoteRow(
       id: id,
@@ -24,6 +25,7 @@ NoteRow _note({
       archived: archived,
       color: color,
       labels: labels,
+      notebook: notebook,
       deleted: false,
       created: '2026-06-05 00:00:00.000Z',
       updated: '2026-06-06 00:00:00.000Z',
@@ -132,6 +134,26 @@ void main() {
         labelNames: {'known': 'work'},
       );
       expect(md, contains('labels: ["work"]'));
+    });
+
+    test('notebook name is written when known, omitted otherwise', () {
+      final withName = buildNoteMarkdown(
+        note: _note(notebook: 'nb1'),
+        items: const [],
+        attachments: const [],
+        labelNames: const {},
+        notebookNames: {'nb1': 'Work'},
+      );
+      expect(withName, contains('notebook: "Work"'));
+
+      final unknown = buildNoteMarkdown(
+        note: _note(notebook: 'nb1'),
+        items: const [],
+        attachments: const [],
+        labelNames: const {},
+        notebookNames: const {},
+      );
+      expect(unknown, isNot(contains('notebook:')));
     });
   });
 }

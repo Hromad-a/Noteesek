@@ -4,6 +4,7 @@ import 'package:drift/drift.dart' show Uint8List;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../config/app_config.dart';
 import '../providers.dart';
 import 'local/database.dart';
 import 'local_notes_repository.dart';
@@ -26,6 +27,19 @@ List<String> labelIdsOf(NoteRow note) => labelIdsOfRaw(note.labels);
 /// Encodes label ids into the JSON-array string stored on a note.
 String encodeLabelIds(List<String> ids) => jsonEncode(ids);
 
+/// Resolves which notebook a note effectively belongs to: its own [NoteRow.notebook]
+/// when that points at a known (non-deleted) notebook, otherwise the default
+/// notebook. This makes "default" a safe catch-all — notes whose notebook was
+/// deleted (or was never set) surface in the default notebook instead of
+/// vanishing.
+String effectiveNotebookId(
+    NoteRow note, Set<String> knownNotebookIds, String defaultNotebookId) {
+  if (note.notebook.isNotEmpty && knownNotebookIds.contains(note.notebook)) {
+    return note.notebook;
+  }
+  return defaultNotebookId;
+}
+
 /// Abstraction over note storage. Two implementations:
 /// - [LocalNotesRepository] (mobile): offline-first drift DB + sync.
 /// - [RemoteNotesRepository] (web): online-only, direct PocketBase API.
@@ -41,7 +55,10 @@ abstract interface class NotesRepository {
   Stream<List<NoteRow>> searchActive(String raw);
 
   // Notes — mutations
-  Future<String> createNote({required String type});
+
+  /// Create a note in [notebook] (empty = default). Stamped with the active
+  /// owner and appended to the end of its section.
+  Future<String> createNote({required String type, String notebook});
   Future<void> updateNoteFields(String id, {String? title, String? body});
   Future<void> setPinned(String id, bool pinned);
   Future<void> setArchived(String id, bool archived);
@@ -74,6 +91,24 @@ abstract interface class NotesRepository {
 
   /// Replace a note's assigned labels with [labelIds].
   Future<void> setNoteLabels(String noteId, List<String> labelIds);
+
+  // Notebooks
+  Stream<List<NotebookRow>> watchNotebooks();
+
+  /// Ensure the active owner has exactly one default notebook, creating it
+  /// (named "Notebook") if absent and reconciling duplicates down to the
+  /// earliest-created one. Returns the default notebook's id.
+  Future<String> ensureDefaultNotebook();
+
+  Future<String> createNotebook(String name);
+  Future<void> renameNotebook(String id, String name);
+
+  /// Soft-delete a notebook. Its notes are either reassigned to the default
+  /// notebook ([moveNotesToDefault] = true) or soft-deleted to Trash.
+  Future<void> deleteNotebook(String id, {required bool moveNotesToDefault});
+
+  /// Move a note into [notebookId].
+  Future<void> setNoteNotebook(String noteId, String notebookId);
 
   // Checklist items
   Stream<List<ChecklistItemRow>> watchItems(String noteId);
@@ -112,20 +147,93 @@ class SearchQueryNotifier extends Notifier<String> {
 final searchQueryProvider =
     NotifierProvider<SearchQueryNotifier, String>(SearchQueryNotifier.new);
 
-/// Active notes stream for the grid, filtered by the current search query.
+/// All of the user's (non-deleted) notebooks, ordered oldest-first so the
+/// default notebook stays at the top.
+final notebooksProvider = StreamProvider<List<NotebookRow>>((ref) {
+  return ref.watch(notesRepositoryProvider).watchNotebooks();
+});
+
+/// The default notebook's id (the `isDefault` row), or '' until one exists.
+final defaultNotebookIdProvider = Provider<String>((ref) {
+  final notebooks = ref.watch(notebooksProvider).asData?.value ?? const [];
+  for (final nb in notebooks) {
+    if (nb.isDefault) return nb.id;
+  }
+  return notebooks.isNotEmpty ? notebooks.first.id : '';
+});
+
+/// The notebook id the user last selected (persisted). Empty = default.
+class SelectedNotebookNotifier extends Notifier<String> {
+  @override
+  String build() {
+    final prefs = ref.watch(sharedPreferencesProvider);
+    return prefs.getString(AppConfig.kSelectedNotebook) ?? '';
+  }
+
+  Future<void> set(String id) async {
+    final prefs = ref.read(sharedPreferencesProvider);
+    await prefs.setString(AppConfig.kSelectedNotebook, id);
+    state = id;
+  }
+}
+
+final selectedNotebookIdProvider =
+    NotifierProvider<SelectedNotebookNotifier, String>(
+        SelectedNotebookNotifier.new);
+
+/// The notebook actually shown in the grid: the user's selection when it still
+/// exists, otherwise the default. Used to filter the active/archive/trash lists.
+final activeNotebookIdProvider = Provider<String>((ref) {
+  final selected = ref.watch(selectedNotebookIdProvider);
+  final notebooks = ref.watch(notebooksProvider).asData?.value ?? const [];
+  final known = {for (final n in notebooks) n.id};
+  if (selected.isNotEmpty && known.contains(selected)) return selected;
+  return ref.watch(defaultNotebookIdProvider);
+});
+
+/// A snapshot of the notebook filtering inputs, resolved synchronously during a
+/// provider build so the (later-running) stream `.map` closure stays pure.
+class _NotebookFilter {
+  const _NotebookFilter(this.selected, this.known, this.defaultId);
+
+  final String selected;
+  final Set<String> known;
+  final String defaultId;
+
+  List<NoteRow> apply(List<NoteRow> notes) => notes
+      .where((n) => effectiveNotebookId(n, known, defaultId) == selected)
+      .toList();
+}
+
+/// Resolves the current notebook filter. Watches its dependencies during build,
+/// so the owning provider rebuilds whenever the selection or notebooks change.
+_NotebookFilter _notebookFilter(Ref ref) {
+  final selected = ref.watch(activeNotebookIdProvider);
+  final notebooks = ref.watch(notebooksProvider).asData?.value ?? const [];
+  final known = {for (final n in notebooks) n.id};
+  final defaultId = ref.watch(defaultNotebookIdProvider);
+  return _NotebookFilter(selected, known, defaultId);
+}
+
+/// Active notes for the grid: filtered by the current search query and the
+/// selected notebook.
 final activeNotesProvider = StreamProvider<List<NoteRow>>((ref) {
   final query = ref.watch(searchQueryProvider);
-  return ref.watch(notesRepositoryProvider).searchActive(query);
+  final filter = _notebookFilter(ref);
+  return ref.watch(notesRepositoryProvider).searchActive(query).map(filter.apply);
 });
 
-/// Archived notes stream.
+/// Archived notes stream, scoped to the selected notebook.
 final archivedNotesProvider = StreamProvider<List<NoteRow>>((ref) {
-  return ref.watch(notesRepositoryProvider).watchArchived();
+  final filter = _notebookFilter(ref);
+  return ref.watch(notesRepositoryProvider).watchArchived().map(filter.apply);
 });
 
-/// Trashed (soft-deleted, not yet purged) notes stream.
+/// Trashed (soft-deleted, not yet purged) notes stream, scoped to the selected
+/// notebook.
 final trashedNotesProvider = StreamProvider<List<NoteRow>>((ref) {
-  return ref.watch(notesRepositoryProvider).watchTrash();
+  final filter = _notebookFilter(ref);
+  return ref.watch(notesRepositoryProvider).watchTrash().map(filter.apply);
 });
 
 /// Checklist items for a given note.

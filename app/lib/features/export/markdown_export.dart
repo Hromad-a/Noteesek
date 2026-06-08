@@ -30,11 +30,13 @@ String _yamlString(String value) =>
 /// the export's `attachments/` folder.
 ///
 /// [labelNames] maps label id → name; ids without a known name are skipped.
+/// [notebookNames] maps notebook id → name; an unknown id omits the field.
 String buildNoteMarkdown({
   required NoteRow note,
   required List<ChecklistItemRow> items,
   required List<AttachmentRow> attachments,
   required Map<String, String> labelNames,
+  Map<String, String> notebookNames = const {},
 }) {
   final buf = StringBuffer();
 
@@ -48,6 +50,10 @@ String buildNoteMarkdown({
       .toList();
   if (labels.isNotEmpty) {
     buf.writeln('labels: [${labels.map(_yamlString).join(', ')}]');
+  }
+  final notebookName = notebookNames[note.notebook];
+  if (notebookName != null && notebookName.isNotEmpty) {
+    buf.writeln('notebook: ${_yamlString(notebookName)}');
   }
   if (note.color.isNotEmpty) buf.writeln('color: ${_yamlString(note.color)}');
   if (note.pinned) buf.writeln('pinned: true');

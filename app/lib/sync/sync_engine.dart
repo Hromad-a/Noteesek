@@ -22,6 +22,7 @@ class SyncEngine {
   static const _items = 'checklist_items';
   static const _attachments = 'attachments';
   static const _labels = 'labels';
+  static const _notebooks = 'notebooks';
 
   bool _running = false;
 
@@ -32,14 +33,17 @@ class SyncEngine {
     if (_running || !_pb.authStore.isValid) return false;
     _running = true;
     try {
-      // Push labels first so a note's `labels` relation resolves, then parents
-      // before children so a child's `note` relation resolves.
+      // Push labels and notebooks first so a note's `labels`/`notebook`
+      // relations resolve, then parents before children so a child's `note`
+      // relation resolves.
       await _pushLabels();
+      await _pushNotebooks();
       await _pushNotes();
       await _pushItems();
       await _pushAttachments();
       // Pull in the same order.
       await _pullLabels();
+      await _pullNotebooks();
       await _pullNotes();
       await _pullItems();
       await _pullAttachments();
@@ -95,6 +99,29 @@ class SyncEngine {
     }
   }
 
+  Future<void> _pushNotebooks() async {
+    final dirty = await (_db.select(_db.notebooks)
+          ..where((t) => t.dirty.equals(true)))
+        .get();
+    for (final nb in dirty) {
+      final body = {
+        'owner': nb.owner,
+        'name': nb.name,
+        'is_default': nb.isDefault,
+        'deleted': nb.deleted,
+      };
+      final saved = await _upsert(_notebooks, nb.id, body);
+      if (saved != null) {
+        await (_db.update(_db.notebooks)..where((t) => t.id.equals(nb.id)))
+            .write(NotebooksCompanion(
+          updated: Value(saved.getStringValue('updated')),
+          created: Value(saved.getStringValue('created')),
+          dirty: const Value(false),
+        ));
+      }
+    }
+  }
+
   Future<void> _pushNotes() async {
     final dirty =
         await (_db.select(_db.notes)..where((t) => t.dirty.equals(true))).get();
@@ -108,6 +135,7 @@ class SyncEngine {
         'archived': n.archived,
         'color': n.color,
         'labels': _decodeIds(n.labels),
+        'notebook': n.notebook,
         'deleted': n.deleted,
       };
       final saved = await _upsert(_notes, n.id, body);
@@ -226,6 +254,21 @@ class SyncEngine {
     }, _localLabelUpdated);
   }
 
+  Future<void> _pullNotebooks() async {
+    await _pull(_notebooks, (rec) async {
+      await _db.into(_db.notebooks).insertOnConflictUpdate(NotebooksCompanion(
+            id: Value(rec.id),
+            owner: Value(rec.getStringValue('owner')),
+            name: Value(rec.getStringValue('name')),
+            isDefault: Value(rec.getBoolValue('is_default')),
+            deleted: Value(rec.getBoolValue('deleted')),
+            created: Value(rec.getStringValue('created')),
+            updated: Value(rec.getStringValue('updated')),
+            dirty: const Value(false),
+          ));
+    }, _localNotebookUpdated);
+  }
+
   Future<void> _pullNotes() async {
     await _pull(_notes, (rec) async {
       await _db.into(_db.notes).insertOnConflictUpdate(NotesCompanion(
@@ -238,6 +281,7 @@ class SyncEngine {
             archived: Value(rec.getBoolValue('archived')),
             color: Value(rec.getStringValue('color')),
             labels: Value(jsonEncode(rec.getListValue<String>('labels'))),
+            notebook: Value(rec.getStringValue('notebook')),
             deleted: Value(rec.getBoolValue('deleted')),
             created: Value(rec.getStringValue('created')),
             updated: Value(rec.getStringValue('updated')),
@@ -364,6 +408,13 @@ class SyncEngine {
 
   Future<({String updated, bool dirty})?> _localNoteUpdated(String id) async {
     final row = await (_db.select(_db.notes)..where((t) => t.id.equals(id)))
+        .getSingleOrNull();
+    return row == null ? null : (updated: row.updated, dirty: row.dirty);
+  }
+
+  Future<({String updated, bool dirty})?> _localNotebookUpdated(
+      String id) async {
+    final row = await (_db.select(_db.notebooks)..where((t) => t.id.equals(id)))
         .getSingleOrNull();
     return row == null ? null : (updated: row.updated, dirty: row.dirty);
   }

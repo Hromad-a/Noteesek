@@ -34,6 +34,10 @@ class Notes extends Table {
   /// Membership rides this note's last-write-wins sync.
   TextColumn get labels => text().withDefault(const Constant('[]'))();
 
+  /// The notebook this note belongs to ([Notebooks.id]). Empty or unknown means
+  /// the default notebook. A note belongs to exactly one notebook.
+  TextColumn get notebook => text().withDefault(const Constant(''))();
+
   /// Soft delete tombstone so removals propagate before being purged.
   BoolColumn get deleted => boolean().withDefault(const Constant(false))();
 
@@ -116,6 +120,26 @@ class Labels extends Table {
   Set<Column> get primaryKey => {id};
 }
 
+@DataClassName('NotebookRow')
+class Notebooks extends Table {
+  TextColumn get id => text()();
+  TextColumn get owner => text()();
+  TextColumn get name => text().withDefault(const Constant(''))();
+
+  /// The per-user fallback notebook: rename-only, never deleted. Exactly one per
+  /// owner (reconciled in [NotesRepository.ensureDefaultNotebook]).
+  BoolColumn get isDefault => boolean().withDefault(const Constant(false))();
+
+  /// Soft delete tombstone so removals propagate before being purged.
+  BoolColumn get deleted => boolean().withDefault(const Constant(false))();
+  TextColumn get created => text().nullable()();
+  TextColumn get updated => text().withDefault(const Constant(''))();
+  BoolColumn get dirty => boolean().withDefault(const Constant(false))();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
 /// Per-collection pull cursor: the newest server `updated` seen on last pull.
 class SyncCursors extends Table {
   TextColumn get collection => text()();
@@ -126,7 +150,7 @@ class SyncCursors extends Table {
 }
 
 @DriftDatabase(
-    tables: [Notes, ChecklistItems, Attachments, Labels, SyncCursors])
+    tables: [Notes, ChecklistItems, Attachments, Labels, Notebooks, SyncCursors])
 class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor])
       : super(executor ??
@@ -141,7 +165,7 @@ class AppDatabase extends _$AppDatabase {
             ));
 
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 6;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -160,6 +184,10 @@ class AppDatabase extends _$AppDatabase {
             await m.addColumn(notes, notes.labels);
             await m.createTable(labels);
           }
+          if (from < 6) {
+            await m.addColumn(notes, notes.notebook);
+            await m.createTable(notebooks);
+          }
         },
       );
 
@@ -174,6 +202,7 @@ class AppDatabase extends _$AppDatabase {
       await delete(attachments).go();
       await delete(notes).go();
       await delete(labels).go();
+      await delete(notebooks).go();
       await delete(syncCursors).go();
     });
   }

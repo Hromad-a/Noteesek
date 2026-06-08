@@ -8,7 +8,7 @@ import '../../data/local/database.dart';
 import '../../data/notes_repository.dart';
 import 'note_colors.dart';
 
-enum _OverflowAction { convert, archive, delete }
+enum _OverflowAction { convert, moveToNotebook, archive, delete }
 
 const _months = [
   'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
@@ -142,6 +142,52 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     );
   }
 
+  Future<void> _moveToNotebook(NoteRow note) async {
+    final notebooks = ref.read(notebooksProvider).asData?.value ?? const [];
+    if (notebooks.isEmpty) return;
+    final known = {for (final n in notebooks) n.id};
+    final defaultId = ref.read(defaultNotebookIdProvider);
+    final current = effectiveNotebookId(note, known, defaultId);
+
+    final chosen = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Text('Move to notebook',
+                  style: Theme.of(sheetContext).textTheme.titleMedium),
+            ),
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  for (final nb in notebooks)
+                    ListTile(
+                      leading: Icon(nb.id == current
+                          ? Icons.book
+                          : Icons.book_outlined),
+                      title: Text(nb.name),
+                      trailing:
+                          nb.id == current ? const Icon(Icons.check) : null,
+                      onTap: () => Navigator.of(sheetContext).pop(nb.id),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (chosen != null && chosen != note.notebook) {
+      await _repo.setNoteNotebook(note.id, chosen);
+    }
+  }
+
   Future<void> _pickImage(String noteId) async {
     final picked = await ImagePicker().pickImage(
       source: ImageSource.gallery,
@@ -223,6 +269,8 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
                           note.id,
                           note.type == 'checklist' ? 'text' : 'checklist',
                         );
+                      case _OverflowAction.moveToNotebook:
+                        await _moveToNotebook(note);
                       case _OverflowAction.archive:
                         await _repo.setArchived(note.id, !note.archived);
                       case _OverflowAction.delete:
@@ -240,6 +288,14 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
                         title: Text(note.type == 'checklist'
                             ? 'Convert to text'
                             : 'Convert to checklist'),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: _OverflowAction.moveToNotebook,
+                      child: ListTile(
+                        leading: Icon(Icons.drive_file_move_outlined),
+                        title: Text('Move to notebook'),
                         contentPadding: EdgeInsets.zero,
                       ),
                     ),

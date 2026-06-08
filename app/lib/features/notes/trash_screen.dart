@@ -22,9 +22,7 @@ class TrashScreen extends ConsumerWidget {
     }
   }
 
-  Future<void> _emptyTrash(WidgetRef ref) async {
-    final repo = ref.read(notesRepositoryProvider);
-    final ids = await repo.trashedNoteIds();
+  Future<void> _emptyTrash(WidgetRef ref, List<String> ids) async {
     for (final id in ids) {
       await _deleteForever(ref, id);
     }
@@ -51,7 +49,10 @@ class TrashScreen extends ConsumerWidget {
                             'trash. This cannot be undone.',
                         action: 'Empty trash',
                       );
-                      if (ok) await _emptyTrash(ref);
+                      if (ok) {
+                        await _emptyTrash(
+                            ref, notes.map((n) => n.id).toList());
+                      }
                     },
                     child: const Text('Empty'),
                   ),

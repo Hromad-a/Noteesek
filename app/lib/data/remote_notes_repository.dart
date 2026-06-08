@@ -20,6 +20,7 @@ class RemoteNotesRepository implements NotesRepository {
   final Map<String, ChecklistItemRow> _items = {};
   final Map<String, AttachmentRow> _attachments = {};
   final Map<String, LabelRow> _labels = {};
+  final Map<String, NotebookRow> _notebooks = {};
 
   final _events = StreamController<void>.broadcast();
   final List<UnsubscribeFunc> _unsubs = [];
@@ -52,12 +53,19 @@ class RemoteNotesRepository implements NotesRepository {
     for (final r in labels) {
       _labels[r.id] = _labelFrom(r);
     }
+    final notebooks = await _pb.collection('notebooks').getFullList();
+    for (final r in notebooks) {
+      _notebooks[r.id] = _notebookFrom(r);
+    }
 
     _unsubs.add(await _pb.collection('notes').subscribe('*', (e) {
       _applyEvent(e, _notes, (r) => _noteFrom(r));
     }));
     _unsubs.add(await _pb.collection('labels').subscribe('*', (e) {
       _applyEvent(e, _labels, (r) => _labelFrom(r));
+    }));
+    _unsubs.add(await _pb.collection('notebooks').subscribe('*', (e) {
+      _applyEvent(e, _notebooks, (r) => _notebookFrom(r));
     }));
     _unsubs.add(await _pb.collection('checklist_items').subscribe('*', (e) {
       _applyEvent(e, _items, (r) => _itemFrom(r));
@@ -143,7 +151,7 @@ class RemoteNotesRepository implements NotesRepository {
   // ---------------- Notes: mutations ----------------
 
   @override
-  Future<String> createNote({required String type}) async {
+  Future<String> createNote({required String type, String notebook = ''}) async {
     final maxPos = _notes.values
         .where((n) => !n.deleted)
         .fold<int>(-1, (m, n) => n.position > m ? n.position : m);
@@ -156,6 +164,7 @@ class RemoteNotesRepository implements NotesRepository {
       'archived': false,
       'deleted': false,
       'position': maxPos + 1,
+      'notebook': notebook,
     });
     _notes[r.id] = _noteFrom(r);
     _events.add(null);
@@ -327,6 +336,102 @@ class RemoteNotesRepository implements NotesRepository {
     _events.add(null);
   }
 
+  // ---------------- Notebooks ----------------
+
+  @override
+  Stream<List<NotebookRow>> watchNotebooks() => _view(() {
+        // Oldest first so the default notebook stays on top.
+        final list = _notebooks.values.where((n) => !n.deleted).toList()
+          ..sort((a, b) => (a.created ?? '').compareTo(b.created ?? ''));
+        return list;
+      });
+
+  @override
+  Future<String> ensureDefaultNotebook() async {
+    await _ensureLoaded();
+    final defaults = _notebooks.values
+        .where((n) => !n.deleted && n.isDefault)
+        .toList()
+      ..sort((a, b) {
+        final c = (a.created ?? '').compareTo(b.created ?? '');
+        return c != 0 ? c : a.id.compareTo(b.id);
+      });
+
+    if (defaults.isNotEmpty) {
+      // Reconcile duplicate defaults down to the earliest-created.
+      final keep = defaults.first;
+      for (final dup in defaults.skip(1)) {
+        final r = await _pb
+            .collection('notebooks')
+            .update(dup.id, body: {'deleted': true});
+        _notebooks[dup.id] = _notebookFrom(r);
+      }
+      _events.add(null);
+      return keep.id;
+    }
+
+    final r = await _pb.collection('notebooks').create(body: {
+      'owner': _ownerId,
+      'name': 'Notebook',
+      'is_default': true,
+      'deleted': false,
+    });
+    _notebooks[r.id] = _notebookFrom(r);
+    _events.add(null);
+    return r.id;
+  }
+
+  @override
+  Future<String> createNotebook(String name) async {
+    final r = await _pb.collection('notebooks').create(body: {
+      'owner': _ownerId,
+      'name': name.trim(),
+      'is_default': false,
+      'deleted': false,
+    });
+    _notebooks[r.id] = _notebookFrom(r);
+    _events.add(null);
+    return r.id;
+  }
+
+  @override
+  Future<void> renameNotebook(String id, String name) async {
+    final r = await _pb
+        .collection('notebooks')
+        .update(id, body: {'name': name.trim()});
+    _notebooks[id] = _notebookFrom(r);
+    _events.add(null);
+  }
+
+  @override
+  Future<void> deleteNotebook(String id,
+      {required bool moveNotesToDefault}) async {
+    final nb = _notebooks[id];
+    if (nb == null || nb.isDefault) return; // never delete the default
+
+    final defaultId = moveNotesToDefault ? await ensureDefaultNotebook() : '';
+    for (final note in _notes.values.where((n) => n.notebook == id).toList()) {
+      if (moveNotesToDefault) {
+        await setNoteNotebook(note.id, defaultId);
+      } else {
+        await softDelete(note.id);
+      }
+    }
+    final r =
+        await _pb.collection('notebooks').update(id, body: {'deleted': true});
+    _notebooks[id] = _notebookFrom(r);
+    _events.add(null);
+  }
+
+  @override
+  Future<void> setNoteNotebook(String noteId, String notebookId) async {
+    final r = await _pb
+        .collection('notes')
+        .update(noteId, body: {'notebook': notebookId});
+    _notes[noteId] = _noteFrom(r);
+    _events.add(null);
+  }
+
   // ---------------- Checklist items ----------------
 
   @override
@@ -429,11 +534,23 @@ class RemoteNotesRepository implements NotesRepository {
         archived: r.getBoolValue('archived'),
         color: r.getStringValue('color'),
         labels: encodeLabelIds(r.getListValue<String>('labels')),
+        notebook: r.getStringValue('notebook'),
         deleted: r.getBoolValue('deleted'),
         created: r.getStringValue('created'),
         updated: r.getStringValue('updated'),
         dirty: false,
         position: r.getIntValue('position'),
+      );
+
+  NotebookRow _notebookFrom(RecordModel r) => NotebookRow(
+        id: r.id,
+        owner: r.getStringValue('owner'),
+        name: r.getStringValue('name'),
+        isDefault: r.getBoolValue('is_default'),
+        deleted: r.getBoolValue('deleted'),
+        created: r.getStringValue('created'),
+        updated: r.getStringValue('updated'),
+        dirty: false,
       );
 
   LabelRow _labelFrom(RecordModel r) => LabelRow(
