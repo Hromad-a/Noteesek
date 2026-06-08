@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:pocketbase/pocketbase.dart';
@@ -152,3 +153,26 @@ class ActiveOwnerNotifier extends Notifier<String> {
 
 final activeOwnerProvider =
     NotifierProvider<ActiveOwnerNotifier, String>(ActiveOwnerNotifier.new);
+
+/// The app's light/dark/system theme preference (persisted, global). Drives
+/// [MaterialApp.themeMode]; defaults to following the system.
+class ThemeModeNotifier extends Notifier<ThemeMode> {
+  @override
+  ThemeMode build() {
+    final prefs = ref.watch(sharedPreferencesProvider);
+    return switch (prefs.getString(AppConfig.kThemeMode)) {
+      'light' => ThemeMode.light,
+      'dark' => ThemeMode.dark,
+      _ => ThemeMode.system,
+    };
+  }
+
+  Future<void> set(ThemeMode mode) async {
+    final prefs = ref.read(sharedPreferencesProvider);
+    await prefs.setString(AppConfig.kThemeMode, mode.name);
+    state = mode;
+  }
+}
+
+final themeModeProvider =
+    NotifierProvider<ThemeModeNotifier, ThemeMode>(ThemeModeNotifier.new);

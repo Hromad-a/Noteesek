@@ -28,4 +28,7 @@ class AppConfig {
   /// Note sort: field ('custom' | 'edited' | 'created') and direction.
   static const String kNoteSortField = 'note_sort_field';
   static const String kNoteSortAscending = 'note_sort_ascending';
+
+  /// App theme: 'system' | 'light' | 'dark'. Drives MaterialApp.themeMode.
+  static const String kThemeMode = 'theme_mode';
 }

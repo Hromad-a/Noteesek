@@ -45,6 +45,7 @@ class NoteesekApp extends ConsumerWidget {
         brightness: Brightness.dark,
         useMaterial3: true,
       ),
+      themeMode: ref.watch(themeModeProvider),
       home: home,
     );
   }

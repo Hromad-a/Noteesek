@@ -477,6 +477,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             const SizedBox(height: 24),
           ],
 
+          const _SectionHeader('Appearance'),
+          _ThemeModeSelector(),
+          const SizedBox(height: 24),
+
           const _SectionHeader('Server'),
           // Display-only: the server URL is bound to the current session and can
           // only be changed by signing out and reconnecting (see the "Connect to
@@ -798,6 +802,40 @@ class _AboutSectionState extends ConsumerState<_AboutSection> {
             ),
           ),
       ],
+    );
+  }
+}
+
+/// Light / Dark / System theme picker, bound to [themeModeProvider].
+class _ThemeModeSelector extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final mode = ref.watch(themeModeProvider);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: SegmentedButton<ThemeMode>(
+        segments: const [
+          ButtonSegment(
+            value: ThemeMode.system,
+            label: Text('System'),
+            icon: Icon(Icons.brightness_auto_outlined),
+          ),
+          ButtonSegment(
+            value: ThemeMode.light,
+            label: Text('Light'),
+            icon: Icon(Icons.light_mode_outlined),
+          ),
+          ButtonSegment(
+            value: ThemeMode.dark,
+            label: Text('Dark'),
+            icon: Icon(Icons.dark_mode_outlined),
+          ),
+        ],
+        selected: {mode},
+        showSelectedIcon: false,
+        onSelectionChanged: (s) =>
+            ref.read(themeModeProvider.notifier).set(s.first),
+      ),
     );
   }
 }
