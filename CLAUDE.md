@@ -103,8 +103,12 @@ search (title/body/checklist) · **note colors** (curated themed palette,
 via the grid bottom-bar selector, manage on `ManageNotebooksScreen`) ·
 **account settings** (change password / server URL / sign out) · **Markdown
 export** (bulk: all active+archived notes → one zip of `notes/*.md` +
-`attachments/*`, share sheet on mobile / download on web) · empty notes
-auto-move to Trash on close.
+`attachments/*`, share sheet on mobile / download on web) · **single-note
+share/export** (Markdown / plain text / PDF, from the editor overflow) ·
+**import** (Markdown export zip + loose `.md`, and Google Keep Takeout) ·
+**search filters** (notebook / labels / color / type / has-image) ·
+**light/dark/system theme** (Settings → Appearance) · **checklist** drag-reorder
++ optional auto-sort-checked-to-bottom · empty notes auto-move to Trash on close.
 
 ### Notebooks (`features/notes/`)
 - A note belongs to exactly one notebook (`notes.notebook`). Empty/unknown →
@@ -129,8 +133,28 @@ auto-move to Trash on close.
   attachments/labels/notebooks via the repo (`.first` on the streams) and zips
   with `archive`. Trashed notes excluded.
 - `export_delivery.dart` — platform delivery via conditional import:
-  `_io` (share_plus) / `_web` (blob + anchor download) / `_stub`.
+  `_io` (share_plus) / `_web` (blob + anchor download) / `_stub`. `deliverBytes`
+  generalises it (any mimeType) for the single-note exports.
 - Triggered from the drawer "Export notes" row.
+- **Single-note export** (`single_note_export.dart`): editor overflow "Share /
+  export" → Markdown (bare `.md`, or md+attachments zip when it has images),
+  plain text (`note_plaintext.dart`), or PDF (`note_pdf.dart`, `pdf` pkg,
+  delivered cross-platform via `printing`). Pure renderers are unit-tested.
+
+### Import (`features/import/`)
+- Settings → Data & storage → "Import notes" → pick a source (Markdown / Google
+  Keep), then a file (`file_picker`, `withData`). Runs on mobile **and** web.
+- `markdown_import.dart` — reverses the exporter: parses YAML frontmatter,
+  resolves `attachments/<id>` links from the zip, detects checklists
+  (task-list-only). Loose `.md` → title from first H1 or filename.
+- `keep_import.dart` — parses a Keep Takeout zip: active+archived (skips
+  trashed); labels→labels, Keep color→nearest palette key, pinned/archived,
+  annotations→body "Links:" block, attachments by basename.
+- `import_service.dart` — `NoteImportService.import(List<ParsedNote>)` resolves
+  label/notebook **names** → ids (find-or-create, deduped per run) and writes
+  via `repo.importNote(NoteImport)`. The backend sets its own `created`, so the
+  source's original date is appended to the body as a footnote (per design).
+- `import_models.dart` — `ParsedNote` (label/notebook as names) + `ImportResult`.
 
 ### Account settings (`features/auth/account_settings_screen.dart`)
 - "Test connection" button by the Server URL field pings `<typed-url>/api/health`
