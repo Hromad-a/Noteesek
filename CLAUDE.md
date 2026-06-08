@@ -152,6 +152,11 @@ flutter run -d chrome        # web (login-gated)
 flutter run -d <android>     # mobile (local-first)
 flutter build apk --release  # APK -> build/app/outputs/flutter-apk/
 
+# Remote sideload test build (no GitHub Actions): builds an arm64-v8a APK and
+# uploads it as a GitHub Release asset (tag test-YYYYMMDD-HHMM). Needs `gh`.
+# Repo is private -> on the phone, sign into github.com, open Releases, tap apk.
+./scripts/release-apk.sh
+
 # Tests (integration tests need the backend running at :8090)
 flutter test
 flutter analyze

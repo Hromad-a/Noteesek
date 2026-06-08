@@ -124,6 +124,10 @@ abstract interface class NotesRepository {
   Stream<List<AttachmentRow>> watchAttachments(String noteId);
   Future<String> addAttachment(String noteId, Uint8List bytes);
   Future<void> deleteAttachment(String id);
+
+  /// The ids of notes that currently have at least one (non-deleted)
+  /// attachment. Drives the "has image" search filter.
+  Stream<Set<String>> watchNoteIdsWithAttachments();
 }
 
 /// Selects the implementation by platform: web talks directly to the server,
@@ -149,6 +153,128 @@ class SearchQueryNotifier extends Notifier<String> {
 
 final searchQueryProvider =
     NotifierProvider<SearchQueryNotifier, String>(SearchQueryNotifier.new);
+
+/// Active filters layered on top of the notes grid (session-only — reset on
+/// app launch). [labelIds] match by OR; [color]/[type] are exact; [hasImage]
+/// keeps only notes with an attachment. [notebookId] overrides the grid's
+/// notebook scope: `null` = inherit the selected notebook, `''` = all
+/// notebooks, otherwise a specific notebook id.
+class SearchFilters {
+  const SearchFilters({
+    this.labelIds = const {},
+    this.color,
+    this.type,
+    this.hasImage = false,
+    this.notebookId,
+  });
+
+  final Set<String> labelIds;
+  final String? color;
+  final String? type;
+  final bool hasImage;
+  final String? notebookId;
+
+  /// All-notebooks sentinel for [notebookId].
+  static const String allNotebooks = '';
+
+  bool get isActive =>
+      labelIds.isNotEmpty ||
+      color != null ||
+      type != null ||
+      hasImage ||
+      notebookId != null;
+
+  int get count =>
+      (labelIds.isNotEmpty ? 1 : 0) +
+      (color != null ? 1 : 0) +
+      (type != null ? 1 : 0) +
+      (hasImage ? 1 : 0) +
+      (notebookId != null ? 1 : 0);
+}
+
+class SearchFiltersNotifier extends Notifier<SearchFilters> {
+  @override
+  SearchFilters build() => const SearchFilters();
+
+  void toggleLabel(String id) {
+    final next = {...state.labelIds};
+    next.contains(id) ? next.remove(id) : next.add(id);
+    state = SearchFilters(
+      labelIds: next,
+      color: state.color,
+      type: state.type,
+      hasImage: state.hasImage,
+      notebookId: state.notebookId,
+    );
+  }
+
+  void setColor(String? color) => state = SearchFilters(
+        labelIds: state.labelIds,
+        color: color,
+        type: state.type,
+        hasImage: state.hasImage,
+        notebookId: state.notebookId,
+      );
+
+  void setType(String? type) => state = SearchFilters(
+        labelIds: state.labelIds,
+        color: state.color,
+        type: type,
+        hasImage: state.hasImage,
+        notebookId: state.notebookId,
+      );
+
+  void setHasImage(bool hasImage) => state = SearchFilters(
+        labelIds: state.labelIds,
+        color: state.color,
+        type: state.type,
+        hasImage: hasImage,
+        notebookId: state.notebookId,
+      );
+
+  void setNotebook(String? notebookId) => state = SearchFilters(
+        labelIds: state.labelIds,
+        color: state.color,
+        type: state.type,
+        hasImage: state.hasImage,
+        notebookId: notebookId,
+      );
+
+  void clear() => state = const SearchFilters();
+}
+
+final searchFiltersProvider =
+    NotifierProvider<SearchFiltersNotifier, SearchFilters>(
+        SearchFiltersNotifier.new);
+
+/// The ids of notes that currently carry at least one (non-deleted)
+/// attachment, for the "has image" filter.
+final noteIdsWithAttachmentsProvider = StreamProvider<Set<String>>((ref) {
+  return ref.watch(notesRepositoryProvider).watchNoteIdsWithAttachments();
+});
+
+/// Applies the non-notebook [SearchFilters] to [notes]. Notebook scoping is
+/// handled separately (in [activeNotesProvider]) since it interacts with the
+/// grid's selection.
+List<NoteRow> applySearchFilters(
+    List<NoteRow> notes, SearchFilters f, Set<String> noteIdsWithImages) {
+  if (f.labelIds.isEmpty &&
+      f.color == null &&
+      f.type == null &&
+      !f.hasImage) {
+    return notes;
+  }
+  return notes.where((n) {
+    if (f.labelIds.isNotEmpty) {
+      final ids = labelIdsOf(n).toSet();
+      if (!f.labelIds.any(ids.contains)) return false;
+    }
+    if (f.color != null && n.color != f.color) return false;
+    if (f.type != null && n.type != f.type) return false;
+    if (f.hasImage && !noteIdsWithImages.contains(n.id)) return false;
+    return true;
+  }).toList();
+}
 
 /// All of the user's (non-deleted) notebooks, ordered oldest-first so the
 /// default notebook stays at the top.
@@ -329,16 +455,33 @@ _NotebookFilter _notebookFilter(Ref ref) {
   return _NotebookFilter(selected, known, defaultId);
 }
 
-/// Active notes for the grid: filtered by the current search query and the
-/// selected notebook.
+/// Active notes for the grid: filtered by the current search query, the
+/// notebook scope (or a filter override), the active [SearchFilters], then
+/// sorted.
 final activeNotesProvider = StreamProvider<List<NoteRow>>((ref) {
   final query = ref.watch(searchQueryProvider);
-  final filter = _notebookFilter(ref);
+  final nbFilter = _notebookFilter(ref);
   final sort = ref.watch(noteSortProvider);
-  return ref
-      .watch(notesRepositoryProvider)
-      .searchActive(query)
-      .map((notes) => sortNotes(filter.apply(notes), sort));
+  final filters = ref.watch(searchFiltersProvider);
+  final imageIds =
+      ref.watch(noteIdsWithAttachmentsProvider).asData?.value ?? const {};
+
+  List<NoteRow> scopeNotebook(List<NoteRow> notes) {
+    return switch (filters.notebookId) {
+      null => nbFilter.apply(notes), // inherit the grid's selected notebook
+      SearchFilters.allNotebooks => notes, // all notebooks
+      final id => notes
+          .where((n) =>
+              effectiveNotebookId(n, nbFilter.known, nbFilter.defaultId) == id)
+          .toList(),
+    };
+  }
+
+  return ref.watch(notesRepositoryProvider).searchActive(query).map((notes) {
+    final scoped = scopeNotebook(notes);
+    final filtered = applySearchFilters(scoped, filters, imageIds);
+    return sortNotes(filtered, sort);
+  });
 });
 
 /// Archived notes stream, scoped to the selected notebook.

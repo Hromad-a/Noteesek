@@ -555,4 +555,14 @@ class LocalNotesRepository implements NotesRepository {
       ),
     );
   }
+
+  @override
+  Stream<Set<String>> watchNoteIdsWithAttachments() {
+    return (_db.selectOnly(_db.attachments, distinct: true)
+          ..addColumns([_db.attachments.note])
+          ..where(_db.attachments.deleted.equals(false)))
+        .map((r) => r.read(_db.attachments.note)!)
+        .watch()
+        .map((ids) => ids.toSet());
+  }
 }

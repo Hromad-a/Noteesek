@@ -190,7 +190,8 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
                 data: (notes) {
                   if (notes.isEmpty) {
                     final searching =
-                        ref.watch(searchQueryProvider).trim().isNotEmpty;
+                        ref.watch(searchQueryProvider).trim().isNotEmpty ||
+                            ref.watch(searchFiltersProvider).isActive;
                     return searching
                         ? const _NoMatches()
                         : const _EmptyState();
@@ -903,6 +904,7 @@ class _SearchFieldState extends ConsumerState<_SearchField> {
   @override
   Widget build(BuildContext context) {
     final query = ref.watch(searchQueryProvider);
+    final filterCount = ref.watch(searchFiltersProvider).count;
     return SearchBar(
       controller: _ctrl,
       hintText: 'Search notes',
@@ -920,10 +922,183 @@ class _SearchFieldState extends ConsumerState<_SearchField> {
               ref.read(searchQueryProvider.notifier).set('');
             },
           ),
+        IconButton(
+          tooltip: 'Filter',
+          isSelected: filterCount > 0,
+          icon: Badge(
+            isLabelVisible: filterCount > 0,
+            label: Text('$filterCount'),
+            child: Icon(filterCount > 0
+                ? Icons.filter_list
+                : Icons.filter_list_outlined),
+          ),
+          onPressed: () => showModalBottomSheet<void>(
+            context: context,
+            showDragHandle: true,
+            isScrollControlled: true,
+            builder: (_) => const _FilterSheet(),
+          ),
+        ),
       ],
       onChanged: (v) => ref.read(searchQueryProvider.notifier).set(v),
     );
   }
+}
+
+/// Bottom sheet of search filters: notebook scope, labels, color, note type,
+/// and a has-image toggle. Edits the session-only [searchFiltersProvider].
+class _FilterSheet extends ConsumerWidget {
+  const _FilterSheet();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final filters = ref.watch(searchFiltersProvider);
+    final notifier = ref.read(searchFiltersProvider.notifier);
+    final labels = ref.watch(labelsProvider).asData?.value ?? const <LabelRow>[];
+    final notebooks =
+        ref.watch(notebooksProvider).asData?.value ?? const <NotebookRow>[];
+
+    return SafeArea(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.8,
+        ),
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          children: [
+            Row(
+              children: [
+                Text('Filters',
+                    style: Theme.of(context).textTheme.titleMedium),
+                const Spacer(),
+                if (filters.isActive)
+                  TextButton(
+                    onPressed: notifier.clear,
+                    child: const Text('Clear all'),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 4),
+
+            // Notebook scope.
+            const _FilterLabel('Notebook'),
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                ChoiceChip(
+                  label: const Text('Current'),
+                  selected: filters.notebookId == null,
+                  onSelected: (_) => notifier.setNotebook(null),
+                ),
+                ChoiceChip(
+                  label: const Text('All notebooks'),
+                  selected: filters.notebookId == SearchFilters.allNotebooks,
+                  onSelected: (_) =>
+                      notifier.setNotebook(SearchFilters.allNotebooks),
+                ),
+                for (final nb in notebooks)
+                  ChoiceChip(
+                    label: Text(nb.name),
+                    selected: filters.notebookId == nb.id,
+                    onSelected: (_) => notifier.setNotebook(nb.id),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+
+            // Labels (OR match).
+            if (labels.isNotEmpty) ...[
+              const _FilterLabel('Labels'),
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                children: [
+                  for (final l in labels)
+                    FilterChip(
+                      label: Text(l.name),
+                      selected: filters.labelIds.contains(l.id),
+                      onSelected: (_) => notifier.toggleLabel(l.id),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 12),
+            ],
+
+            // Color.
+            const _FilterLabel('Color'),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final c in kNoteColors)
+                  GestureDetector(
+                    onTap: () => notifier
+                        .setColor(filters.color == c.key ? null : c.key),
+                    child: Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: noteSwatchFor(context, c.key),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: filters.color == c.key
+                              ? Theme.of(context).colorScheme.primary
+                              : Theme.of(context).dividerColor,
+                          width: filters.color == c.key ? 3 : 1,
+                        ),
+                      ),
+                      child: c.key.isEmpty
+                          ? const Icon(Icons.block, size: 18)
+                          : null,
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+
+            // Type.
+            const _FilterLabel('Type'),
+            Wrap(
+              spacing: 8,
+              children: [
+                ChoiceChip(
+                  label: const Text('Text'),
+                  selected: filters.type == 'text',
+                  onSelected: (s) => notifier.setType(s ? 'text' : null),
+                ),
+                ChoiceChip(
+                  label: const Text('Checklist'),
+                  selected: filters.type == 'checklist',
+                  onSelected: (s) => notifier.setType(s ? 'checklist' : null),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Has image'),
+              value: filters.hasImage,
+              onChanged: notifier.setHasImage,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FilterLabel extends StatelessWidget {
+  const _FilterLabel(this.text);
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(bottom: 6),
+        child: Text(text, style: Theme.of(context).textTheme.labelLarge),
+      );
 }
 
 class _NoMatches extends StatelessWidget {

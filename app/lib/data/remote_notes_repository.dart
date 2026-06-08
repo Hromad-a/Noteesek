@@ -592,6 +592,13 @@ class RemoteNotesRepository implements NotesRepository {
         _events.add(null);
       });
 
+  @override
+  Stream<Set<String>> watchNoteIdsWithAttachments() => _view(() => _attachments
+      .values
+      .where((a) => !a.deleted)
+      .map((a) => a.note)
+      .toSet());
+
   Future<Uint8List?> _downloadBytes(RecordModel rec) async {
     final filename = rec.getStringValue('file');
     if (filename.isEmpty) return null;
