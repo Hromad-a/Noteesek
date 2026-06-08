@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show TextInput;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pocketbase/pocketbase.dart';
 
@@ -67,6 +68,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         });
       }
       await pb.collection('users').authWithPassword(email, password);
+
+      // Credentials worked — let the OS/password manager offer to save them.
+      TextInput.finishAutofillContext();
 
       // Claim local notes for this account and kick off the first sync.
       // (No-ops on web, where there are no local notes and no sync engine.)
@@ -206,7 +210,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             constraints: const BoxConstraints(maxWidth: 420),
             child: Form(
               key: _formKey,
-              child: Column(
+              child: AutofillGroup(
+                child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -256,6 +261,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     ),
                     keyboardType: TextInputType.emailAddress,
                     autocorrect: false,
+                    // Lets password managers recognise the credential field.
+                    autofillHints: const [
+                      AutofillHints.username,
+                      AutofillHints.email,
+                    ],
+                    textInputAction: TextInputAction.next,
                     validator: (v) =>
                         (v?.contains('@') ?? false) ? null : 'Enter your email',
                   ),
@@ -267,6 +278,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       prefixIcon: Icon(Icons.lock_outline),
                     ),
                     obscureText: true,
+                    // New-password hint in register mode prompts a save/generate
+                    // offer; current-password hint when signing in.
+                    autofillHints: [
+                      _registerMode
+                          ? AutofillHints.newPassword
+                          : AutofillHints.password,
+                    ],
+                    textInputAction: TextInputAction.done,
                     onFieldSubmitted: (_) => _submit(),
                     validator: (v) => (v != null && v.length >= 8)
                         ? null
@@ -312,6 +331,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       child: const Text('Forgot password?'),
                     ),
                 ],
+                ),
               ),
             ),
           ),
