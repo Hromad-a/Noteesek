@@ -52,6 +52,9 @@ dependencies:
   share_plus: ^10.0.0
   web: ^1.1.0
   package_info_plus: ^9.0.1
+  # Single-note PDF export (cross-platform share/print/download).
+  pdf: ^3.11.0
+  printing: ^5.13.0
 
 dev_dependencies:
   flutter_test:

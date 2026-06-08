@@ -4,3 +4,8 @@ import 'dart:typed_data';
 Future<void> deliverExport(Uint8List bytes, String fileName) async {
   throw UnsupportedError('Export is not supported on this platform');
 }
+
+Future<void> deliverBytes(Uint8List bytes, String fileName, String mimeType,
+    {String? subject}) async {
+  throw UnsupportedError('Export is not supported on this platform');
+}

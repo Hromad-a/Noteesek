@@ -6,9 +6,17 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../data/local/database.dart';
 import '../../data/notes_repository.dart';
+import '../export/single_note_export.dart';
 import 'note_colors.dart';
 
-enum _OverflowAction { convert, autoSort, moveToNotebook, archive, delete }
+enum _OverflowAction {
+  convert,
+  autoSort,
+  share,
+  moveToNotebook,
+  archive,
+  delete
+}
 
 const _months = [
   'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
@@ -188,6 +196,49 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     }
   }
 
+  /// Offers the single-note export formats (Markdown / plain text / PDF) in a
+  /// bottom sheet, then hands the chosen format to the platform share/download.
+  Future<void> _shareNote(String noteId) async {
+    final format = await showModalBottomSheet<NoteExportFormat>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.description_outlined),
+              title: const Text('Markdown'),
+              onTap: () =>
+                  Navigator.of(sheetContext).pop(NoteExportFormat.markdown),
+            ),
+            ListTile(
+              leading: const Icon(Icons.notes_outlined),
+              title: const Text('Plain text'),
+              onTap: () =>
+                  Navigator.of(sheetContext).pop(NoteExportFormat.plainText),
+            ),
+            ListTile(
+              leading: const Icon(Icons.picture_as_pdf_outlined),
+              title: const Text('PDF'),
+              onTap: () => Navigator.of(sheetContext).pop(NoteExportFormat.pdf),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (format == null) return;
+    try {
+      await SingleNoteExporter(_repo).share(noteId, format);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(SnackBar(content: Text('Share failed: $e')));
+      }
+    }
+  }
+
   Future<void> _pickImage(String noteId) async {
     final picked = await ImagePicker().pickImage(
       source: ImageSource.gallery,
@@ -273,6 +324,8 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
                         await ref
                             .read(checklistAutoSortProvider.notifier)
                             .set(!ref.read(checklistAutoSortProvider));
+                      case _OverflowAction.share:
+                        await _shareNote(note.id);
                       case _OverflowAction.moveToNotebook:
                         await _moveToNotebook(note);
                       case _OverflowAction.archive:
@@ -306,6 +359,14 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
                           contentPadding: EdgeInsets.zero,
                         ),
                       ),
+                    const PopupMenuItem(
+                      value: _OverflowAction.share,
+                      child: ListTile(
+                        leading: Icon(Icons.ios_share),
+                        title: Text('Share / export'),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
                     const PopupMenuItem(
                       value: _OverflowAction.moveToNotebook,
                       child: ListTile(
