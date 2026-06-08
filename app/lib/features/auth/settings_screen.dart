@@ -1,6 +1,10 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart' as http;
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:pocketbase/pocketbase.dart';
 
 import '../../config/app_config.dart';
@@ -519,6 +523,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     : 'Permanently delete all notes on this device'),
             onTap: _wipeBusy ? null : () => _showWipeDialog(signedIn: signedIn),
           ),
+          const SizedBox(height: 24),
+
+          const _SectionHeader('About'),
+          _AboutSection(signedIn: signedIn),
 
           if (signedIn) ...[
             const SizedBox(height: 32),
@@ -560,6 +568,164 @@ class _SectionHeader extends StatelessWidget {
               fontWeight: FontWeight.bold,
             ),
       ),
+    );
+  }
+}
+
+/// A parsed app/server version (e.g. version "1.2.0", build "3").
+class _VersionInfo {
+  const _VersionInfo(this.version, this.build);
+
+  final String version;
+  final String build;
+
+  String get display => build.isEmpty ? version : '$version ($build)';
+}
+
+/// App and server version rows. On mobile it shows the installed app version
+/// and — when connected — the server's version, warning if the two semantic
+/// versions differ (build number ignored). On web there's only one build, so it
+/// shows just the server version.
+class _AboutSection extends ConsumerStatefulWidget {
+  const _AboutSection({required this.signedIn});
+
+  final bool signedIn;
+
+  @override
+  ConsumerState<_AboutSection> createState() => _AboutSectionState();
+}
+
+class _AboutSectionState extends ConsumerState<_AboutSection> {
+  _VersionInfo? _app;
+  _VersionInfo? _server;
+  bool _serverLoading = false;
+  bool _serverFailed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    if (!kIsWeb) {
+      final info = await PackageInfo.fromPlatform();
+      if (mounted) {
+        setState(() => _app = _VersionInfo(info.version, info.buildNumber));
+      }
+    }
+    // Fetch the server version when there's a server to ask: always on web
+    // (its own origin), and on mobile only once connected.
+    if (kIsWeb || widget.signedIn) {
+      await _loadServer();
+    }
+  }
+
+  Future<void> _loadServer() async {
+    setState(() {
+      _serverLoading = true;
+      _serverFailed = false;
+    });
+    final baseURL = ref.read(pocketBaseProvider).baseURL;
+    final info = await _fetchServerVersion(baseURL);
+    if (!mounted) return;
+    setState(() {
+      _server = info;
+      _serverFailed = info == null;
+      _serverLoading = false;
+    });
+  }
+
+  /// GETs `<baseURL>/version.json` (the manifest Flutter emits into the web
+  /// build the server serves). Returns null if unreachable or malformed.
+  Future<_VersionInfo?> _fetchServerVersion(String baseURL) async {
+    final base = baseURL.trim().replaceAll(RegExp(r'/+$'), '');
+    final uri = Uri.tryParse('$base/version.json');
+    if (uri == null) return null;
+    try {
+      final resp = await http.get(uri).timeout(const Duration(seconds: 8));
+      if (resp.statusCode != 200) return null;
+      final json = jsonDecode(resp.body) as Map<String, dynamic>;
+      final v = (json['version'] ?? '').toString();
+      final b = (json['build_number'] ?? '').toString();
+      if (v.isEmpty) return null;
+      return _VersionInfo(v, b);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final mismatch = _app != null &&
+        _server != null &&
+        _app!.version != _server!.version;
+
+    Widget serverTrailing() {
+      if (_serverLoading) {
+        return const SizedBox(
+          height: 18,
+          width: 18,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        );
+      }
+      if (mismatch) {
+        return Tooltip(
+          message: 'App and server versions differ',
+          child: Icon(Icons.warning_amber_rounded,
+              color: Colors.orange.shade700),
+        );
+      }
+      return const SizedBox.shrink();
+    }
+
+    String serverSubtitle() {
+      if (_serverLoading) return 'Checking…';
+      if (_serverFailed || _server == null) return 'Unavailable';
+      return _server!.display;
+    }
+
+    return Column(
+      children: [
+        // App version: mobile only (on web the app *is* the server build).
+        if (!kIsWeb)
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.smartphone_outlined),
+            title: const Text('App version'),
+            subtitle: Text(_app?.display ?? '…'),
+          ),
+        // Server version: on web always; on mobile only when connected.
+        if (kIsWeb || widget.signedIn)
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.dns_outlined),
+            title: const Text('Server version'),
+            subtitle: Text(serverSubtitle()),
+            trailing: serverTrailing(),
+          ),
+        if (mismatch)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.warning_amber_rounded,
+                    size: 18, color: Colors.orange.shade700),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'This app (${_app!.version}) and the server '
+                    '(${_server!.version}) are different versions. Some '
+                    'features may not work until both are updated.',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
     );
   }
 }
