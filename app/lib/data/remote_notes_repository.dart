@@ -228,6 +228,52 @@ class RemoteNotesRepository implements NotesRepository {
       }, '');
 
   @override
+  Future<String> importNote(NoteImport data) => _guard(() async {
+        final maxPos = _notes.values
+            .where((n) => !n.deleted)
+            .fold<int>(-1, (m, n) => n.position > m ? n.position : m);
+        final r = await _pb.collection('notes').create(body: {
+          'owner': _ownerId,
+          'type': data.type,
+          'title': data.title,
+          'body': data.body,
+          'pinned': data.pinned,
+          'archived': data.archived,
+          'color': data.color,
+          'labels': data.labelIds,
+          'notebook': data.notebook,
+          'deleted': false,
+          'position': maxPos + 1,
+        });
+        _notes[r.id] = _noteFrom(r);
+
+        for (var i = 0; i < data.items.length; i++) {
+          final item = data.items[i];
+          final ir = await _pb.collection('checklist_items').create(body: {
+            'note': r.id,
+            'text': item.content,
+            'checked': item.checked,
+            'position': i,
+            'deleted': false,
+          });
+          _items[ir.id] = _itemFrom(ir);
+        }
+
+        for (final bytes in data.images) {
+          final ar = await _pb.collection('attachments').create(
+            body: {'note': r.id, 'deleted': false},
+            files: [
+              http.MultipartFile.fromBytes('file', bytes, filename: 'image.jpg')
+            ],
+          );
+          _attachments[ar.id] = _attachmentFrom(ar, bytes);
+        }
+
+        _events.add(null);
+        return r.id;
+      }, '');
+
+  @override
   Future<void> updateNoteFields(String id, {String? title, String? body}) =>
       _guardVoid(() async {
         final r = await _pb.collection('notes').update(id, body: {

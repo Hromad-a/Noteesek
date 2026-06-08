@@ -5,6 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:noteesek/data/local/database.dart';
 import 'package:noteesek/data/local_notes_repository.dart';
 import 'package:noteesek/data/notes_repository.dart';
+import 'package:noteesek/features/import/import_models.dart';
+import 'package:noteesek/features/import/import_service.dart';
 
 void main() {
   late AppDatabase db;
@@ -47,6 +49,46 @@ void main() {
     await repo.deleteItem(itemId);
     items = await repo.watchItems(id).first;
     expect(items, isEmpty); // soft-deleted, filtered out
+  });
+
+  test('import service writes notes/items and find-or-creates labels',
+      () async {
+    final svc = NoteImportService(repo);
+    final result = await svc.import([
+      const ParsedNote(
+        type: 'checklist',
+        title: 'Trip',
+        labelNames: ['Travel'],
+        notebookName: 'Trips',
+        items: [ImportedItem('passport', true), ImportedItem('tickets', false)],
+      ),
+      const ParsedNote(
+        type: 'text',
+        title: 'Note',
+        body: 'hello',
+        labelNames: ['Travel'], // same label → reused, not duplicated
+        originalCreated: '2024-01-02 00:00:00.000Z',
+      ),
+    ]);
+
+    expect(result.imported, 2);
+
+    final labels = await repo.watchLabels().first;
+    expect(labels.where((l) => l.name == 'Travel').length, 1);
+
+    final notebooks = await repo.watchNotebooks().first;
+    expect(notebooks.where((n) => n.name == 'Trips').length, 1);
+
+    final notes = await repo.watchActive().first;
+    final checklist = notes.firstWhere((n) => n.title == 'Trip');
+    final items = await repo.watchItems(checklist.id).first;
+    expect(items.map((i) => i.content).toList(), ['passport', 'tickets']);
+    expect(items.first.checked, isTrue);
+
+    // The original creation date is preserved in the body as a footnote.
+    final text = notes.firstWhere((n) => n.title == 'Note');
+    expect(text.body, contains('hello'));
+    expect(text.body, contains('2024-01-02'));
   });
 
   test('reorderItems reassigns positions to the given order', () async {

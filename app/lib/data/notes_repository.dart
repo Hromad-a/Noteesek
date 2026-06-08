@@ -40,6 +40,42 @@ String effectiveNotebookId(
   return defaultNotebookId;
 }
 
+/// A checklist item to create as part of an imported note.
+class ImportedItem {
+  const ImportedItem(this.content, this.checked);
+  final String content;
+  final bool checked;
+}
+
+/// A fully-resolved note to create in one shot via [NotesRepository.importNote].
+/// Labels and notebook are already resolved to ids by the import service (so the
+/// repo just writes them); images are raw attachment bytes.
+class NoteImport {
+  const NoteImport({
+    required this.type,
+    this.title = '',
+    this.body = '',
+    this.pinned = false,
+    this.archived = false,
+    this.color = '',
+    this.labelIds = const [],
+    this.notebook = '',
+    this.items = const [],
+    this.images = const [],
+  });
+
+  final String type; // 'text' | 'checklist'
+  final String title;
+  final String body;
+  final bool pinned;
+  final bool archived;
+  final String color;
+  final List<String> labelIds;
+  final String notebook; // notebook id ('' = default)
+  final List<ImportedItem> items;
+  final List<Uint8List> images;
+}
+
 /// Abstraction over note storage. Two implementations:
 /// - [LocalNotesRepository] (mobile): offline-first drift DB + sync.
 /// - [RemoteNotesRepository] (web): online-only, direct PocketBase API.
@@ -59,6 +95,11 @@ abstract interface class NotesRepository {
   /// Create a note in [notebook] (empty = default). Stamped with the active
   /// owner and appended to the end of its section.
   Future<String> createNote({required String type, String notebook});
+
+  /// Create a fully-populated note (with checklist items and image attachments)
+  /// in one shot. Used by the import flows. Returns the new note id.
+  Future<String> importNote(NoteImport data);
+
   Future<void> updateNoteFields(String id, {String? title, String? body});
   Future<void> setPinned(String id, bool pinned);
   Future<void> setArchived(String id, bool archived);

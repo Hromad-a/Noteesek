@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -13,6 +14,9 @@ import '../../providers.dart';
 import '../../sync/sync_controller.dart';
 import '../export/export_delivery.dart';
 import '../export/export_service.dart';
+import '../import/import_models.dart';
+import '../import/import_service.dart';
+import '../import/markdown_import.dart';
 
 /// App settings, organised into sections: Account (change password, sign out),
 /// Server (connection URL), and Data & storage (wipe). Reached from the drawer:
@@ -159,6 +163,41 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       if (mounted) ScaffoldMessenger.of(context).hideCurrentSnackBar();
     } catch (e) {
       if (mounted) _snack('Export failed: $e');
+    }
+  }
+
+  // ---------------- Import ----------------
+
+  /// Pick a Markdown export zip or a `.md` file, parse it, and write the notes
+  /// into the repository (local DB on mobile / PocketBase on web).
+  Future<void> _importMarkdown() async {
+    final picked = await FilePicker.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['md', 'zip', 'markdown'],
+      withData: true,
+    );
+    if (picked == null || picked.files.isEmpty) return;
+    final file = picked.files.single;
+    final bytes = file.bytes;
+    if (bytes == null) {
+      _snack('Could not read the selected file');
+      return;
+    }
+
+    _snack('Importing…');
+    try {
+      final notes = parseMarkdownImport(bytes, file.name);
+      final ImportResult result =
+          await NoteImportService(ref.read(notesRepositoryProvider))
+              .import(notes);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      _snack(result.imported == 0
+          ? 'Nothing to import'
+          : 'Imported ${result.imported} '
+              'note${result.imported == 1 ? '' : 's'}');
+    } catch (e) {
+      if (mounted) _snack('Import failed: $e');
     }
   }
 
@@ -518,6 +557,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             title: const Text('Export notes'),
             subtitle: const Text('Download all notes as Markdown'),
             onTap: _exportNotes,
+          ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.upload_outlined),
+            title: const Text('Import notes'),
+            subtitle: const Text('From a Markdown export (.zip) or .md files'),
+            onTap: _importMarkdown,
           ),
           ListTile(
             contentPadding: EdgeInsets.zero,

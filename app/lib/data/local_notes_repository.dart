@@ -98,6 +98,65 @@ class LocalNotesRepository implements NotesRepository {
   }
 
   @override
+  Future<String> importNote(NoteImport data) async {
+    final id = newPbId();
+    await _db.transaction(() async {
+      final maxPos = await (_db.selectOnly(_db.notes)
+            ..addColumns([_db.notes.position.max()])
+            ..where(_db.notes.owner.equals(_ownerId) &
+                _db.notes.deleted.equals(false)))
+          .map((r) => r.read(_db.notes.position.max()))
+          .getSingleOrNull();
+      final now = pbNow();
+
+      await _db.into(_db.notes).insert(NotesCompanion.insert(
+            id: id,
+            owner: _ownerId,
+            type: Value(data.type),
+            title: Value(data.title),
+            body: Value(data.body),
+            pinned: Value(data.pinned),
+            archived: Value(data.archived),
+            color: Value(data.color),
+            labels: Value(encodeLabelIds(data.labelIds)),
+            notebook: Value(data.notebook),
+            position: Value((maxPos ?? -1) + 1),
+            created: Value(now),
+            updated: Value(now),
+            dirty: const Value(true),
+          ));
+
+      for (var i = 0; i < data.items.length; i++) {
+        final item = data.items[i];
+        await _db.into(_db.checklistItems).insert(
+              ChecklistItemsCompanion.insert(
+                id: newPbId(),
+                note: id,
+                content: Value(item.content),
+                checked: Value(item.checked),
+                position: Value(i),
+                created: Value(now),
+                updated: Value(now),
+                dirty: const Value(true),
+              ),
+            );
+      }
+
+      for (final bytes in data.images) {
+        await _db.into(_db.attachments).insert(AttachmentsCompanion.insert(
+              id: newPbId(),
+              note: id,
+              data: Value(bytes),
+              created: Value(now),
+              updated: Value(now),
+              dirty: const Value(true),
+            ));
+      }
+    });
+    return id;
+  }
+
+  @override
   Future<void> updateNoteFields(String id, {String? title, String? body}) async {
     await (_db.update(_db.notes)..where((t) => t.id.equals(id))).write(
       NotesCompanion(
