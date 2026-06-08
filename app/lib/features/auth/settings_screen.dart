@@ -16,6 +16,7 @@ import '../export/export_delivery.dart';
 import '../export/export_service.dart';
 import '../import/import_models.dart';
 import '../import/import_service.dart';
+import '../import/keep_import.dart';
 import '../import/markdown_import.dart';
 
 /// App settings, organised into sections: Account (change password, sign out),
@@ -168,12 +169,39 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   // ---------------- Import ----------------
 
-  /// Pick a Markdown export zip or a `.md` file, parse it, and write the notes
-  /// into the repository (local DB on mobile / PocketBase on web).
-  Future<void> _importMarkdown() async {
+  /// Asks which source to import from, then picks a file and runs the matching
+  /// parser. Writes into the repository (local DB on mobile / PocketBase on web).
+  Future<void> _importNotes() async {
+    final source = await showModalBottomSheet<_ImportSource>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.description_outlined),
+              title: const Text('Markdown export or .md files'),
+              subtitle: const Text('A Noteesek export .zip or a single .md'),
+              onTap: () =>
+                  Navigator.of(sheetContext).pop(_ImportSource.markdown),
+            ),
+            ListTile(
+              leading: const Icon(Icons.add_to_drive_outlined),
+              title: const Text('Google Keep (Takeout)'),
+              subtitle: const Text('The Keep .zip from Google Takeout'),
+              onTap: () => Navigator.of(sheetContext).pop(_ImportSource.keep),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (source == null) return;
+
     final picked = await FilePicker.pickFiles(
       type: FileType.custom,
-      allowedExtensions: ['md', 'zip', 'markdown'],
+      allowedExtensions:
+          source == _ImportSource.keep ? ['zip'] : ['md', 'zip', 'markdown'],
       withData: true,
     );
     if (picked == null || picked.files.isEmpty) return;
@@ -186,7 +214,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
     _snack('Importing…');
     try {
-      final notes = parseMarkdownImport(bytes, file.name);
+      final notes = switch (source) {
+        _ImportSource.markdown => parseMarkdownImport(bytes, file.name),
+        _ImportSource.keep => parseKeepTakeout(bytes),
+      };
       final ImportResult result =
           await NoteImportService(ref.read(notesRepositoryProvider))
               .import(notes);
@@ -562,8 +593,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.upload_outlined),
             title: const Text('Import notes'),
-            subtitle: const Text('From a Markdown export (.zip) or .md files'),
-            onTap: _importMarkdown,
+            subtitle: const Text('From a Markdown export or Google Keep'),
+            onTap: _importNotes,
           ),
           ListTile(
             contentPadding: EdgeInsets.zero,
@@ -606,6 +637,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 }
+
+/// Which external format an import reads from.
+enum _ImportSource { markdown, keep }
 
 /// Server reachability state used to gate password changes and drive the
 /// "Test connection" status icon.
