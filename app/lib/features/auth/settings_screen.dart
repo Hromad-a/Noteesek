@@ -212,12 +212,28 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       return;
     }
 
-    _snack('Importing…');
+    final List<ParsedNote> notes;
     try {
-      final notes = switch (source) {
+      notes = switch (source) {
         _ImportSource.markdown => parseMarkdownImport(bytes, file.name),
         _ImportSource.keep => parseKeepTakeout(bytes),
       };
+    } catch (e) {
+      _snack('Could not read that file: $e');
+      return;
+    }
+    if (notes.isEmpty) {
+      _snack('Nothing to import');
+      return;
+    }
+    if (!mounted) return;
+
+    // Preview + confirm before anything is written.
+    final confirmed = await _confirmImport(notes);
+    if (confirmed != true || !mounted) return;
+
+    _snack('Importing…');
+    try {
       final ImportResult result =
           await NoteImportService(ref.read(notesRepositoryProvider))
               .import(notes);
@@ -230,6 +246,76 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     } catch (e) {
       if (mounted) _snack('Import failed: $e');
     }
+  }
+
+  /// Shows a summary of what would be imported and asks the user to confirm.
+  Future<bool?> _confirmImport(List<ParsedNote> notes) {
+    final checklists = notes.where((n) => n.type == 'checklist').length;
+    final texts = notes.length - checklists;
+    final withImages = notes.where((n) => n.images.isNotEmpty).length;
+    final archived = notes.where((n) => n.archived).length;
+    final labelNames = <String>{
+      for (final n in notes)
+        for (final l in n.labelNames)
+          if (l.trim().isNotEmpty) l.trim()
+    };
+    final notebookNames = <String>{
+      for (final n in notes)
+        if (n.notebookName != null && n.notebookName!.trim().isNotEmpty)
+          n.notebookName!.trim()
+    };
+
+    final lines = <String>[
+      '$texts text · $checklists checklist',
+      if (withImages > 0) '$withImages with images',
+      if (archived > 0) '$archived archived',
+      if (labelNames.isNotEmpty)
+        '${labelNames.length} label${labelNames.length == 1 ? '' : 's'} '
+            '(created if missing)',
+      if (notebookNames.isNotEmpty)
+        '${notebookNames.length} notebook${notebookNames.length == 1 ? '' : 's'} '
+            '(created if missing)',
+    ];
+
+    return showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Import ${notes.length} '
+            'note${notes.length == 1 ? '' : 's'}?'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (final line in lines)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('•  '),
+                    Expanded(child: Text(line)),
+                  ],
+                ),
+              ),
+            const SizedBox(height: 12),
+            Text(
+              'Re-importing the same file creates duplicates.',
+              style: Theme.of(dialogContext).textTheme.bodySmall,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Import'),
+          ),
+        ],
+      ),
+    );
   }
 
   // ---------------- Wipe data ----------------

@@ -9,6 +9,7 @@ import '../../providers.dart';
 import '../../sync/sync_controller.dart';
 import '../auth/login_screen.dart';
 import '../auth/settings_screen.dart';
+import '../export/share_note_sheet.dart';
 import 'archive_screen.dart';
 import 'label_notes_screen.dart';
 import 'manage_labels_screen.dart';
@@ -417,6 +418,10 @@ class _SelectionAppBar extends ConsumerWidget implements PreferredSizeWidget {
         PopupMenuButton<String>(
           onSelected: (value) async {
             switch (value) {
+              case 'share':
+                // Single-note export only — offered when exactly one is picked.
+                await showShareNoteSheet(context, repo, ids.first);
+                done();
               case 'archive':
                 await Future.wait(
                     ids.map((id) => repo.setArchived(id, true)));
@@ -429,8 +434,17 @@ class _SelectionAppBar extends ConsumerWidget implements PreferredSizeWidget {
                 done();
             }
           },
-          itemBuilder: (context) => const [
-            PopupMenuItem(
+          itemBuilder: (context) => [
+            if (ids.length == 1)
+              const PopupMenuItem(
+                value: 'share',
+                child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.ios_share),
+                  title: Text('Share / export'),
+                ),
+              ),
+            const PopupMenuItem(
               value: 'archive',
               child: ListTile(
                 contentPadding: EdgeInsets.zero,
@@ -438,7 +452,7 @@ class _SelectionAppBar extends ConsumerWidget implements PreferredSizeWidget {
                 title: Text('Archive'),
               ),
             ),
-            PopupMenuItem(
+            const PopupMenuItem(
               value: 'move',
               child: ListTile(
                 contentPadding: EdgeInsets.zero,
@@ -446,7 +460,7 @@ class _SelectionAppBar extends ConsumerWidget implements PreferredSizeWidget {
                 title: Text('Move to notebook'),
               ),
             ),
-            PopupMenuItem(
+            const PopupMenuItem(
               value: 'delete',
               child: ListTile(
                 contentPadding: EdgeInsets.zero,
