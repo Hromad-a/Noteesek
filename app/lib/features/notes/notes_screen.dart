@@ -107,6 +107,11 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
     final hasPending =
         kIsWeb ? false : ref.watch(hasPendingChangesProvider).value ?? false;
     final selectionMode = ref.watch(selectionModeProvider);
+    final viewMode = ref.watch(noteViewModeProvider);
+    final sort = ref.watch(noteSortProvider);
+    // Drag-to-reorder only defines the custom order, so it's disabled under a
+    // date sort (long-press still selects — see NoteCard).
+    final reorderable = sort.field == NoteSortField.custom;
 
     return PopScope(
       canPop: !selectionMode,
@@ -120,6 +125,16 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
             : AppBar(
                 title: const Text('Notes'),
                 actions: [
+          IconButton(
+            tooltip: viewMode == NoteViewMode.grid
+                ? 'Single-column view'
+                : 'Grid view',
+            icon: Icon(viewMode == NoteViewMode.grid
+                ? Icons.view_agenda_outlined
+                : Icons.grid_view_outlined),
+            onPressed: () => ref.read(noteViewModeProvider.notifier).toggle(),
+          ),
+          _SortMenu(sort: sort),
           if (sync != null) ...[
             if (sync.syncing)
               const Padding(
@@ -180,31 +195,51 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
                         ? const _NoMatches()
                         : const _EmptyState();
                   }
-                  return Padding(
-                    padding: const EdgeInsets.all(8),
-                    child: MasonryGridView.extent(
-                      maxCrossAxisExtent: 240,
-                      mainAxisSpacing: 8,
-                      crossAxisSpacing: 8,
-                      itemCount: notes.length,
-                      itemBuilder: (context, i) {
-                        final note = notes[i];
-                        return DragTarget<String>(
-                          onWillAcceptWithDetails: (details) =>
-                              details.data != note.id,
-                          onAcceptWithDetails: (details) =>
-                              _onReorder(ref, details.data, note.id, notes),
-                          builder: (context, candidates, _) {
-                            return NoteCard(
-                              note: note,
-                              onTap: () => _open(context, note.id),
-                              isDragTarget: candidates.isNotEmpty,
-                              selectable: true,
-                            );
-                          },
+                  Widget itemBuilder(BuildContext context, int i) {
+                    final note = notes[i];
+                    // Under a date sort, cards aren't draggable — render the
+                    // card directly (long-press still selects).
+                    if (!reorderable) {
+                      return NoteCard(
+                        note: note,
+                        onTap: () => _open(context, note.id),
+                        selectable: true,
+                      );
+                    }
+                    return DragTarget<String>(
+                      onWillAcceptWithDetails: (details) =>
+                          details.data != note.id,
+                      onAcceptWithDetails: (details) =>
+                          _onReorder(ref, details.data, note.id, notes),
+                      builder: (context, candidates, _) {
+                        return NoteCard(
+                          note: note,
+                          onTap: () => _open(context, note.id),
+                          isDragTarget: candidates.isNotEmpty,
+                          selectable: true,
+                          reorderable: true,
                         );
                       },
-                    ),
+                    );
+                  }
+
+                  return Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: viewMode == NoteViewMode.column
+                        ? MasonryGridView.count(
+                            crossAxisCount: 1,
+                            mainAxisSpacing: 8,
+                            crossAxisSpacing: 8,
+                            itemCount: notes.length,
+                            itemBuilder: itemBuilder,
+                          )
+                        : MasonryGridView.extent(
+                            maxCrossAxisExtent: 240,
+                            mainAxisSpacing: 8,
+                            crossAxisSpacing: 8,
+                            itemCount: notes.length,
+                            itemBuilder: itemBuilder,
+                          ),
                   );
                 },
               ),
@@ -498,6 +533,58 @@ class _BulkLabelSheetState extends ConsumerState<_BulkLabelSheet> {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// App-bar sort control: pick the order field and flip the direction. Custom is
+/// the manual drag-reorder order; the date fields default to newest-first.
+class _SortMenu extends ConsumerWidget {
+  const _SortMenu({required this.sort});
+
+  final NoteSort sort;
+
+  static const _ascValue = '__asc__';
+
+  String _label(NoteSortField f) => switch (f) {
+        NoteSortField.custom => 'Custom order',
+        NoteSortField.edited => 'Date edited',
+        NoteSortField.created => 'Date created',
+      };
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final notifier = ref.read(noteSortProvider.notifier);
+    return PopupMenuButton<String>(
+      tooltip: 'Sort notes',
+      icon: const Icon(Icons.sort),
+      onSelected: (value) {
+        if (value == _ascValue) {
+          notifier.setAscending(!sort.ascending);
+        } else {
+          notifier.setField(NoteSortField.values.byName(value));
+        }
+      },
+      itemBuilder: (context) => [
+        for (final f in NoteSortField.values)
+          CheckedPopupMenuItem(
+            value: f.name,
+            checked: sort.field == f,
+            child: Text(_label(f)),
+          ),
+        const PopupMenuDivider(),
+        PopupMenuItem(
+          value: _ascValue,
+          child: ListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(sort.ascending
+                ? Icons.arrow_upward
+                : Icons.arrow_downward),
+            title: Text(sort.ascending ? 'Ascending' : 'Descending'),
+          ),
+        ),
+      ],
     );
   }
 }

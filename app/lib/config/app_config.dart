@@ -21,4 +21,11 @@ class AppConfig {
   /// Id of the notebook currently shown in the grid (persists the user's last
   /// selection). Empty falls back to the default notebook.
   static const String kSelectedNotebook = 'selected_notebook';
+
+  /// Grid layout: 'grid' (multi-column masonry) or 'column' (single column).
+  static const String kNoteViewMode = 'note_view_mode';
+
+  /// Note sort: field ('custom' | 'edited' | 'created') and direction.
+  static const String kNoteSortField = 'note_sort_field';
+  static const String kNoteSortAscending = 'note_sort_ascending';
 }

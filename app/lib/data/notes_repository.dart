@@ -181,6 +181,96 @@ final selectedNotebookIdProvider =
     NotifierProvider<SelectedNotebookNotifier, String>(
         SelectedNotebookNotifier.new);
 
+/// How the notes grid is laid out.
+enum NoteViewMode { grid, column }
+
+/// The grid layout mode (persisted, global). Toggled from the app bar.
+class NoteViewModeNotifier extends Notifier<NoteViewMode> {
+  @override
+  NoteViewMode build() {
+    final prefs = ref.watch(sharedPreferencesProvider);
+    return prefs.getString(AppConfig.kNoteViewMode) == 'column'
+        ? NoteViewMode.column
+        : NoteViewMode.grid;
+  }
+
+  Future<void> toggle() => set(
+      state == NoteViewMode.grid ? NoteViewMode.column : NoteViewMode.grid);
+
+  Future<void> set(NoteViewMode mode) async {
+    final prefs = ref.read(sharedPreferencesProvider);
+    await prefs.setString(AppConfig.kNoteViewMode, mode.name);
+    state = mode;
+  }
+}
+
+final noteViewModeProvider =
+    NotifierProvider<NoteViewModeNotifier, NoteViewMode>(
+        NoteViewModeNotifier.new);
+
+/// Which field the notes are ordered by. `custom` is the manual drag-reorder
+/// order (the `position` column).
+enum NoteSortField { custom, edited, created }
+
+/// A sort selection: a [field] plus a direction. Drag-to-reorder is only
+/// meaningful when [field] is [NoteSortField.custom].
+class NoteSort {
+  const NoteSort(this.field, this.ascending);
+
+  final NoteSortField field;
+  final bool ascending;
+}
+
+/// The active note sort (persisted, global). Picking a date field defaults to
+/// descending (newest first); custom defaults to ascending (its defined order).
+class NoteSortNotifier extends Notifier<NoteSort> {
+  @override
+  NoteSort build() {
+    final prefs = ref.watch(sharedPreferencesProvider);
+    final field = NoteSortField.values.firstWhere(
+      (f) => f.name == prefs.getString(AppConfig.kNoteSortField),
+      orElse: () => NoteSortField.custom,
+    );
+    final asc = prefs.getBool(AppConfig.kNoteSortAscending) ??
+        (field == NoteSortField.custom);
+    return NoteSort(field, asc);
+  }
+
+  /// Switch to [field], defaulting the direction sensibly (custom → ascending,
+  /// dates → descending/newest-first).
+  Future<void> setField(NoteSortField field) =>
+      _store(NoteSort(field, field == NoteSortField.custom));
+
+  Future<void> setAscending(bool ascending) =>
+      _store(NoteSort(state.field, ascending));
+
+  Future<void> _store(NoteSort sort) async {
+    final prefs = ref.read(sharedPreferencesProvider);
+    await prefs.setString(AppConfig.kNoteSortField, sort.field.name);
+    await prefs.setBool(AppConfig.kNoteSortAscending, sort.ascending);
+    state = sort;
+  }
+}
+
+final noteSortProvider =
+    NotifierProvider<NoteSortNotifier, NoteSort>(NoteSortNotifier.new);
+
+/// Orders [notes] by [sort], keeping pinned notes in a top section regardless
+/// of direction. Returns a new list.
+List<NoteRow> sortNotes(List<NoteRow> notes, NoteSort sort) {
+  final list = [...notes];
+  list.sort((a, b) {
+    if (a.pinned != b.pinned) return a.pinned ? -1 : 1; // pinned always first
+    final c = switch (sort.field) {
+      NoteSortField.custom => a.position.compareTo(b.position),
+      NoteSortField.edited => a.updated.compareTo(b.updated),
+      NoteSortField.created => (a.created ?? '').compareTo(b.created ?? ''),
+    };
+    return sort.ascending ? c : -c;
+  });
+  return list;
+}
+
 /// The notebook actually shown in the grid: the user's selection when it still
 /// exists, otherwise the default. Used to filter the active/archive/trash lists.
 final activeNotebookIdProvider = Provider<String>((ref) {
@@ -220,7 +310,11 @@ _NotebookFilter _notebookFilter(Ref ref) {
 final activeNotesProvider = StreamProvider<List<NoteRow>>((ref) {
   final query = ref.watch(searchQueryProvider);
   final filter = _notebookFilter(ref);
-  return ref.watch(notesRepositoryProvider).searchActive(query).map(filter.apply);
+  final sort = ref.watch(noteSortProvider);
+  return ref
+      .watch(notesRepositoryProvider)
+      .searchActive(query)
+      .map((notes) => sortNotes(filter.apply(notes), sort));
 });
 
 /// Archived notes stream, scoped to the selected notebook.

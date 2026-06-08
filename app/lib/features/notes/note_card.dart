@@ -15,6 +15,7 @@ class NoteCard extends ConsumerStatefulWidget {
     required this.onTap,
     this.isDragTarget = false,
     this.selectable = false,
+    this.reorderable = false,
   });
 
   final NoteRow note;
@@ -26,6 +27,11 @@ class NoteCard extends ConsumerStatefulWidget {
   /// When true, long-press enters multi-select and taps toggle selection.
   /// Only the main notes grid opts in; Archive/Label screens leave it off.
   final bool selectable;
+
+  /// When true, the card is a [LongPressDraggable] for drag-to-reorder. Only
+  /// the main grid under the Custom sort opts in; under a date sort it's false
+  /// so long-press selects instead of starting a (meaningless) reorder drag.
+  final bool reorderable;
 
   @override
   ConsumerState<NoteCard> createState() => _NoteCardState();
@@ -152,6 +158,16 @@ class _NoteCardState extends ConsumerState<NoteCard> {
         ),
       ),
     );
+
+    // Not draggable (date sort, or Archive/Label screens). Long-press still
+    // enters selection where that's enabled; otherwise it's a plain card.
+    if (!widget.reorderable) {
+      if (!widget.selectable) return card;
+      return GestureDetector(
+        onLongPress: () => selection.add(note.id),
+        child: card,
+      );
+    }
 
     // Web: short hold (150ms) so it feels like click-drag while still
     // letting quick taps through to InkWell.onTap.
