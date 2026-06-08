@@ -1,26 +1,29 @@
-# Deploy Noteesek on any machine with Docker — no source checkout or build.
+# Noteesek — production deploy. One container bundles the Flutter web app, the
+# PocketBase API, and the schema (migrations + hooks baked into the image). The
+# only external state is ./pb_data next to this file.
 #
-#   docker compose up -d
+#   docker compose pull && docker compose up -d
 #
-# This pulls a prebuilt image from the GitHub Container Registry. The image
-# bundles the Flutter web app, the PocketBase server, and the schema migrations,
-# so a fresh machine comes up fully configured. Open http://localhost:8090/
+# Open http://localhost:8090/ — app at /, REST API at /api, admin at /_/.
+# Back up by copying ./pb_data. Copy .env.example to .env to set the version,
+# port, admin bootstrap, and SMTP (all optional).
 #
-# Persistent data lives in ./pb_data next to this file — back it up by copying
-# that folder. Pin a specific version with NOTEESEK_VERSION (see .env.example).
-#
-# (The build-from-source compose used for development is in server/.)
+# To build the image from source instead of pulling, use docker-compose.build.yml.
 services:
   noteesek:
     image: ghcr.io/hromad-a/noteesek:${NOTEESEK_VERSION:-latest}
     container_name: noteesek
     restart: unless-stopped
+    # Optional config read by the container at startup: superuser bootstrap
+    # (PB_SUPERUSER_*) and outgoing mail (SMTP_*, APP_URL). See .env.example.
+    env_file:
+      - path: .env
+        required: false
     ports:
-      # host : container. Change the host side (or set NOTEESEK_PORT) to serve
-      # on a different port. The container always listens on 8080.
+      # host : container. The container always listens on 8080.
       - "${NOTEESEK_PORT:-8090}:8080"
     volumes:
-      # PocketBase runtime state (database, uploaded files). Keep/back this up.
+      # Persistent runtime state (database + uploaded files). Keep/back this up.
       - ./pb_data:/pb/pb_data
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/health"]

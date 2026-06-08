@@ -134,12 +134,14 @@ The **backend** runs via Docker Compose as a single PocketBase service. The
 phone and talks to PocketBase over the network. (`docker compose up` brings up
 the backend; the phone connects to it.)
 
-- `server/Dockerfile` downloads the PocketBase binary onto a small Alpine image.
-- `server/docker-compose.yml` runs one `pocketbase` service with bind-mounted
-  volumes:
-  - `pb_data/` → persistent data (gitignored; backup = copy this folder)
-  - `pb_migrations/` → schema as code, auto-applied on startup (committed)
-  - `pb_hooks/` → optional custom JS hooks (committed)
+- `server/Dockerfile` downloads the PocketBase binary onto a small Alpine image
+  and bakes in `pb_migrations/` + `pb_hooks/`.
+- The root `docker-compose.yml` runs one `noteesek` service:
+  - `pb_data/` → persistent data, the only bind mount (gitignored; backup = copy
+    this folder)
+  - `pb_migrations/` → schema as code, auto-applied on startup (committed, baked
+    into the image)
+  - `pb_hooks/` → optional custom JS hooks (committed, baked into the image)
 - Stays lightweight: one service, ~10–30 MB idle RAM.
 - HTTPS via a reverse proxy (Caddy/Traefik) is a later deployment detail, not
   part of the v1 compose file.

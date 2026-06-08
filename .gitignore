@@ -1,5 +1,4 @@
-# PocketBase runtime data (never commit — back up the folder instead)
-server/pb_data/
+# PocketBase runtime data is ignored via /pb_data/ below.
 
 # Flutter / Dart
 app/.dart_tool/

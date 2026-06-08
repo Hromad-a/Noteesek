@@ -24,10 +24,14 @@ The split is implemented with `kIsWeb` branches + a repository interface.
 
 ```
 Noteesek/
+├── docker-compose.yml       # production deploy (pulls the published image)
+├── docker-compose.build.yml # dev: extends ^ + builds the image from source
+├── .env.example       # version/port + optional superuser & SMTP (copy to .env)
 ├── server/            # PocketBase backend (Docker)
 │   ├── Dockerfile         # multi-stage: builds Flutter web -> serves from pb_public
-│   ├── docker-compose.yml # build context = repo root (..)
+│   │                      #   bakes in pb_migrations + pb_hooks + entrypoint.sh
 │   └── pb_migrations/     # collections + schema as code (committed)
+├── pb_data/           # runtime state (gitignored; back up by copying)
 ├── app/               # Flutter client (Android + web)
 │   └── lib/
 │       ├── app.dart            # MaterialApp; web = login-gated, mobile = local-first
@@ -166,7 +170,9 @@ share/export** (Markdown / plain text / PDF, from the editor overflow) ·
 ## Build / run / test
 ```bash
 # Backend + web UI (one container: app at /, API at /api, admin at /_/)
-cd server && docker compose up -d --build        # http://localhost:8090
+docker compose pull && docker compose up -d                  # deploy a release
+docker compose -f docker-compose.build.yml up -d --build     # build from source
+# → http://localhost:8090
 
 # Flutter app dev
 cd app

@@ -5,8 +5,13 @@ Single-binary PocketBase backend, run via Docker Compose. Pinned to PocketBase
 
 ## Run
 
+Compose lives at the **repo root**. Building from source uses
+`docker-compose.build.yml` (the plain `docker-compose.yml` is the pull-only
+production deploy):
+
 ```bash
-docker compose up -d --build
+cd ..                       # repo root
+docker compose -f docker-compose.build.yml up -d --build
 ```
 
 The image is **multi-stage**: it builds the Flutter web app and serves it from
@@ -27,10 +32,12 @@ box. Migrations in `pb_migrations/` are applied automatically on startup.
 
 ## First superuser
 
-Create an admin without the browser flow:
+Either set `PB_SUPERUSER_EMAIL` / `PB_SUPERUSER_PASSWORD` in `.env` (bootstrapped
+on every start), or create one ad-hoc without the browser flow (from the repo
+root):
 
 ```bash
-docker compose exec pocketbase /pb/pocketbase superuser upsert you@example.com 'a-strong-password'
+docker compose exec noteesek /pb/pocketbase superuser upsert you@example.com 'a-strong-password'
 ```
 
 ## Collections
@@ -55,15 +62,15 @@ cursor the client uses for last-write-wins sync. Deletes are **soft**
 
 ## Data & backup
 
-- All runtime state lives in `pb_data/` (gitignored). **Back up by copying that
-  folder.**
-- Schema lives in `pb_migrations/` (committed) and is reproducible from an empty
-  `pb_data/`.
+- All runtime state lives in `pb_data/` at the **repo root** (gitignored). **Back
+  up by copying that folder.**
+- Schema lives in `server/pb_migrations/` (committed, baked into the image) and is
+  reproducible from an empty `pb_data/`.
 
 ## Notes for development
 
 If you apply new migrations against an already-running container, restart it so
-PocketBase reloads its in-memory collection cache:
+PocketBase reloads its in-memory collection cache (from the repo root):
 
 ```bash
 docker compose restart

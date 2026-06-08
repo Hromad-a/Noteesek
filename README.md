@@ -22,34 +22,33 @@ Noteesek/
 └── docs/              # sync protocol & notes
 ```
 
-## Deploy (any machine with Docker)
+## Run with Docker
 
-Run a published release without checking out the source or building anything.
-Grab the root [`docker-compose.yml`](docker-compose.yml) and run:
+One container bundles the web app, the PocketBase server, and the schema; the
+only external state is `./pb_data` next to the compose file (back it up by
+copying that folder).
+
+**Deploy a published release** — [`docker-compose.yml`](docker-compose.yml) pulls
+a prebuilt multi-arch image (amd64 + arm64) from `ghcr.io/hromad-a/noteesek`:
 
 ```bash
-docker compose up -d
+docker compose pull && docker compose up -d
 ```
 
-This pulls a prebuilt multi-arch image (amd64 + arm64) from the GitHub Container
-Registry — `ghcr.io/hromad-a/noteesek` — with the web app, server, and schema
-all bundled in. Then open:
+**Build & run from source** (development) — adds the build config on top via
+[`docker-compose.build.yml`](docker-compose.build.yml):
+
+```bash
+docker compose -f docker-compose.build.yml up -d --build
+```
+
+Then open:
 
 - Web app: <http://localhost:8090/>
 - Admin UI: <http://localhost:8090/_/>
 
-Persistent data is stored in `./pb_data` next to the compose file (back it up by
-copying that folder). To pin a version or change the port, copy `.env.example`
-to `.env` and edit it.
-
-## Quick start (backend, build from source)
-
-```bash
-cd server
-docker compose up -d --build
-```
-
-PocketBase admin UI: <http://localhost:8090/_/>
+To pin a version, change the port, bootstrap an admin, or configure SMTP, copy
+[`.env.example`](.env.example) to `.env` and edit it (all optional).
 
 ## Releasing
 

@@ -1,0 +1,22 @@
+# Build & run Noteesek from source (development) — instead of pulling the
+# published image. Inherits the whole service (ports, env, volumes, healthcheck)
+# from the production docker-compose.yml and only adds how to build the image:
+#
+#   docker compose -f docker-compose.build.yml up -d --build
+#
+# The build compiles the Flutter web app inside Docker (pulls the ~2 GB Flutter
+# SDK at build time only; the final image is ~120 MB). Needs ~16 GB of Docker
+# disk for the SDK image.
+services:
+  noteesek:
+    extends:
+      file: docker-compose.yml
+      service: noteesek
+    build:
+      # Repo root, so the Dockerfile can build app/ too.
+      context: .
+      dockerfile: server/Dockerfile
+      args:
+        PB_VERSION: "0.39.1"
+    # Always build from source here rather than pulling the registry image.
+    pull_policy: build
