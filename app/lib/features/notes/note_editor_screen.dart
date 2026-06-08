@@ -773,27 +773,43 @@ class _ChecklistEditorState extends ConsumerState<_ChecklistEditor> {
     super.dispose();
   }
 
+  /// Height of one checklist line: the controls are centred within this so a
+  /// single-line item reads as vertically centred next to the checkbox, while a
+  /// wrapped (multi-line) item keeps the controls pinned to the first line.
+  static const double _lineHeight = 40;
+
   /// One checklist row. When [dragIndex] is non-null the row carries a drag
   /// handle that starts a reorder at that index; completed rows pass null.
   Widget _itemRow(ChecklistItemRow it, {int? dragIndex}) {
     final repo = ref.read(notesRepositoryProvider);
     return Row(
-      // Top-align so the controls stay on the first line when an item wraps.
+      // Top-align the whole row so a wrapped item grows downward; each control
+      // is itself centred within one line-height so it lines up with the text.
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (dragIndex != null)
-          ReorderableDragStartListener(
-            index: dragIndex,
-            child: const Padding(
-              padding: EdgeInsets.only(top: 12, right: 4),
-              child: Icon(Icons.drag_indicator, size: 18, color: Colors.grey),
+        SizedBox(
+          width: 24,
+          height: _lineHeight,
+          child: dragIndex != null
+              ? Center(
+                  child: ReorderableDragStartListener(
+                    index: dragIndex,
+                    child: const Icon(Icons.drag_indicator,
+                        size: 18, color: Colors.grey),
+                  ),
+                )
+              : null,
+        ),
+        SizedBox(
+          height: _lineHeight,
+          child: Center(
+            child: Checkbox(
+              value: it.checked,
+              visualDensity: VisualDensity.compact,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              onChanged: (v) => repo.setItemChecked(it.id, v ?? false),
             ),
-          )
-        else
-          const SizedBox(width: 26),
-        Checkbox(
-          value: it.checked,
-          onChanged: (v) => repo.setItemChecked(it.id, v ?? false),
+          ),
         ),
         Expanded(
           child: TextField(
@@ -809,6 +825,9 @@ class _ChecklistEditorState extends ConsumerState<_ChecklistEditor> {
               isDense: true,
               border: InputBorder.none,
               hintText: 'List item',
+              // Vertically pad a single line up to _lineHeight so its text
+              // centres against the checkbox.
+              contentPadding: EdgeInsets.symmetric(vertical: 9),
             ),
             style: it.checked
                 ? const TextStyle(decoration: TextDecoration.lineThrough)
@@ -816,15 +835,22 @@ class _ChecklistEditorState extends ConsumerState<_ChecklistEditor> {
             onChanged: (v) => _onItemChanged(it, v),
           ),
         ),
-        IconButton(
-          visualDensity: VisualDensity.compact,
-          icon: const Icon(Icons.close, size: 18),
-          tooltip: 'Remove',
-          onPressed: () {
-            repo.deleteItem(it.id);
-            widget.onForgetController(it.id);
-            _focusNodes.remove(it.id)?.dispose();
-          },
+        SizedBox(
+          height: _lineHeight,
+          child: Center(
+            child: IconButton(
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+              icon: const Icon(Icons.close, size: 18),
+              tooltip: 'Remove',
+              onPressed: () {
+                repo.deleteItem(it.id);
+                widget.onForgetController(it.id);
+                _focusNodes.remove(it.id)?.dispose();
+              },
+            ),
+          ),
         ),
       ],
     );
