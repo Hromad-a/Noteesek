@@ -184,7 +184,11 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
               child: _SearchField(),
             ),
             Expanded(
-              child: notesAsync.when(
+              // Pull-to-refresh forces a sync (mobile only — web is realtime).
+              child: _SyncRefresh(
+                onRefresh:
+                    kIsWeb ? null : () => _manualSync(context, ref),
+                child: notesAsync.when(
                 loading: () =>
                     const Center(child: CircularProgressIndicator()),
                 error: (e, _) => Center(child: Text('Error: $e')),
@@ -193,9 +197,13 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
                     final searching =
                         ref.watch(searchQueryProvider).trim().isNotEmpty ||
                             ref.watch(searchFiltersProvider).isActive;
-                    return searching
-                        ? const _NoMatches()
-                        : const _EmptyState();
+                    // Scrollable so pull-to-refresh works with no notes (e.g. a
+                    // freshly-connected device syncing down for the first time).
+                    return _ScrollableFill(
+                      child: searching
+                          ? const _NoMatches()
+                          : const _EmptyState(),
+                    );
                   }
                   Widget itemBuilder(BuildContext context, int i) {
                     final note = notes[i];
@@ -229,6 +237,9 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
                     padding: const EdgeInsets.all(8),
                     child: viewMode == NoteViewMode.column
                         ? MasonryGridView.count(
+                            // Always scrollable so pull-to-refresh fires even
+                            // when the notes don't fill the viewport.
+                            physics: const AlwaysScrollableScrollPhysics(),
                             crossAxisCount: 1,
                             mainAxisSpacing: 8,
                             crossAxisSpacing: 8,
@@ -236,6 +247,7 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
                             itemBuilder: itemBuilder,
                           )
                         : MasonryGridView.extent(
+                            physics: const AlwaysScrollableScrollPhysics(),
                             maxCrossAxisExtent: 240,
                             mainAxisSpacing: 8,
                             crossAxisSpacing: 8,
@@ -244,6 +256,7 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
                           ),
                   );
                 },
+                ),
               ),
             ),
           ],
@@ -1113,6 +1126,42 @@ class _FilterLabel extends StatelessWidget {
         padding: const EdgeInsets.only(bottom: 6),
         child: Text(text, style: Theme.of(context).textTheme.labelLarge),
       );
+}
+
+/// Wraps the notes area in a pull-to-refresh that triggers a sync. When
+/// [onRefresh] is null (web — no sync engine) it's a passthrough.
+class _SyncRefresh extends StatelessWidget {
+  const _SyncRefresh({required this.onRefresh, required this.child});
+
+  final Future<void> Function()? onRefresh;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (onRefresh == null) return child;
+    return RefreshIndicator(onRefresh: onRefresh!, child: child);
+  }
+}
+
+/// Makes a non-scrolling child (the empty/no-match states) fill the viewport and
+/// scroll, so a pull-to-refresh gesture still registers over it.
+class _ScrollableFill extends StatelessWidget {
+  const _ScrollableFill({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) => SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minHeight: constraints.maxHeight),
+          child: child,
+        ),
+      ),
+    );
+  }
 }
 
 class _NoMatches extends StatelessWidget {
