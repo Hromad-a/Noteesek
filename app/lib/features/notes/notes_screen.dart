@@ -42,6 +42,9 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
     final id = await ref
         .read(notesRepositoryProvider)
         .createNote(type: type, notebook: notebook);
+    // createNote returns '' if the write failed (web, server unreachable); the
+    // repository already surfaced a message, so just don't open a phantom note.
+    if (id.isEmpty) return;
     if (type == 'checklist') {
       await ref.read(notesRepositoryProvider).addItem(id);
     }
@@ -116,14 +119,7 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
                 title: const Text('Notes'),
                 actions: [
           if (sync != null) ...[
-            if (connected && !sync.reachable && !sync.syncing)
-              IconButton(
-                tooltip: 'Server not responding — tap to retry',
-                icon: Icon(Icons.cloud_off,
-                    color: Theme.of(context).colorScheme.error),
-                onPressed: () => _manualSync(context, ref),
-              )
-            else if (sync.syncing)
+            if (sync.syncing)
               const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 16),
                 child: Center(
@@ -134,11 +130,24 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
                   ),
                 ),
               )
+            else if (!connected)
+              IconButton(
+                tooltip: 'Connect a server to sync',
+                icon: const Icon(Icons.cloud_off_outlined),
+                onPressed: null,
+              )
+            else if (!sync.reachable)
+              IconButton(
+                tooltip: 'Offline — tap to retry',
+                icon: Icon(Icons.cloud_off,
+                    color: Theme.of(context).colorScheme.error),
+                onPressed: () => _manualSync(context, ref),
+              )
             else
               IconButton(
-                tooltip: connected ? 'Sync now' : 'Connect a server to sync',
-                icon: const Icon(Icons.sync),
-                onPressed: connected ? () => _manualSync(context, ref) : null,
+                tooltip: 'Synced — tap to sync now',
+                icon: const Icon(Icons.cloud_done_outlined),
+                onPressed: () => _manualSync(context, ref),
               ),
           ],
                 ],

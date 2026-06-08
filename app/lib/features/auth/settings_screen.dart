@@ -10,6 +10,7 @@ import 'package:pocketbase/pocketbase.dart';
 import '../../config/app_config.dart';
 import '../../data/notes_repository.dart';
 import '../../providers.dart';
+import '../../sync/sync_controller.dart';
 import '../export/export_delivery.dart';
 import '../export/export_service.dart';
 
@@ -498,6 +499,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
           const SizedBox(height: 24),
 
+          // Sync status: mobile only (web has no sync engine — it's online/
+          // realtime), and only meaningful once connected to a server.
+          if (!kIsWeb && signedIn) ...[
+            const _SectionHeader('Sync'),
+            _SyncStatusTile(),
+            const SizedBox(height: 24),
+          ],
+
           const _SectionHeader('Data & storage'),
           ListTile(
             contentPadding: EdgeInsets.zero,
@@ -568,6 +577,59 @@ class _SectionHeader extends StatelessWidget {
               fontWeight: FontWeight.bold,
             ),
       ),
+    );
+  }
+}
+
+/// Mobile-only sync status row: a simple state icon (synced / syncing /
+/// offline) plus the last-synced time, tappable to sync now.
+class _SyncStatusTile extends ConsumerWidget {
+  String _ago(DateTime? t) {
+    if (t == null) return 'Not synced yet';
+    final d = DateTime.now().difference(t);
+    if (d.inSeconds < 10) return 'Last synced just now';
+    if (d.inMinutes < 1) return 'Last synced ${d.inSeconds}s ago';
+    if (d.inMinutes < 60) return 'Last synced ${d.inMinutes} min ago';
+    if (d.inHours < 24) return 'Last synced ${d.inHours} h ago';
+    return 'Last synced ${d.inDays} d ago';
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final sync = ref.watch(syncControllerProvider);
+    final scheme = Theme.of(context).colorScheme;
+
+    final (Widget leading, String title) = switch (sync) {
+      _ when sync.syncing => (
+          const SizedBox(
+            height: 24,
+            width: 24,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          'Syncing…',
+        ),
+      _ when !sync.reachable => (
+          Icon(Icons.cloud_off, color: scheme.error),
+          'Offline',
+        ),
+      _ => (const Icon(Icons.cloud_done_outlined), 'Synced'),
+    };
+
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: leading,
+      title: Text(title),
+      subtitle: Text(
+        sync.reachable ? _ago(sync.lastSync) : 'Server not responding',
+      ),
+      trailing: sync.syncing
+          ? null
+          : TextButton.icon(
+              onPressed: () =>
+                  ref.read(syncControllerProvider.notifier).syncNow(manual: true),
+              icon: const Icon(Icons.sync, size: 18),
+              label: const Text('Sync now'),
+            ),
     );
   }
 }

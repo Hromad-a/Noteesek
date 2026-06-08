@@ -4,6 +4,7 @@ import 'package:drift/drift.dart' show Uint8List;
 import 'package:http/http.dart' as http;
 import 'package:pocketbase/pocketbase.dart';
 
+import '../ui/app_messenger.dart';
 import 'local/database.dart';
 import 'notes_repository.dart';
 
@@ -31,10 +32,64 @@ class RemoteNotesRepository implements NotesRepository {
   // ---------------- Loading + realtime ----------------
 
   /// Loads everything once and wires realtime. Rethrows connectivity errors so
-  /// the watch streams emit an error.
+  /// the watch streams emit an error — and on failure clears the cached future
+  /// so the next listen retries instead of being stuck on the dead attempt.
   Future<void> _ensureLoaded() {
-    return _loaded ??= _load();
+    final existing = _loaded;
+    if (existing != null) return existing;
+    final fut = _load();
+    _loaded = fut;
+    // Don't cache a failed load: a transient outage shouldn't wedge the whole
+    // UI in an error state forever. The awaiting _view still sees the error.
+    fut.catchError((Object e) {
+      if (identical(_loaded, fut)) _loaded = null;
+    });
+    return fut;
   }
+
+  // ---------------- Error handling ----------------
+
+  /// True for "can't reach the server" errors (offline, server down, DNS, TLS,
+  /// timeout) as opposed to a real API error.
+  static bool _isConnectivityError(Object e) {
+    if (e is ClientException && e.statusCode == 0) return true;
+    final s = e.toString().toLowerCase();
+    return s.contains('socketexception') ||
+        s.contains('connection refused') ||
+        s.contains('failed host lookup') ||
+        s.contains('network is unreachable') ||
+        s.contains('connection closed') ||
+        s.contains('timed out') ||
+        s.contains('timeout');
+  }
+
+  /// A short, user-facing description of a failed request.
+  static String _friendly(Object e) {
+    if (_isConnectivityError(e)) {
+      return "Server not responding — change wasn't saved.";
+    }
+    if (e is ClientException) {
+      final msg = e.response['message'];
+      if (msg is String && msg.isNotEmpty) return msg;
+      return 'Server error (${e.statusCode}) — change wasn\'t saved.';
+    }
+    return "Couldn't save — please try again.";
+  }
+
+  /// Runs a mutation, reporting any failure to the user via a SnackBar instead
+  /// of letting it escape as an unhandled exception. Returns [fallback] on
+  /// failure so the local cache is simply left untouched (realtime will
+  /// reconcile if the write actually landed).
+  Future<T> _guard<T>(Future<T> Function() op, T fallback) async {
+    try {
+      return await op();
+    } catch (e) {
+      showAppSnackBar(_friendly(e));
+      return fallback;
+    }
+  }
+
+  Future<void> _guardVoid(Future<void> Function() op) => _guard(op, null);
 
   Future<void> _load() async {
     final notes = await _pb.collection('notes').getFullList();
@@ -151,35 +206,37 @@ class RemoteNotesRepository implements NotesRepository {
   // ---------------- Notes: mutations ----------------
 
   @override
-  Future<String> createNote({required String type, String notebook = ''}) async {
-    final maxPos = _notes.values
-        .where((n) => !n.deleted)
-        .fold<int>(-1, (m, n) => n.position > m ? n.position : m);
-    final r = await _pb.collection('notes').create(body: {
-      'owner': _ownerId,
-      'type': type,
-      'title': '',
-      'body': '',
-      'pinned': false,
-      'archived': false,
-      'deleted': false,
-      'position': maxPos + 1,
-      'notebook': notebook,
-    });
-    _notes[r.id] = _noteFrom(r);
-    _events.add(null);
-    return r.id;
-  }
+  Future<String> createNote({required String type, String notebook = ''}) =>
+      _guard(() async {
+        final maxPos = _notes.values
+            .where((n) => !n.deleted)
+            .fold<int>(-1, (m, n) => n.position > m ? n.position : m);
+        final r = await _pb.collection('notes').create(body: {
+          'owner': _ownerId,
+          'type': type,
+          'title': '',
+          'body': '',
+          'pinned': false,
+          'archived': false,
+          'deleted': false,
+          'position': maxPos + 1,
+          'notebook': notebook,
+        });
+        _notes[r.id] = _noteFrom(r);
+        _events.add(null);
+        return r.id;
+      }, '');
 
   @override
-  Future<void> updateNoteFields(String id, {String? title, String? body}) async {
-    final r = await _pb.collection('notes').update(id, body: {
-      'title': ?title,
-      'body': ?body,
-    });
-    _notes[id] = _noteFrom(r);
-    _events.add(null);
-  }
+  Future<void> updateNoteFields(String id, {String? title, String? body}) =>
+      _guardVoid(() async {
+        final r = await _pb.collection('notes').update(id, body: {
+          'title': ?title,
+          'body': ?body,
+        });
+        _notes[id] = _noteFrom(r);
+        _events.add(null);
+      });
 
   @override
   Future<void> setPinned(String id, bool pinned) =>
@@ -199,14 +256,15 @@ class RemoteNotesRepository implements NotesRepository {
   @override
   Future<void> restore(String id) => _updateNote(id, {'deleted': false});
 
-  Future<void> _updateNote(String id, Map<String, dynamic> body) async {
-    final r = await _pb.collection('notes').update(id, body: body);
-    _notes[id] = _noteFrom(r);
-    _events.add(null);
-  }
+  Future<void> _updateNote(String id, Map<String, dynamic> body) =>
+      _guardVoid(() async {
+        final r = await _pb.collection('notes').update(id, body: body);
+        _notes[id] = _noteFrom(r);
+        _events.add(null);
+      });
 
   @override
-  Future<void> convertNoteType(String id, String type) async {
+  Future<void> convertNoteType(String id, String type) => _guardVoid(() async {
     final note = _notes[id];
     if (note == null || note.type == type) return;
 
@@ -255,31 +313,31 @@ class RemoteNotesRepository implements NotesRepository {
       _notes[id] = _noteFrom(r);
     }
     _events.add(null);
-  }
+  });
 
   @override
-  Future<void> deleteForever(String noteId) async {
-    await _pb.collection('notes').delete(noteId); // children cascade server-side
-    _notes.remove(noteId);
-    _items.removeWhere((_, v) => v.note == noteId);
-    _attachments.removeWhere((_, v) => v.note == noteId);
-    _events.add(null);
-  }
+  Future<void> deleteForever(String noteId) => _guardVoid(() async {
+        await _pb.collection('notes').delete(noteId); // children cascade
+        _notes.remove(noteId);
+        _items.removeWhere((_, v) => v.note == noteId);
+        _attachments.removeWhere((_, v) => v.note == noteId);
+        _events.add(null);
+      });
 
   @override
   Future<List<String>> trashedNoteIds() async =>
       _notes.values.where((n) => n.deleted).map((n) => n.id).toList();
 
   @override
-  Future<void> reorderNotes(List<String> orderedIds) async {
-    for (var i = 0; i < orderedIds.length; i++) {
-      final r = await _pb
-          .collection('notes')
-          .update(orderedIds[i], body: {'position': i});
-      _notes[orderedIds[i]] = _noteFrom(r);
-    }
-    _events.add(null);
-  }
+  Future<void> reorderNotes(List<String> orderedIds) => _guardVoid(() async {
+        for (var i = 0; i < orderedIds.length; i++) {
+          final r = await _pb
+              .collection('notes')
+              .update(orderedIds[i], body: {'position': i});
+          _notes[orderedIds[i]] = _noteFrom(r);
+        }
+        _events.add(null);
+      });
 
   @override
   Future<void> claimLocalNotes(String userId) async {/* no local notes on web */}
@@ -295,46 +353,50 @@ class RemoteNotesRepository implements NotesRepository {
       });
 
   @override
-  Future<String> createLabel(String name) async {
-    final r = await _pb.collection('labels').create(body: {
-      'owner': _ownerId,
-      'name': name.trim(),
-      'deleted': false,
-    });
-    _labels[r.id] = _labelFrom(r);
-    _events.add(null);
-    return r.id;
-  }
+  Future<String> createLabel(String name) => _guard(() async {
+        final r = await _pb.collection('labels').create(body: {
+          'owner': _ownerId,
+          'name': name.trim(),
+          'deleted': false,
+        });
+        _labels[r.id] = _labelFrom(r);
+        _events.add(null);
+        return r.id;
+      }, '');
 
   @override
-  Future<void> renameLabel(String id, String name) async {
-    final r =
-        await _pb.collection('labels').update(id, body: {'name': name.trim()});
-    _labels[id] = _labelFrom(r);
-    _events.add(null);
-  }
+  Future<void> renameLabel(String id, String name) => _guardVoid(() async {
+        final r = await _pb
+            .collection('labels')
+            .update(id, body: {'name': name.trim()});
+        _labels[id] = _labelFrom(r);
+        _events.add(null);
+      });
 
   @override
-  Future<void> deleteLabel(String id) async {
-    final r = await _pb.collection('labels').update(id, body: {'deleted': true});
-    _labels[id] = _labelFrom(r);
-    // Strip the id from every note that carries it.
-    for (final note in _notes.values.toList()) {
-      final ids = labelIdsOf(note);
-      if (ids.remove(id)) {
-        await setNoteLabels(note.id, ids);
-      }
-    }
-    _events.add(null);
-  }
+  Future<void> deleteLabel(String id) => _guardVoid(() async {
+        final r =
+            await _pb.collection('labels').update(id, body: {'deleted': true});
+        _labels[id] = _labelFrom(r);
+        // Strip the id from every note that carries it.
+        for (final note in _notes.values.toList()) {
+          final ids = labelIdsOf(note);
+          if (ids.remove(id)) {
+            await setNoteLabels(note.id, ids);
+          }
+        }
+        _events.add(null);
+      });
 
   @override
-  Future<void> setNoteLabels(String noteId, List<String> labelIds) async {
-    final r =
-        await _pb.collection('notes').update(noteId, body: {'labels': labelIds});
-    _notes[noteId] = _noteFrom(r);
-    _events.add(null);
-  }
+  Future<void> setNoteLabels(String noteId, List<String> labelIds) =>
+      _guardVoid(() async {
+        final r = await _pb
+            .collection('notes')
+            .update(noteId, body: {'labels': labelIds});
+        _notes[noteId] = _noteFrom(r);
+        _events.add(null);
+      });
 
   // ---------------- Notebooks ----------------
 
@@ -347,90 +409,94 @@ class RemoteNotesRepository implements NotesRepository {
       });
 
   @override
-  Future<String> ensureDefaultNotebook() async {
-    await _ensureLoaded();
-    final defaults = _notebooks.values
-        .where((n) => !n.deleted && n.isDefault)
-        .toList()
-      ..sort((a, b) {
-        final c = (a.created ?? '').compareTo(b.created ?? '');
-        return c != 0 ? c : a.id.compareTo(b.id);
-      });
+  Future<String> ensureDefaultNotebook() => _guard(() async {
+        await _ensureLoaded();
+        final defaults = _notebooks.values
+            .where((n) => !n.deleted && n.isDefault)
+            .toList()
+          ..sort((a, b) {
+            final c = (a.created ?? '').compareTo(b.created ?? '');
+            return c != 0 ? c : a.id.compareTo(b.id);
+          });
 
-    if (defaults.isNotEmpty) {
-      // Reconcile duplicate defaults down to the earliest-created.
-      final keep = defaults.first;
-      for (final dup in defaults.skip(1)) {
+        if (defaults.isNotEmpty) {
+          // Reconcile duplicate defaults down to the earliest-created.
+          final keep = defaults.first;
+          for (final dup in defaults.skip(1)) {
+            final r = await _pb
+                .collection('notebooks')
+                .update(dup.id, body: {'deleted': true});
+            _notebooks[dup.id] = _notebookFrom(r);
+          }
+          _events.add(null);
+          return keep.id;
+        }
+
+        final r = await _pb.collection('notebooks').create(body: {
+          'owner': _ownerId,
+          'name': 'Notebook',
+          'is_default': true,
+          'deleted': false,
+        });
+        _notebooks[r.id] = _notebookFrom(r);
+        _events.add(null);
+        return r.id;
+      }, '');
+
+  @override
+  Future<String> createNotebook(String name) => _guard(() async {
+        final r = await _pb.collection('notebooks').create(body: {
+          'owner': _ownerId,
+          'name': name.trim(),
+          'is_default': false,
+          'deleted': false,
+        });
+        _notebooks[r.id] = _notebookFrom(r);
+        _events.add(null);
+        return r.id;
+      }, '');
+
+  @override
+  Future<void> renameNotebook(String id, String name) => _guardVoid(() async {
         final r = await _pb
             .collection('notebooks')
-            .update(dup.id, body: {'deleted': true});
-        _notebooks[dup.id] = _notebookFrom(r);
-      }
-      _events.add(null);
-      return keep.id;
-    }
-
-    final r = await _pb.collection('notebooks').create(body: {
-      'owner': _ownerId,
-      'name': 'Notebook',
-      'is_default': true,
-      'deleted': false,
-    });
-    _notebooks[r.id] = _notebookFrom(r);
-    _events.add(null);
-    return r.id;
-  }
+            .update(id, body: {'name': name.trim()});
+        _notebooks[id] = _notebookFrom(r);
+        _events.add(null);
+      });
 
   @override
-  Future<String> createNotebook(String name) async {
-    final r = await _pb.collection('notebooks').create(body: {
-      'owner': _ownerId,
-      'name': name.trim(),
-      'is_default': false,
-      'deleted': false,
-    });
-    _notebooks[r.id] = _notebookFrom(r);
-    _events.add(null);
-    return r.id;
-  }
+  Future<void> deleteNotebook(String id, {required bool moveNotesToDefault}) =>
+      _guardVoid(() async {
+        final nb = _notebooks[id];
+        if (nb == null || nb.isDefault) return; // never delete the default
+
+        final defaultId =
+            moveNotesToDefault ? await ensureDefaultNotebook() : '';
+        for (final note
+            in _notes.values.where((n) => n.notebook == id).toList()) {
+          if (moveNotesToDefault) {
+            await setNoteNotebook(note.id, defaultId);
+          } else {
+            await softDelete(note.id);
+          }
+        }
+        final r = await _pb
+            .collection('notebooks')
+            .update(id, body: {'deleted': true});
+        _notebooks[id] = _notebookFrom(r);
+        _events.add(null);
+      });
 
   @override
-  Future<void> renameNotebook(String id, String name) async {
-    final r = await _pb
-        .collection('notebooks')
-        .update(id, body: {'name': name.trim()});
-    _notebooks[id] = _notebookFrom(r);
-    _events.add(null);
-  }
-
-  @override
-  Future<void> deleteNotebook(String id,
-      {required bool moveNotesToDefault}) async {
-    final nb = _notebooks[id];
-    if (nb == null || nb.isDefault) return; // never delete the default
-
-    final defaultId = moveNotesToDefault ? await ensureDefaultNotebook() : '';
-    for (final note in _notes.values.where((n) => n.notebook == id).toList()) {
-      if (moveNotesToDefault) {
-        await setNoteNotebook(note.id, defaultId);
-      } else {
-        await softDelete(note.id);
-      }
-    }
-    final r =
-        await _pb.collection('notebooks').update(id, body: {'deleted': true});
-    _notebooks[id] = _notebookFrom(r);
-    _events.add(null);
-  }
-
-  @override
-  Future<void> setNoteNotebook(String noteId, String notebookId) async {
-    final r = await _pb
-        .collection('notes')
-        .update(noteId, body: {'notebook': notebookId});
-    _notes[noteId] = _noteFrom(r);
-    _events.add(null);
-  }
+  Future<void> setNoteNotebook(String noteId, String notebookId) =>
+      _guardVoid(() async {
+        final r = await _pb
+            .collection('notes')
+            .update(noteId, body: {'notebook': notebookId});
+        _notes[noteId] = _noteFrom(r);
+        _events.add(null);
+      });
 
   // ---------------- Checklist items ----------------
 
@@ -444,21 +510,22 @@ class RemoteNotesRepository implements NotesRepository {
       });
 
   @override
-  Future<String> addItem(String noteId, {String content = ''}) async {
-    final maxPos = _items.values
-        .where((i) => i.note == noteId && !i.deleted)
-        .fold<int>(-1, (m, i) => i.position > m ? i.position : m);
-    final r = await _pb.collection('checklist_items').create(body: {
-      'note': noteId,
-      'text': content,
-      'checked': false,
-      'position': maxPos + 1,
-      'deleted': false,
-    });
-    _items[r.id] = _itemFrom(r);
-    _events.add(null);
-    return r.id;
-  }
+  Future<String> addItem(String noteId, {String content = ''}) =>
+      _guard(() async {
+        final maxPos = _items.values
+            .where((i) => i.note == noteId && !i.deleted)
+            .fold<int>(-1, (m, i) => i.position > m ? i.position : m);
+        final r = await _pb.collection('checklist_items').create(body: {
+          'note': noteId,
+          'text': content,
+          'checked': false,
+          'position': maxPos + 1,
+          'deleted': false,
+        });
+        _items[r.id] = _itemFrom(r);
+        _events.add(null);
+        return r.id;
+      }, '');
 
   @override
   Future<void> setItemContent(String id, String content) =>
@@ -471,11 +538,13 @@ class RemoteNotesRepository implements NotesRepository {
   @override
   Future<void> deleteItem(String id) => _updateItem(id, {'deleted': true});
 
-  Future<void> _updateItem(String id, Map<String, dynamic> body) async {
-    final r = await _pb.collection('checklist_items').update(id, body: body);
-    _items[id] = _itemFrom(r);
-    _events.add(null);
-  }
+  Future<void> _updateItem(String id, Map<String, dynamic> body) =>
+      _guardVoid(() async {
+        final r =
+            await _pb.collection('checklist_items').update(id, body: body);
+        _items[id] = _itemFrom(r);
+        _events.add(null);
+      });
 
   // ---------------- Attachments ----------------
 
@@ -489,25 +558,28 @@ class RemoteNotesRepository implements NotesRepository {
       });
 
   @override
-  Future<String> addAttachment(String noteId, Uint8List bytes) async {
-    final r = await _pb.collection('attachments').create(
-      body: {'note': noteId, 'deleted': false},
-      files: [http.MultipartFile.fromBytes('file', bytes, filename: 'image.jpg')],
-    );
-    // We already have the bytes locally for immediate display.
-    _attachments[r.id] = _attachmentFrom(r, bytes);
-    _events.add(null);
-    return r.id;
-  }
+  Future<String> addAttachment(String noteId, Uint8List bytes) =>
+      _guard(() async {
+        final r = await _pb.collection('attachments').create(
+          body: {'note': noteId, 'deleted': false},
+          files: [
+            http.MultipartFile.fromBytes('file', bytes, filename: 'image.jpg')
+          ],
+        );
+        // We already have the bytes locally for immediate display.
+        _attachments[r.id] = _attachmentFrom(r, bytes);
+        _events.add(null);
+        return r.id;
+      }, '');
 
   @override
-  Future<void> deleteAttachment(String id) async {
-    final r = await _pb.collection('attachments').update(id, body: {
-      'deleted': true,
-    });
-    _attachments[id] = _attachmentFrom(r, _attachments[id]?.data);
-    _events.add(null);
-  }
+  Future<void> deleteAttachment(String id) => _guardVoid(() async {
+        final r = await _pb.collection('attachments').update(id, body: {
+          'deleted': true,
+        });
+        _attachments[id] = _attachmentFrom(r, _attachments[id]?.data);
+        _events.add(null);
+      });
 
   Future<Uint8List?> _downloadBytes(RecordModel rec) async {
     final filename = rec.getStringValue('file');

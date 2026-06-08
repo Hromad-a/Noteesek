@@ -6,6 +6,7 @@ import 'features/auth/login_screen.dart';
 import 'features/auth/password_reset_screen.dart';
 import 'features/notes/notes_screen.dart';
 import 'providers.dart';
+import 'ui/app_messenger.dart';
 
 class NoteesekApp extends ConsumerWidget {
   const NoteesekApp({super.key});
@@ -32,6 +33,7 @@ class NoteesekApp extends ConsumerWidget {
 
     return MaterialApp(
       title: 'Noteesek',
+      scaffoldMessengerKey: scaffoldMessengerKey,
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorSchemeSeed: const Color(0xFFCEB1E8),
