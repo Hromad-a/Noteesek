@@ -26,6 +26,7 @@ void main() {
 
     final container = ProviderContainer(overrides: [
       isAuthenticatedProvider.overrideWithValue(true),
+      databaseProvider.overrideWithValue(db),
       syncEngineProvider.overrideWithValue(engine),
     ]);
     addTearDown(container.dispose);
@@ -48,6 +49,7 @@ void main() {
 
     final container = ProviderContainer(overrides: [
       isAuthenticatedProvider.overrideWithValue(false),
+      databaseProvider.overrideWithValue(db),
       syncEngineProvider.overrideWithValue(engine),
     ]);
     addTearDown(container.dispose);

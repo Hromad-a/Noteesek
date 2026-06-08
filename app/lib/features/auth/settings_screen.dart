@@ -597,9 +597,10 @@ class _SyncStatusTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final sync = ref.watch(syncControllerProvider);
+    final hasPending = ref.watch(hasPendingChangesProvider).value ?? false;
     final scheme = Theme.of(context).colorScheme;
 
-    final (Widget leading, String title) = switch (sync) {
+    final (Widget leading, String title, String subtitle) = switch (sync) {
       _ when sync.syncing => (
           const SizedBox(
             height: 24,
@@ -607,21 +608,30 @@ class _SyncStatusTile extends ConsumerWidget {
             child: CircularProgressIndicator(strokeWidth: 2),
           ),
           'Syncing…',
+          _ago(sync.lastSync),
         ),
       _ when !sync.reachable => (
           Icon(Icons.cloud_off, color: scheme.error),
           'Offline',
+          'Server not responding',
         ),
-      _ => (const Icon(Icons.cloud_done_outlined), 'Synced'),
+      _ when hasPending => (
+          const Icon(Icons.cloud_upload_outlined),
+          'Changes not synced',
+          'Tap Sync now to push them',
+        ),
+      _ => (
+          const Icon(Icons.cloud_done_outlined),
+          'Synced',
+          _ago(sync.lastSync),
+        ),
     };
 
     return ListTile(
       contentPadding: EdgeInsets.zero,
       leading: leading,
       title: Text(title),
-      subtitle: Text(
-        sync.reachable ? _ago(sync.lastSync) : 'Server not responding',
-      ),
+      subtitle: Text(subtitle),
       trailing: sync.syncing
           ? null
           : TextButton.icon(

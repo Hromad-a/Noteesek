@@ -191,6 +191,23 @@ class AppDatabase extends _$AppDatabase {
         },
       );
 
+  /// Emits true whenever any local row across the content tables is still
+  /// `dirty` (a change made on this device that hasn't been pushed to the
+  /// server yet). Drives the "changes not synced" indicator. Mobile only —
+  /// the web client has no local DB.
+  Stream<bool> watchHasPending() {
+    return customSelect(
+      'SELECT EXISTS('
+      '  SELECT 1 FROM notes WHERE dirty = 1'
+      '  UNION ALL SELECT 1 FROM checklist_items WHERE dirty = 1'
+      '  UNION ALL SELECT 1 FROM attachments WHERE dirty = 1'
+      '  UNION ALL SELECT 1 FROM labels WHERE dirty = 1'
+      '  UNION ALL SELECT 1 FROM notebooks WHERE dirty = 1'
+      ') AS has_pending',
+      readsFrom: {notes, checklistItems, attachments, labels, notebooks},
+    ).watchSingle().map((row) => row.read<int>('has_pending') == 1);
+  }
+
   /// Deletes ALL locally-stored data — notes, checklist items, attachments,
   /// labels and the sync cursors — resetting the device to a fresh-install
   /// state. Irreversible; used by the Settings "wipe data" action. Clearing the

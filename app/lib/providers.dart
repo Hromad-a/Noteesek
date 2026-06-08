@@ -20,6 +20,13 @@ final databaseProvider = Provider<AppDatabase>((ref) {
   return db;
 });
 
+/// True while any local change hasn't been pushed to the server yet (a `dirty`
+/// row exists). Mobile only — never read on web (no local DB). Drives the
+/// "changes not synced" sync indicator.
+final hasPendingChangesProvider = StreamProvider<bool>((ref) {
+  return ref.watch(databaseProvider).watchHasPending();
+});
+
 /// Currently configured server URL (persisted). Change it via
 /// `ref.read(serverUrlProvider.notifier).set(url)`.
 class ServerUrlNotifier extends Notifier<String> {

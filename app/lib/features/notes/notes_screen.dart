@@ -104,6 +104,8 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
     final email = pb.authStore.record?.data['email'] as String? ?? '';
     final connected = ref.watch(isAuthenticatedProvider);
     final sync = kIsWeb ? null : ref.watch(syncControllerProvider);
+    final hasPending =
+        kIsWeb ? false : ref.watch(hasPendingChangesProvider).value ?? false;
     final selectionMode = ref.watch(selectionModeProvider);
 
     return PopScope(
@@ -141,6 +143,12 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
                 tooltip: 'Offline — tap to retry',
                 icon: Icon(Icons.cloud_off,
                     color: Theme.of(context).colorScheme.error),
+                onPressed: () => _manualSync(context, ref),
+              )
+            else if (hasPending)
+              IconButton(
+                tooltip: 'Changes not synced yet — tap to sync now',
+                icon: const Icon(Icons.cloud_upload_outlined),
                 onPressed: () => _manualSync(context, ref),
               )
             else

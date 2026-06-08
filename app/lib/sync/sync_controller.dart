@@ -66,19 +66,33 @@ class SyncStatus {
 /// offline and the failure is surfaced via [SyncStatus.reachable].
 class SyncController extends Notifier<SyncStatus> {
   Timer? _timer;
+  Timer? _debounce;
 
   @override
   SyncStatus build() {
-    ref.onDispose(() => _timer?.cancel());
+    ref.onDispose(() {
+      _timer?.cancel();
+      _debounce?.cancel();
+    });
 
     final connected = ref.watch(isAuthenticatedProvider);
     _timer?.cancel();
+    _debounce?.cancel();
     if (connected) {
       Future.microtask(() => syncNow());
       _timer = Timer.periodic(
         const Duration(seconds: 30),
         (_) => syncNow(),
       );
+      // Push promptly after a local edit instead of waiting for the 30s tick:
+      // when a dirty row appears, sync ~2s later (debounced so a burst of
+      // edits collapses into one push).
+      ref.listen(hasPendingChangesProvider, (_, next) {
+        if (next.value == true && !state.syncing) {
+          _debounce?.cancel();
+          _debounce = Timer(const Duration(seconds: 2), () => syncNow());
+        }
+      });
     }
     return const SyncStatus();
   }
