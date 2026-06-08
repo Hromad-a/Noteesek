@@ -8,7 +8,7 @@ import '../../data/local/database.dart';
 import '../../data/notes_repository.dart';
 import 'note_colors.dart';
 
-enum _OverflowAction { convert, moveToNotebook, archive, delete }
+enum _OverflowAction { convert, autoSort, moveToNotebook, archive, delete }
 
 const _months = [
   'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
@@ -269,6 +269,10 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
                           note.id,
                           note.type == 'checklist' ? 'text' : 'checklist',
                         );
+                      case _OverflowAction.autoSort:
+                        await ref
+                            .read(checklistAutoSortProvider.notifier)
+                            .set(!ref.read(checklistAutoSortProvider));
                       case _OverflowAction.moveToNotebook:
                         await _moveToNotebook(note);
                       case _OverflowAction.archive:
@@ -291,6 +295,17 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
                         contentPadding: EdgeInsets.zero,
                       ),
                     ),
+                    if (note.type == 'checklist')
+                      PopupMenuItem(
+                        value: _OverflowAction.autoSort,
+                        child: ListTile(
+                          leading: Icon(ref.watch(checklistAutoSortProvider)
+                              ? Icons.check_box_outlined
+                              : Icons.check_box_outline_blank),
+                          title: const Text('Sort checked to bottom'),
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ),
                     const PopupMenuItem(
                       value: _OverflowAction.moveToNotebook,
                       child: ListTile(
@@ -696,6 +711,9 @@ class _ChecklistEditorState extends ConsumerState<_ChecklistEditor> {
   final Map<String, FocusNode> _focusNodes = {};
   String? _pendingFocusId;
 
+  /// Whether the collapsible "completed" section (auto-sort mode) is expanded.
+  bool _completedExpanded = false;
+
   FocusNode _focusNodeFor(String id) =>
       _focusNodes.putIfAbsent(id, () => FocusNode());
 
@@ -737,9 +755,67 @@ class _ChecklistEditorState extends ConsumerState<_ChecklistEditor> {
     super.dispose();
   }
 
+  /// One checklist row. When [dragIndex] is non-null the row carries a drag
+  /// handle that starts a reorder at that index; completed rows pass null.
+  Widget _itemRow(ChecklistItemRow it, {int? dragIndex}) {
+    final repo = ref.read(notesRepositoryProvider);
+    return Row(
+      // Top-align so the controls stay on the first line when an item wraps.
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (dragIndex != null)
+          ReorderableDragStartListener(
+            index: dragIndex,
+            child: const Padding(
+              padding: EdgeInsets.only(top: 12, right: 4),
+              child: Icon(Icons.drag_indicator, size: 18, color: Colors.grey),
+            ),
+          )
+        else
+          const SizedBox(width: 26),
+        Checkbox(
+          value: it.checked,
+          onChanged: (v) => repo.setItemChecked(it.id, v ?? false),
+        ),
+        Expanded(
+          child: TextField(
+            controller: widget.controllerFor(it),
+            focusNode: _focusNodeFor(it.id),
+            // Multi-line so long items wrap and stay fully visible; Enter is
+            // intercepted in _onItemChanged to add the next item instead of a
+            // line break.
+            minLines: 1,
+            maxLines: null,
+            keyboardType: TextInputType.multiline,
+            decoration: const InputDecoration(
+              isDense: true,
+              border: InputBorder.none,
+              hintText: 'List item',
+            ),
+            style: it.checked
+                ? const TextStyle(decoration: TextDecoration.lineThrough)
+                : null,
+            onChanged: (v) => _onItemChanged(it, v),
+          ),
+        ),
+        IconButton(
+          visualDensity: VisualDensity.compact,
+          icon: const Icon(Icons.close, size: 18),
+          tooltip: 'Remove',
+          onPressed: () {
+            repo.deleteItem(it.id);
+            widget.onForgetController(it.id);
+            _focusNodes.remove(it.id)?.dispose();
+          },
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final repo = ref.read(notesRepositoryProvider);
+    final autoSort = ref.watch(checklistAutoSortProvider);
     final itemsAsync = ref.watch(checklistItemsProvider(widget.noteId));
 
     return itemsAsync.when(
@@ -759,87 +835,95 @@ class _ChecklistEditorState extends ConsumerState<_ChecklistEditor> {
           });
         }
 
-        // Fill the available height so a tap anywhere in the empty area below
-        // the list adds (and focuses) a new item, while still scrolling when
-        // the list is long.
-        return LayoutBuilder(
-          builder: (context, constraints) {
-            return SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-              child: ConstrainedBox(
-                constraints: BoxConstraints(minHeight: constraints.maxHeight),
-                child: IntrinsicHeight(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      for (final it in items)
-                        Row(
-                          key: ValueKey(it.id),
-                          // Top-align so the checkbox/remove button stay on the
-                          // first line when an item wraps to multiple lines.
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Checkbox(
-                              value: it.checked,
-                              onChanged: (v) =>
-                                  repo.setItemChecked(it.id, v ?? false),
-                            ),
-                            Expanded(
-                              child: TextField(
-                                controller: widget.controllerFor(it),
-                                focusNode: _focusNodeFor(it.id),
-                                // Multi-line so long items wrap and stay fully
-                                // visible; Enter is intercepted in _onItemChanged
-                                // to add the next item instead of a line break.
-                                minLines: 1,
-                                maxLines: null,
-                                keyboardType: TextInputType.multiline,
-                                decoration: const InputDecoration(
-                                  isDense: true,
-                                  border: InputBorder.none,
-                                  hintText: 'List item',
-                                ),
-                                style: it.checked
-                                    ? const TextStyle(
-                                        decoration: TextDecoration.lineThrough)
-                                    : null,
-                                onChanged: (v) => _onItemChanged(it, v),
-                              ),
-                            ),
-                            IconButton(
-                              visualDensity: VisualDensity.compact,
-                              icon: const Icon(Icons.close, size: 18),
-                              tooltip: 'Remove',
-                              onPressed: () {
-                                repo.deleteItem(it.id);
-                                widget.onForgetController(it.id);
-                                _focusNodes.remove(it.id)?.dispose();
-                              },
-                            ),
-                          ],
-                        ),
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: TextButton.icon(
-                          icon: const Icon(Icons.add),
-                          label: const Text('Add item'),
-                          onPressed: _addAndFocus,
-                        ),
-                      ),
-                      // Tappable filler: tapping below the list adds an item.
-                      Expanded(
-                        child: GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: _addAndFocus,
-                          child: const SizedBox(width: double.infinity),
-                        ),
-                      ),
-                    ],
-                  ),
+        // In auto-sort mode, checked items sink to a separate "completed"
+        // section; otherwise all items stay in their manual order and are
+        // reorderable in place.
+        final active =
+            autoSort ? items.where((i) => !i.checked).toList() : items;
+        final completed = autoSort
+            ? items.where((i) => i.checked).toList()
+            : const <ChecklistItemRow>[];
+
+        void onReorder(int oldIndex, int newIndex) {
+          if (newIndex > oldIndex) newIndex -= 1;
+          final reordered = [...active];
+          reordered.insert(newIndex, reordered.removeAt(oldIndex));
+          // Persist the active order followed by the (unchanged) completed
+          // items so positions stay contiguous across the whole list.
+          repo.reorderItems(
+            [...reordered, ...completed].map((e) => e.id).toList(),
+          );
+        }
+
+        return CustomScrollView(
+          slivers: [
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              sliver: SliverReorderableList(
+                itemCount: active.length,
+                // onReorderItem (its replacement) postdates our SDK floor
+                // (^3.12.0, per pubspec), so stick with onReorder for now.
+                // ignore: deprecated_member_use
+                onReorder: onReorder,
+                itemBuilder: (context, i) => KeyedSubtree(
+                  key: ValueKey(active[i].id),
+                  child: _itemRow(active[i], dragIndex: i),
                 ),
               ),
-            );
-          },
+            ),
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton.icon(
+                        icon: const Icon(Icons.add),
+                        label: const Text('Add item'),
+                        onPressed: _addAndFocus,
+                      ),
+                    ),
+                    if (completed.isNotEmpty) ...[
+                      const Divider(),
+                      InkWell(
+                        onTap: () => setState(
+                            () => _completedExpanded = !_completedExpanded),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          child: Row(
+                            children: [
+                              Icon(
+                                _completedExpanded
+                                    ? Icons.expand_more
+                                    : Icons.chevron_right,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 4),
+                              Text('${completed.length} completed',
+                                  style: Theme.of(context).textTheme.labelLarge),
+                            ],
+                          ),
+                        ),
+                      ),
+                      if (_completedExpanded)
+                        for (final it in completed) _itemRow(it),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            // Tappable filler: tapping in the empty area below adds an item.
+            SliverFillRemaining(
+              hasScrollBody: false,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: _addAndFocus,
+                child: const SizedBox(width: double.infinity, height: 80),
+              ),
+            ),
+          ],
         );
       },
     );

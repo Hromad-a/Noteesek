@@ -117,6 +117,9 @@ abstract interface class NotesRepository {
   Future<void> setItemChecked(String id, bool checked);
   Future<void> deleteItem(String id);
 
+  /// Reassign positions so [orderedIds] is sorted 0…n within a note's checklist.
+  Future<void> reorderItems(List<String> orderedIds);
+
   // Attachments
   Stream<List<AttachmentRow>> watchAttachments(String noteId);
   Future<String> addAttachment(String noteId, Uint8List bytes);
@@ -207,6 +210,27 @@ class NoteViewModeNotifier extends Notifier<NoteViewMode> {
 final noteViewModeProvider =
     NotifierProvider<NoteViewModeNotifier, NoteViewMode>(
         NoteViewModeNotifier.new);
+
+/// Whether checked checklist items auto-sink to a collapsible "completed"
+/// section at the bottom of the editor (persisted, global). Off = keep manual
+/// order regardless of checked state.
+class ChecklistAutoSortNotifier extends Notifier<bool> {
+  @override
+  bool build() {
+    final prefs = ref.watch(sharedPreferencesProvider);
+    return prefs.getBool(AppConfig.kChecklistAutoSort) ?? false;
+  }
+
+  Future<void> set(bool value) async {
+    final prefs = ref.read(sharedPreferencesProvider);
+    await prefs.setBool(AppConfig.kChecklistAutoSort, value);
+    state = value;
+  }
+}
+
+final checklistAutoSortProvider =
+    NotifierProvider<ChecklistAutoSortNotifier, bool>(
+        ChecklistAutoSortNotifier.new);
 
 /// Which field the notes are ordered by. `custom` is the manual drag-reorder
 /// order (the `position` column).

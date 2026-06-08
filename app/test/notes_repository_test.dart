@@ -49,6 +49,22 @@ void main() {
     expect(items, isEmpty); // soft-deleted, filtered out
   });
 
+  test('reorderItems reassigns positions to the given order', () async {
+    final id = await repo.createNote(type: 'checklist');
+    final a = await repo.addItem(id, content: 'a');
+    final b = await repo.addItem(id, content: 'b');
+    final c = await repo.addItem(id, content: 'c');
+
+    // watchItems is ordered by position; initial order is a, b, c.
+    expect((await repo.watchItems(id).first).map((i) => i.id).toList(),
+        [a, b, c]);
+
+    await repo.reorderItems([c, a, b]);
+    final items = await repo.watchItems(id).first;
+    expect(items.map((i) => i.id).toList(), [c, a, b]);
+    expect(items.map((i) => i.position).toList(), [0, 1, 2]);
+  });
+
   test('search matches title, body and checklist item content', () async {
     final a = await repo.createNote(type: 'text');
     await repo.updateNoteFields(a, title: 'Shopping', body: 'eggs and bread');

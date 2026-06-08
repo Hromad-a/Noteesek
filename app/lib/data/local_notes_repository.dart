@@ -497,6 +497,22 @@ class LocalNotesRepository implements NotesRepository {
   Future<void> deleteItem(String id) =>
       _patchItem(id, const ChecklistItemsCompanion(deleted: Value(true)));
 
+  @override
+  Future<void> reorderItems(List<String> orderedIds) async {
+    await _db.transaction(() async {
+      final now = pbNow();
+      for (var i = 0; i < orderedIds.length; i++) {
+        await (_db.update(_db.checklistItems)
+              ..where((t) => t.id.equals(orderedIds[i])))
+            .write(ChecklistItemsCompanion(
+          position: Value(i),
+          updated: Value(now),
+          dirty: const Value(true),
+        ));
+      }
+    });
+  }
+
   Future<void> _patchItem(String id, ChecklistItemsCompanion patch) async {
     await (_db.update(_db.checklistItems)..where((t) => t.id.equals(id))).write(
       patch.copyWith(updated: Value(pbNow()), dirty: const Value(true)),

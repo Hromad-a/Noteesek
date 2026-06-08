@@ -31,4 +31,8 @@ class AppConfig {
 
   /// App theme: 'system' | 'light' | 'dark'. Drives MaterialApp.themeMode.
   static const String kThemeMode = 'theme_mode';
+
+  /// Checklist editor: when true, checked items sink to a collapsible
+  /// "completed" section at the bottom (Google Keep-style).
+  static const String kChecklistAutoSort = 'checklist_auto_sort';
 }

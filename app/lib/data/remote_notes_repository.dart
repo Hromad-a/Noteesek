@@ -538,6 +538,17 @@ class RemoteNotesRepository implements NotesRepository {
   @override
   Future<void> deleteItem(String id) => _updateItem(id, {'deleted': true});
 
+  @override
+  Future<void> reorderItems(List<String> orderedIds) => _guardVoid(() async {
+        for (var i = 0; i < orderedIds.length; i++) {
+          final r = await _pb
+              .collection('checklist_items')
+              .update(orderedIds[i], body: {'position': i});
+          _items[orderedIds[i]] = _itemFrom(r);
+        }
+        _events.add(null);
+      });
+
   Future<void> _updateItem(String id, Map<String, dynamic> body) =>
       _guardVoid(() async {
         final r =
