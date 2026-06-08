@@ -14,7 +14,9 @@ import 'label_notes_screen.dart';
 import 'manage_labels_screen.dart';
 import 'manage_notebooks_screen.dart';
 import 'note_card.dart';
+import 'note_colors.dart';
 import 'note_editor_screen.dart';
+import 'note_selection.dart';
 import 'trash_screen.dart';
 
 /// Home screen: a Keep-style masonry grid of notes with a create FAB.
@@ -99,12 +101,20 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
     final email = pb.authStore.record?.data['email'] as String? ?? '';
     final connected = ref.watch(isAuthenticatedProvider);
     final sync = kIsWeb ? null : ref.watch(syncControllerProvider);
+    final selectionMode = ref.watch(selectionModeProvider);
 
-    return Scaffold(
-      drawer: _AppDrawer(email: email, connected: connected),
-      appBar: AppBar(
-        title: const Text('Notes'),
-        actions: [
+    return PopScope(
+      canPop: !selectionMode,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) ref.read(noteSelectionProvider.notifier).clear();
+      },
+      child: Scaffold(
+        drawer: _AppDrawer(email: email, connected: connected),
+        appBar: selectionMode
+            ? const _SelectionAppBar()
+            : AppBar(
+                title: const Text('Notes'),
+                actions: [
           if (sync != null) ...[
             if (connected && !sync.reachable && !sync.syncing)
               IconButton(
@@ -131,9 +141,9 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
                 onPressed: connected ? () => _manualSync(context, ref) : null,
               ),
           ],
-        ],
-      ),
-      body: SafeArea(
+                ],
+              ),
+        body: SafeArea(
         child: Column(
           children: [
             const Padding(
@@ -172,6 +182,7 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
                               note: note,
                               onTap: () => _open(context, note.id),
                               isDragTarget: candidates.isNotEmpty,
+                              selectable: true,
                             );
                           },
                         );
@@ -184,9 +195,291 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
           ],
         ),
       ),
-      bottomNavigationBar: _BottomBar(
-        onText: () => _create(context, ref, 'text'),
-        onChecklist: () => _create(context, ref, 'checklist'),
+        bottomNavigationBar: _BottomBar(
+          onText: () => _create(context, ref, 'text'),
+          onChecklist: () => _create(context, ref, 'checklist'),
+        ),
+      ),
+    );
+  }
+}
+
+/// Contextual app bar shown while one or more notes are selected. Its actions
+/// mirror the note editor's top bar but operate on the whole selection at once.
+class _SelectionAppBar extends ConsumerWidget implements PreferredSizeWidget {
+  const _SelectionAppBar();
+
+  @override
+  Size get preferredSize => const Size.fromHeight(kToolbarHeight);
+
+  Future<void> _pickColor(
+      BuildContext context, NotesRepository repo, Set<String> ids) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Color',
+                  style: Theme.of(sheetContext).textTheme.titleMedium),
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 14,
+                runSpacing: 14,
+                children: [
+                  for (final c in kNoteColors)
+                    InkWell(
+                      borderRadius: BorderRadius.circular(20),
+                      onTap: () async {
+                        await Future.wait(
+                            ids.map((id) => repo.setColor(id, c.key)));
+                        if (sheetContext.mounted) {
+                          Navigator.of(sheetContext).pop();
+                        }
+                      },
+                      child: CircleAvatar(
+                        radius: 20,
+                        backgroundColor:
+                            noteColorFor(sheetContext, c.key) ??
+                                Theme.of(sheetContext)
+                                    .colorScheme
+                                    .surfaceContainerHighest,
+                        child: c.key.isEmpty
+                            ? const Icon(Icons.format_color_reset_outlined,
+                                size: 20)
+                            : null,
+                      ),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickLabels(
+      BuildContext context, NotesRepository repo, Set<String> ids) async {
+    final chosen = await showModalBottomSheet<List<String>>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (_) => _BulkLabelSheet(),
+    );
+    if (chosen == null) return;
+    await Future.wait(ids.map((id) => repo.setNoteLabels(id, chosen)));
+  }
+
+  Future<void> _moveToNotebook(
+      BuildContext context, WidgetRef ref, Set<String> ids) async {
+    final notebooks = ref.read(notebooksProvider).asData?.value ?? const [];
+    if (notebooks.isEmpty) return;
+    final repo = ref.read(notesRepositoryProvider);
+    final chosen = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Text('Move to notebook',
+                  style: Theme.of(sheetContext).textTheme.titleMedium),
+            ),
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  for (final nb in notebooks)
+                    ListTile(
+                      leading: const Icon(Icons.book_outlined),
+                      title: Text(nb.name),
+                      onTap: () => Navigator.of(sheetContext).pop(nb.id),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (chosen == null) return;
+    await Future.wait(ids.map((id) => repo.setNoteNotebook(id, chosen)));
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final ids = ref.watch(noteSelectionProvider);
+    final selection = ref.read(noteSelectionProvider.notifier);
+    final repo = ref.read(notesRepositoryProvider);
+
+    // Look at the current notes to decide the pin/archive toggle direction.
+    final notes = ref.watch(activeNotesProvider).asData?.value ?? const [];
+    final selected = notes.where((n) => ids.contains(n.id)).toList();
+    final allPinned =
+        selected.isNotEmpty && selected.every((n) => n.pinned);
+
+    void done() => selection.clear();
+
+    return AppBar(
+      leading: IconButton(
+        icon: const Icon(Icons.close),
+        tooltip: 'Cancel',
+        onPressed: done,
+      ),
+      title: Text('${ids.length} selected'),
+      actions: [
+        IconButton(
+          tooltip: allPinned ? 'Unpin' : 'Pin',
+          icon: Icon(allPinned ? Icons.push_pin : Icons.push_pin_outlined),
+          onPressed: () async {
+            await Future.wait(
+                ids.map((id) => repo.setPinned(id, !allPinned)));
+            done();
+          },
+        ),
+        IconButton(
+          tooltip: 'Color',
+          icon: const Icon(Icons.palette_outlined),
+          onPressed: () async {
+            await _pickColor(context, repo, ids);
+            done();
+          },
+        ),
+        IconButton(
+          tooltip: 'Labels',
+          icon: const Icon(Icons.label_outline),
+          onPressed: () async {
+            await _pickLabels(context, repo, ids);
+            done();
+          },
+        ),
+        PopupMenuButton<String>(
+          onSelected: (value) async {
+            switch (value) {
+              case 'archive':
+                await Future.wait(
+                    ids.map((id) => repo.setArchived(id, true)));
+                done();
+              case 'move':
+                await _moveToNotebook(context, ref, ids);
+                done();
+              case 'delete':
+                await Future.wait(ids.map((id) => repo.softDelete(id)));
+                done();
+            }
+          },
+          itemBuilder: (context) => const [
+            PopupMenuItem(
+              value: 'archive',
+              child: ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(Icons.archive_outlined),
+                title: Text('Archive'),
+              ),
+            ),
+            PopupMenuItem(
+              value: 'move',
+              child: ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(Icons.drive_file_move_outlined),
+                title: Text('Move to notebook'),
+              ),
+            ),
+            PopupMenuItem(
+              value: 'delete',
+              child: ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(Icons.delete_outline),
+                title: Text('Delete'),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+/// Bottom sheet that picks a set of labels to apply (overwriting) to the
+/// whole selection. Pops the chosen label-id list, or null if cancelled.
+class _BulkLabelSheet extends ConsumerStatefulWidget {
+  @override
+  ConsumerState<_BulkLabelSheet> createState() => _BulkLabelSheetState();
+}
+
+class _BulkLabelSheetState extends ConsumerState<_BulkLabelSheet> {
+  final Set<String> _chosen = {};
+
+  @override
+  Widget build(BuildContext context) {
+    final labels = ref.watch(labelsProvider).asData?.value ?? const [];
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Text('Apply labels',
+                  style: Theme.of(context).textTheme.titleMedium),
+            ),
+            if (labels.isEmpty)
+              const Padding(
+                padding: EdgeInsets.all(16),
+                child: Text('No labels yet'),
+              )
+            else
+              Flexible(
+                child: ListView(
+                  shrinkWrap: true,
+                  children: [
+                    for (final l in labels)
+                      CheckboxListTile(
+                        value: _chosen.contains(l.id),
+                        title: Text(l.name),
+                        onChanged: (v) => setState(() {
+                          if (v == true) {
+                            _chosen.add(l.id);
+                          } else {
+                            _chosen.remove(l.id);
+                          }
+                        }),
+                      ),
+                  ],
+                ),
+              ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Cancel'),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton(
+                    onPressed: () =>
+                        Navigator.of(context).pop(_chosen.toList()),
+                    child: const Text('Apply'),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

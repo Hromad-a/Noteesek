@@ -5,14 +5,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/local/database.dart';
 import '../../data/notes_repository.dart';
 import 'note_colors.dart';
+import 'note_selection.dart';
 
 /// A single Keep-style note card shown in the grid.
-class NoteCard extends ConsumerWidget {
+class NoteCard extends ConsumerStatefulWidget {
   const NoteCard({
     super.key,
     required this.note,
     required this.onTap,
     this.isDragTarget = false,
+    this.selectable = false,
   });
 
   final NoteRow note;
@@ -21,22 +23,52 @@ class NoteCard extends ConsumerWidget {
   /// True while another note is being dragged over this one.
   final bool isDragTarget;
 
+  /// When true, long-press enters multi-select and taps toggle selection.
+  /// Only the main notes grid opts in; Archive/Label screens leave it off.
+  final bool selectable;
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<NoteCard> createState() => _NoteCardState();
+}
+
+class _NoteCardState extends ConsumerState<NoteCard> {
+  /// Set true once a long-press drag actually moves far enough to be a
+  /// reorder (rather than a still long-press, which means "select"). Survives
+  /// the rebuilds triggered by selection state changing mid-gesture.
+  bool _dragMoved = false;
+
+  /// True when this gesture is the one that tentatively selected the card, so
+  /// turning it into a reorder should undo that selection (but never deselect
+  /// a card that was already selected before the drag).
+  bool _addedBySelect = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final note = widget.note;
+    final isDragTarget = widget.isDragTarget;
     final theme = Theme.of(context);
     final hasTitle = note.title.trim().isNotEmpty;
+
+    final selectionMode =
+        widget.selectable && ref.watch(selectionModeProvider);
+    final selected = widget.selectable &&
+        ref.watch(noteSelectionProvider.select((s) => s.contains(note.id)));
+    final selection = ref.read(noteSelectionProvider.notifier);
+
+    // Highlight when selected; otherwise keep the drag-target border.
+    final highlighted = selected || isDragTarget;
 
     final cardContent = Card(
       clipBehavior: Clip.antiAlias,
       color: noteColorFor(context, note.color),
-      shape: isDragTarget
+      shape: highlighted
           ? RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),
               side: BorderSide(color: theme.colorScheme.primary, width: 2),
             )
           : null,
       child: InkWell(
-        onTap: onTap,
+        onTap: selectionMode ? () => selection.toggle(note.id) : widget.onTap,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           mainAxisSize: MainAxisSize.min,
@@ -83,6 +115,25 @@ class NoteCard extends ConsumerWidget {
       ),
     );
 
+    // Overlay a checkmark badge in the corner when this card is selected.
+    final card = selected
+        ? Stack(
+            children: [
+              cardContent,
+              Positioned(
+                top: 6,
+                right: 6,
+                child: CircleAvatar(
+                  radius: 12,
+                  backgroundColor: theme.colorScheme.primary,
+                  child: Icon(Icons.check,
+                      size: 16, color: theme.colorScheme.onPrimary),
+                ),
+              ),
+            ],
+          )
+        : cardContent;
+
     final feedback = Material(
       elevation: 8,
       borderRadius: BorderRadius.circular(12),
@@ -111,10 +162,26 @@ class NoteCard extends ConsumerWidget {
           ? const Duration(milliseconds: 150)
           : const Duration(milliseconds: 500),
       feedback: feedback,
-      childWhenDragging: Opacity(opacity: 0.35, child: cardContent),
+      // A still long-press means "select"; the moment the finger moves far
+      // enough it becomes a reorder, so we drop the just-added selection.
+      onDragStarted: () {
+        if (!widget.selectable) return;
+        _dragMoved = false;
+        _addedBySelect = !selection.isSelected(note.id);
+        selection.add(note.id);
+      },
+      onDragUpdate: (details) {
+        if (!widget.selectable || _dragMoved) return;
+        if (details.delta.distance > 6) {
+          _dragMoved = true;
+          // It's a reorder, not a selection — undo our tentative select.
+          if (_addedBySelect) selection.toggle(note.id);
+        }
+      },
+      childWhenDragging: Opacity(opacity: 0.35, child: card),
       child: kIsWeb
-          ? MouseRegion(cursor: SystemMouseCursors.grab, child: cardContent)
-          : cardContent,
+          ? MouseRegion(cursor: SystemMouseCursors.grab, child: card)
+          : card,
     );
   }
 }
