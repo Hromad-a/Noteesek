@@ -7,6 +7,7 @@ import 'features/auth/password_reset_screen.dart';
 import 'features/lock/app_lock.dart';
 import 'features/lock/lock_screen.dart';
 import 'features/notes/notes_screen.dart';
+import 'features/onboarding/onboarding_screen.dart';
 import 'providers.dart';
 import 'ui/app_messenger.dart';
 
@@ -61,10 +62,17 @@ class _NoteesekAppState extends ConsumerState<NoteesekApp>
       home = const NotesScreen();
     }
 
-    // App lock (mobile): when on and locked, the unlock gate replaces everything.
+    // First-run intro (mobile) takes precedence over everything else.
     final lock = ref.watch(appLockProvider);
-    final gatedHome =
-        (!kIsWeb && lock.enabled && lock.locked) ? const LockScreen() : home;
+    final Widget gatedHome;
+    if (!kIsWeb && !ref.watch(onboardingSeenProvider)) {
+      gatedHome = const OnboardingScreen();
+    } else if (!kIsWeb && lock.enabled && lock.locked) {
+      // App lock: when on and locked, the unlock gate replaces everything.
+      gatedHome = const LockScreen();
+    } else {
+      gatedHome = home;
+    }
 
     return MaterialApp(
       title: 'Noteesek',

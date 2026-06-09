@@ -5,12 +5,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:noteesek/app.dart';
+import 'package:noteesek/config/app_config.dart';
 import 'package:noteesek/data/local/database.dart';
 import 'package:noteesek/providers.dart';
 
 void main() {
   testWidgets('opens directly to local notes (no login gate)', (tester) async {
-    SharedPreferences.setMockInitialValues({});
+    // Skip the one-time first-run intro so we land on the notes screen.
+    SharedPreferences.setMockInitialValues({AppConfig.kSeenOnboarding: true});
     final prefs = await SharedPreferences.getInstance();
     final db = AppDatabase(NativeDatabase.memory());
     addTearDown(db.close);
@@ -28,7 +30,7 @@ void main() {
 
     // Lands on the notes screen in local-only mode — no login required.
     expect(find.text('Notes'), findsOneWidget);
-    expect(find.text('Notes you add appear here'), findsOneWidget);
+    expect(find.text('No notes yet'), findsOneWidget);
 
     // Dispose the tree so provider subscriptions are cancelled, then advance
     // the clock so drift's stream-cleanup timer fires before the framework's

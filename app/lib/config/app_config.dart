@@ -43,4 +43,7 @@ class AppConfig {
 
   /// Render note bodies as Markdown (and show the editor formatting toolbar).
   static const String kMarkdownEnabled = 'markdown_enabled';
+
+  /// Whether the one-time first-run intro has been shown (mobile).
+  static const String kSeenOnboarding = 'seen_onboarding';
 }

@@ -176,3 +176,21 @@ class ThemeModeNotifier extends Notifier<ThemeMode> {
 
 final themeModeProvider =
     NotifierProvider<ThemeModeNotifier, ThemeMode>(ThemeModeNotifier.new);
+
+/// Whether the one-time first-run intro has been shown (mobile). Persisted.
+class OnboardingSeenNotifier extends Notifier<bool> {
+  @override
+  bool build() =>
+      ref.watch(sharedPreferencesProvider).getBool(AppConfig.kSeenOnboarding) ??
+      false;
+
+  Future<void> markSeen() async {
+    await ref
+        .read(sharedPreferencesProvider)
+        .setBool(AppConfig.kSeenOnboarding, true);
+    state = true;
+  }
+}
+
+final onboardingSeenProvider =
+    NotifierProvider<OnboardingSeenNotifier, bool>(OnboardingSeenNotifier.new);

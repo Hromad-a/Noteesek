@@ -1202,20 +1202,43 @@ class _NoMatches extends StatelessWidget {
   }
 }
 
-class _EmptyState extends StatelessWidget {
+class _EmptyState extends ConsumerWidget {
   const _EmptyState();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    // Mobile, no server connected → nudge to connect for cross-device sync.
+    final showConnect = !kIsWeb && !ref.watch(isAuthenticatedProvider);
     return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.sticky_note_2_outlined,
-              size: 72, color: Theme.of(context).disabledColor),
-          const SizedBox(height: 12),
-          const Text('Notes you add appear here'),
-        ],
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.sticky_note_2_outlined,
+                size: 72, color: theme.disabledColor),
+            const SizedBox(height: 16),
+            Text('No notes yet', style: theme.textTheme.titleMedium),
+            const SizedBox(height: 4),
+            Text(
+              'Tap the buttons below to add a note or checklist.',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyMedium
+                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            ),
+            if (showConnect) ...[
+              const SizedBox(height: 24),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.cloud_sync_outlined),
+                label: const Text('Connect a server to sync'),
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const LoginScreen()),
+                ),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
