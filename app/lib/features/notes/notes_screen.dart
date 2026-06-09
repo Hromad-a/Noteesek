@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
+import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 
 import '../../data/local/database.dart';
 import '../../data/notes_repository.dart';
@@ -9,6 +12,7 @@ import '../../providers.dart';
 import '../../sync/sync_controller.dart';
 import '../../ui/app_messenger.dart';
 import '../auth/login_screen.dart';
+import '../capture/quick_capture.dart';
 import '../auth/settings_screen.dart';
 import '../export/share_note_sheet.dart';
 import 'archive_screen.dart';
@@ -30,6 +34,8 @@ class NotesScreen extends ConsumerStatefulWidget {
 }
 
 class _NotesScreenState extends ConsumerState<NotesScreen> {
+  StreamSubscription<List<SharedMediaFile>>? _shareSub;
+
   @override
   void initState() {
     super.initState();
@@ -37,6 +43,31 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(notesRepositoryProvider).ensureDefaultNotebook();
     });
+    if (!kIsWeb) _initShareCapture();
+  }
+
+  @override
+  void dispose() {
+    _shareSub?.cancel();
+    super.dispose();
+  }
+
+  /// Quick capture: a share from another app (text/images) → a new note.
+  /// Handles both a cold launch via share and shares while already running.
+  void _initShareCapture() {
+    ReceiveSharingIntent.instance.getInitialMedia().then((media) {
+      if (media.isNotEmpty) {
+        _onShared(media);
+        ReceiveSharingIntent.instance.reset();
+      }
+    });
+    _shareSub = ReceiveSharingIntent.instance.getMediaStream().listen(_onShared);
+  }
+
+  Future<void> _onShared(List<SharedMediaFile> media) async {
+    final id = await QuickCapture.createNote(
+        ref.read(notesRepositoryProvider), media);
+    if (id != null && mounted) _open(context, id);
   }
 
   Future<void> _create(BuildContext context, WidgetRef ref, String type) async {

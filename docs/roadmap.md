@@ -30,10 +30,10 @@ as items ship (move them to "Shipped" with the commit/tag).
   are no real DOM `<input>`s for managers to detect; no reliable fix on current
   Flutter. Revisit if Flutter ships better web semantics/input handling.
 
-## Planned features
+## Features — ✅ all shipped (2026-06-09)
 
-Build order (small → big, value-first): undo → per-label colors → app lock →
-JSON backup → markdown → quick capture → onboarding → sign-out-everywhere.
+All of the items below (reconciliation + 1–8) are implemented. They need a
+web/APK rebuild to run on a device. Details kept for reference.
 
 ### 0. Sign-in reconciliation — ✅ DONE — see [sign-in-reconciliation.md](sign-in-reconciliation.md)
 On sign-in, when the device holds local data that diverges from the account's
@@ -43,31 +43,31 @@ local). Reconciles data of any owner (re-owns offline/other-account data into th
 account); destructive choices show impact counts + require type-to-confirm.
 Mobile only. All 4 phases shipped.
 
-### 1. Undo (delete-to-trash) — app, low
+### 1. Undo (delete-to-trash) — ✅ DONE
 Snackbar **Undo** after a note (single or bulk selection) is sent to Trash;
 restores the exact ids. No schema change. *Decision: scope = delete-to-trash
 only.*
 
-### 2. Per-label colors — app + server, medium
+### 2. Per-label colors — ✅ DONE
 Add `color` to the `labels` collection (PB migration) + a `labels.color` drift
 column (schema bump + migration; rides label LWW sync). Color picker on
 `ManageLabelsScreen` and at create-time; apply on the drawer filter chips, note
 cards, and the label sheet. Reuses the curated palette.
 
-### 3. App lock — biometric + PIN, whole app (mobile) — app, medium
+### 3. App lock — biometric + PIN — ✅ DONE
 Packages: `local_auth` + `flutter_secure_storage` (hashed PIN). Settings: enable
 lock, set/change PIN, toggle biometric. A lock gate wraps the app and re-locks on
 resume from background (lifecycle observer). *Decision: biometric + PIN, whole
 app. Web: N/A.*
 
-### 4. Full JSON backup/restore (mobile) — app, medium
+### 4. Full JSON backup/restore — ✅ DONE
 Serialize **all** drift tables (notes, items, attachments as base64, labels,
 notebooks) + a schema-version header to one file (share/save). Restore re-imports
 **preserving ids/timestamps** (upsert by id, mark dirty to re-sync) — distinct
 from Markdown import which mints new ids. Settings → Data & storage. *Decision:
 full JSON backup (lossless).*
 
-### 5. Markdown — render + formatting toolbar (optional) — app, medium-high
+### 5. Markdown — render + toolbar — ✅ DONE
 Settings toggle `markdownEnabled` (persisted, like the theme). When on: note
 bodies **render** Markdown in the card preview + a read view (`markdown_widget`;
 `flutter_markdown` is discontinued), and the editor gets a **toolbar**
@@ -75,19 +75,19 @@ bodies **render** Markdown in the card preview + a read view (`markdown_widget`;
 Editing stays plain text underneath; export already emits Markdown. *Decision:
 render + toolbar.*
 
-### 6. Quick capture — Share-to-Noteesek (Android) — app + native, medium
+### 6. Quick capture — Share-to-Noteesek (Android) — ✅ DONE
 `receive_sharing_intent` + manifest `SEND`/`SEND_MULTIPLE` intent filters (text +
 images). Shared text → new text note; shared image(s) → new note with
 attachment(s); opens for a quick edit. Android-only. *Decision: share-intent
 receive (not widget / not notification).*
 
-### 7. Onboarding — intro + empty-state polish + connect-server nudge — app, medium
+### 7. Onboarding + empty-state polish — ✅ DONE
 First-run flag → a one-time intro carousel (offline-first / optional sync on
 mobile; login on web). Polish empty notes/archive/trash/search states (copy,
 illustration, quick actions). On mobile with no server connected, a dismissible
 "Connect a server to sync" card on the empty state. *Decision: all three.*
 
-### 8. Sign out everywhere (sessions) — app + server, medium
+### 8. Sign out everywhere — ✅ DONE
 PocketBase JWTs are stateless (no device list). A custom auth-required hook route
 (e.g. `POST /api/noteesek/logout-everywhere`) rotates the user's `tokenKey`,
 invalidating every existing token on all devices; the current client re-auths.
