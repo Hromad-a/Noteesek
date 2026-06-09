@@ -595,6 +595,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     await purge('checklist_items');
     await purge('notes');
     await purge('labels');
+    await purge('notebooks');
   }
 
   /// The status icon shown in the server URL field's "Test connection" button.

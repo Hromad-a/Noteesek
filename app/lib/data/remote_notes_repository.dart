@@ -495,6 +495,27 @@ class RemoteNotesRepository implements NotesRepository {
           return keep.id;
         }
 
+        // No notebook is flagged default — a merge may have dropped the flag.
+        // Promote an existing "Notebook"-named notebook rather than spawning a
+        // fresh one (which would leave the old, now-deletable copy behind).
+        final named = _notebooks.values
+            .where((n) =>
+                !n.deleted && n.name.trim().toLowerCase() == 'notebook')
+            .toList()
+          ..sort((a, b) {
+            final c = (a.created ?? '').compareTo(b.created ?? '');
+            return c != 0 ? c : a.id.compareTo(b.id);
+          });
+        if (named.isNotEmpty) {
+          final keep = named.first;
+          final r = await _pb
+              .collection('notebooks')
+              .update(keep.id, body: {'is_default': true});
+          _notebooks[keep.id] = _notebookFrom(r);
+          _events.add(null);
+          return keep.id;
+        }
+
         final r = await _pb.collection('notebooks').create(body: {
           'owner': _ownerId,
           'name': 'Notebook',
@@ -505,6 +526,25 @@ class RemoteNotesRepository implements NotesRepository {
         _events.add(null);
         return r.id;
       }, '');
+
+  @override
+  Future<void> healNotebooks() => _guardVoid(() async {
+        await _ensureLoaded();
+        final deleted =
+            _notebooks.values.where((n) => n.deleted).map((n) => n.id).toSet();
+        if (deleted.isEmpty) return;
+        final holdsLive = _notes.values
+            .where((n) => !n.deleted && deleted.contains(n.notebook))
+            .map((n) => n.notebook)
+            .toSet();
+        for (final id in holdsLive) {
+          final r = await _pb
+              .collection('notebooks')
+              .update(id, body: {'deleted': false});
+          _notebooks[id] = _notebookFrom(r);
+        }
+        if (holdsLive.isNotEmpty) _events.add(null);
+      });
 
   @override
   Future<String> createNotebook(String name) => _guard(() async {

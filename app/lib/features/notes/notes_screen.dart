@@ -39,9 +39,12 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
   @override
   void initState() {
     super.initState();
-    // Make sure the user has a default notebook (and reconcile duplicates).
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(notesRepositoryProvider).ensureDefaultNotebook();
+    // Make sure the user has a default notebook (and reconcile duplicates),
+    // then repair any notebooks stranded by a previous merge.
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final repo = ref.read(notesRepositoryProvider);
+      await repo.healNotebooks();
+      await repo.ensureDefaultNotebook();
     });
     if (!kIsWeb) _initShareCapture();
   }

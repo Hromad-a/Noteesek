@@ -325,6 +325,51 @@ void main() {
       expect((await repo.watchNotebooks().first).map((n) => n.id),
           contains(defaultId));
     });
+
+    test('ensureDefaultNotebook promotes an existing "Notebook" when the '
+        'default flag was lost (no fresh duplicate)', () async {
+      // A "Notebook"-named row exists but isn't flagged default (e.g. a merge
+      // dropped the flag), making it a deletable orphan.
+      final orphan = await repo.createNotebook('Notebook');
+
+      final id = await repo.ensureDefaultNotebook();
+
+      expect(id, orphan, reason: 'the existing row is promoted, not replaced');
+      final notebooks = await repo.watchNotebooks().first;
+      expect(notebooks, hasLength(1), reason: 'no fresh duplicate created');
+      expect(notebooks.single.isDefault, isTrue);
+    });
+
+    test('healNotebooks restores a soft-deleted notebook that still holds '
+        'live notes', () async {
+      final nb = await repo.createNotebook('Work');
+      final note = await repo.createNote(type: 'text', notebook: nb);
+      // Simulate a merge anomaly: the notebook is soft-deleted but its note is
+      // still live and still points at it.
+      await (db.update(db.notebooks)..where((t) => t.id.equals(nb)))
+          .write(const NotebooksCompanion(deleted: Value(true)));
+
+      await repo.healNotebooks();
+
+      final live = await repo.watchNotebooks().first;
+      expect(live.map((n) => n.id), contains(nb),
+          reason: 'notebook resurfaces so its note is no longer stranded');
+      final row = await (db.select(db.notes)..where((t) => t.id.equals(note)))
+          .getSingle();
+      expect(row.notebook, nb);
+    });
+
+    test('healNotebooks leaves a soft-deleted notebook with no live notes '
+        'deleted', () async {
+      final nb = await repo.createNotebook('Empty');
+      await (db.update(db.notebooks)..where((t) => t.id.equals(nb)))
+          .write(const NotebooksCompanion(deleted: Value(true)));
+
+      await repo.healNotebooks();
+
+      expect((await repo.watchNotebooks().first).map((n) => n.id),
+          isNot(contains(nb)));
+    });
   });
 
   test('pin sorts first; archive and delete leave the active list', () async {

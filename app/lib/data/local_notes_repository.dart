@@ -542,6 +542,27 @@ class LocalNotesRepository implements NotesRepository {
       return keep.id;
     }
 
+    // No notebook is flagged default — a merge may have dropped the flag.
+    // Promote an existing "Notebook"-named notebook rather than spawning a
+    // fresh one (which would leave the old, now-deletable copy alongside it).
+    final named = await (_db.select(_db.notebooks)
+          ..where((t) =>
+              t.deleted.equals(false) &
+              t.owner.equals(_ownerId) &
+              t.name.lower().equals('notebook'))
+          ..orderBy([(t) => OrderingTerm(expression: t.created)]))
+        .get();
+    if (named.isNotEmpty) {
+      final keep = named.first;
+      await (_db.update(_db.notebooks)..where((t) => t.id.equals(keep.id)))
+          .write(NotebooksCompanion(
+        isDefault: const Value(true),
+        updated: Value(pbNow()),
+        dirty: const Value(true),
+      ));
+      return keep.id;
+    }
+
     final id = newPbId();
     final now = pbNow();
     await _db.into(_db.notebooks).insert(NotebooksCompanion.insert(
@@ -554,6 +575,29 @@ class LocalNotesRepository implements NotesRepository {
           dirty: const Value(true),
         ));
     return id;
+  }
+
+  @override
+  Future<void> healNotebooks() async {
+    await _db.transaction(() async {
+      final deletedNbs = await (_db.select(_db.notebooks)
+            ..where((t) => t.owner.equals(_ownerId) & t.deleted.equals(true)))
+          .get();
+      for (final nb in deletedNbs) {
+        final live = await (_db.select(_db.notes)
+              ..where((t) => t.notebook.equals(nb.id) & t.deleted.equals(false))
+              ..limit(1))
+            .get();
+        if (live.isNotEmpty) {
+          await (_db.update(_db.notebooks)..where((t) => t.id.equals(nb.id)))
+              .write(NotebooksCompanion(
+            deleted: const Value(false),
+            updated: Value(pbNow()),
+            dirty: const Value(true),
+          ));
+        }
+      }
+    });
   }
 
   @override

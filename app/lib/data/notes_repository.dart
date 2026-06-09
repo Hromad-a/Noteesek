@@ -151,10 +151,19 @@ abstract interface class NotesRepository {
   // Notebooks
   Stream<List<NotebookRow>> watchNotebooks();
 
-  /// Ensure the active owner has exactly one default notebook, creating it
-  /// (named "Notebook") if absent and reconciling duplicates down to the
-  /// earliest-created one. Returns the default notebook's id.
+  /// Ensure the active owner has exactly one default notebook. If a notebook is
+  /// already flagged default, duplicates are reconciled down to the
+  /// earliest-created one. If none is flagged (e.g. a merge dropped the flag),
+  /// an existing "Notebook"-named notebook is promoted rather than a fresh one
+  /// being created, so the old copy isn't left behind as a deletable orphan.
+  /// Returns the default notebook's id.
   Future<String> ensureDefaultNotebook();
+
+  /// Repair notebook state after a sync/merge: restore any soft-deleted
+  /// notebook that still holds live (non-deleted) notes, so those notes
+  /// resurface in their real notebook instead of being stranded under the
+  /// default. Safe to call on every notes-screen mount.
+  Future<void> healNotebooks();
 
   Future<String> createNotebook(String name);
   Future<void> renameNotebook(String id, String name);
