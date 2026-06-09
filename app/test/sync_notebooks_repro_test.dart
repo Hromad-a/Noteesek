@@ -67,8 +67,8 @@ void main() {
     final repoA = LocalNotesRepository(dbA, userId);
     final engineA = SyncEngine(dbA, pb);
     await repoA.ensureDefaultNotebook();
-    final aId = await repoA.createNotebook('Alpha');
-    final bId = await repoA.createNotebook('Beta');
+    await repoA.createNotebook('Alpha');
+    await repoA.createNotebook('Beta');
     await engineA.syncOnce();
 
     // Device B (fresh): mimic the real sign-in order —
