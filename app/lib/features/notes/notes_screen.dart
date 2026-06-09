@@ -39,13 +39,6 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
   @override
   void initState() {
     super.initState();
-    // Make sure the user has a default notebook (and reconcile duplicates),
-    // then repair any notebooks stranded by a previous merge.
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      final repo = ref.read(notesRepositoryProvider);
-      await repo.healNotebooks();
-      await repo.ensureDefaultNotebook();
-    });
     if (!kIsWeb) _initShareCapture();
   }
 
@@ -74,7 +67,10 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
   }
 
   Future<void> _create(BuildContext context, WidgetRef ref, String type) async {
-    final notebook = ref.read(activeNotebookIdProvider);
+    // Stamp the new note with the selected notebook, or leave it uncategorized
+    // when the grid scope is "All notes" or "No notebook".
+    final scope = ref.read(activeNotebookIdProvider);
+    final notebook = (scope == kAllNotes || scope == kNoNotebook) ? '' : scope;
     final id = await ref
         .read(notesRepositoryProvider)
         .createNote(type: type, notebook: notebook);
@@ -697,14 +693,20 @@ class _BottomBar extends ConsumerWidget {
   }
 }
 
-/// A pill showing the current notebook; tapping opens a menu to switch
-/// notebooks, create a new one, or manage them.
+/// A pill showing the current notebook scope; tapping opens a menu to switch
+/// scope ("All notes" / "No notebook" / a notebook), create one, or manage them.
 class _NotebookSelector extends ConsumerWidget {
   const _NotebookSelector();
 
-  // Sentinel values for the non-notebook menu entries.
+  // Sentinel values for the action menu entries.
   static const _newValue = '__new_notebook__';
   static const _manageValue = '__manage_notebooks__';
+
+  static IconData _scopeIcon(String scope) => switch (scope) {
+        kAllNotes => Icons.notes_outlined,
+        kNoNotebook => Icons.label_off_outlined,
+        _ => Icons.book_outlined,
+      };
 
   Future<void> _createNotebook(BuildContext context, WidgetRef ref) async {
     final ctrl = TextEditingController();
@@ -740,8 +742,23 @@ class _NotebookSelector extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final notebooks = ref.watch(notebooksProvider).asData?.value ?? const [];
     final activeId = ref.watch(activeNotebookIdProvider);
-    final active = notebooks.where((n) => n.id == activeId).firstOrNull;
-    final name = active?.name ?? 'Notebook';
+    final label = switch (activeId) {
+      kAllNotes => 'All notes',
+      kNoNotebook => 'No notebook',
+      _ => notebooks.where((n) => n.id == activeId).firstOrNull?.name ??
+          'All notes',
+    };
+
+    PopupMenuItem<String> scopeItem(String value, IconData icon, String text) =>
+        PopupMenuItem(
+          value: value,
+          child: ListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(value == activeId ? Icons.check : icon),
+            title: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis),
+          ),
+        );
 
     return PopupMenuButton<String>(
       tooltip: 'Switch notebook',
@@ -760,20 +777,11 @@ class _NotebookSelector extends ConsumerWidget {
         }
       },
       itemBuilder: (context) => [
+        scopeItem(kAllNotes, Icons.notes_outlined, 'All notes'),
+        scopeItem(kNoNotebook, Icons.label_off_outlined, 'No notebook'),
+        if (notebooks.isNotEmpty) const PopupMenuDivider(),
         for (final nb in notebooks)
-          PopupMenuItem(
-            value: nb.id,
-            child: ListTile(
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              leading: Icon(nb.id == activeId
-                  ? Icons.book
-                  : Icons.book_outlined),
-              title: Text(nb.name,
-                  maxLines: 1, overflow: TextOverflow.ellipsis),
-              trailing: nb.id == activeId ? const Icon(Icons.check) : null,
-            ),
-          ),
+          scopeItem(nb.id, Icons.book_outlined, nb.name),
         const PopupMenuDivider(),
         const PopupMenuItem(
           value: _newValue,
@@ -803,10 +811,10 @@ class _NotebookSelector extends ConsumerWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.book_outlined, size: 18),
+            Icon(_scopeIcon(activeId), size: 18),
             const SizedBox(width: 8),
             Flexible(
-              child: Text(name,
+              child: Text(label,
                   maxLines: 1, overflow: TextOverflow.ellipsis),
             ),
             const Icon(Icons.arrow_drop_down),
@@ -1073,6 +1081,11 @@ class _FilterSheet extends ConsumerWidget {
                   selected: filters.notebookId == SearchFilters.allNotebooks,
                   onSelected: (_) =>
                       notifier.setNotebook(SearchFilters.allNotebooks),
+                ),
+                ChoiceChip(
+                  label: const Text('No notebook'),
+                  selected: filters.notebookId == kNoNotebook,
+                  onSelected: (_) => notifier.setNotebook(kNoNotebook),
                 ),
                 for (final nb in notebooks)
                   ChoiceChip(

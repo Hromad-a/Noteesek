@@ -1,6 +1,8 @@
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
 
+import 'ids.dart';
+
 part 'database.g.dart';
 
 /// Local SQLite mirror (offline-first). Mirrors the PocketBase collections plus
@@ -129,10 +131,6 @@ class Notebooks extends Table {
   TextColumn get owner => text()();
   TextColumn get name => text().withDefault(const Constant(''))();
 
-  /// The per-user fallback notebook: rename-only, never deleted. Exactly one per
-  /// owner (reconciled in [NotesRepository.ensureDefaultNotebook]).
-  BoolColumn get isDefault => boolean().withDefault(const Constant(false))();
-
   /// Soft delete tombstone so removals propagate before being purged.
   BoolColumn get deleted => boolean().withDefault(const Constant(false))();
   TextColumn get created => text().nullable()();
@@ -168,7 +166,7 @@ class AppDatabase extends _$AppDatabase {
             ));
 
   @override
-  int get schemaVersion => 7;
+  int get schemaVersion => 8;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -193,6 +191,25 @@ class AppDatabase extends _$AppDatabase {
           }
           if (from < 7) {
             await m.addColumn(labels, labels.color);
+          }
+          if (from < 8) {
+            // Drop the default-notebook concept: move notes out of any default
+            // notebook into "no notebook" (empty relation), soft-delete the
+            // default notebooks (tombstone syncs), then drop the column. Raw SQL
+            // because the `is_default` accessor no longer exists in the schema.
+            final now = pbNow();
+            await customStatement(
+              "UPDATE notes SET notebook = '', dirty = 1, updated = ? "
+              "WHERE notebook IN (SELECT id FROM notebooks WHERE is_default = 1)",
+              [now],
+            );
+            await customStatement(
+              "UPDATE notebooks SET deleted = 1, dirty = 1, updated = ? "
+              "WHERE is_default = 1",
+              [now],
+            );
+            await customStatement(
+                'ALTER TABLE notebooks DROP COLUMN is_default');
           }
         },
       );

@@ -1,6 +1,5 @@
 import 'dart:typed_data';
 
-import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -94,18 +93,15 @@ void main() {
     expect(text.body, contains('2024-01-02'));
   });
 
-  test('hasForeignLocalData: ignores own data + a lone offline default', () async {
+  test('hasForeignLocalData: ignores own data, flags another owner\'s',
+      () async {
     // Only this account's data → no foreign data.
-    await repo.ensureDefaultNotebook();
     await repo.createNote(type: 'text');
+    await repo.createNotebook('Mine');
     expect(await repo.hasForeignLocalData('owner1'), isFalse);
 
-    // A lone offline default notebook (different owner) doesn't count…
+    // A note owned by someone else counts as foreign.
     final repoLocal = LocalNotesRepository(db, 'local');
-    await repoLocal.ensureDefaultNotebook();
-    expect(await repo.hasForeignLocalData('owner1'), isFalse);
-
-    // …but a foreign note does.
     await repoLocal.createNote(type: 'text');
     expect(await repo.hasForeignLocalData('owner1'), isTrue);
   });
@@ -158,14 +154,6 @@ void main() {
     expect((await repo.watchAttachments(n).first).single.data, bytes);
   });
 
-  test('setLabelColor persists the color and dirties the label', () async {
-    final id = await repo.createLabel('Home');
-    await repo.setLabelColor(id, 'mint');
-    final label = (await repo.watchLabels().first).single;
-    expect(label.color, 'mint');
-    expect(label.dirty, isTrue);
-  });
-
   test('combineNotebooksByName merges same-name notebooks + moves notes',
       () async {
     final a = await repo.createNotebook('Work'); // earliest → keeper
@@ -185,6 +173,14 @@ void main() {
     expect(notes.firstWhere((n) => n.id == na).notebook, a);
     expect(notes.firstWhere((n) => n.id == nb).notebook, a,
         reason: "the duplicate's note is moved to the keeper");
+  });
+
+  test('setLabelColor persists the color and dirties the label', () async {
+    final id = await repo.createLabel('Home');
+    await repo.setLabelColor(id, 'mint');
+    final label = (await repo.watchLabels().first).single;
+    expect(label.color, 'mint');
+    expect(label.dirty, isTrue);
   });
 
   test('reorderItems reassigns positions to the given order', () async {
@@ -256,53 +252,26 @@ void main() {
   });
 
   group('notebooks', () {
-    test('ensureDefaultNotebook creates one default named "Notebook"',
+    Future<NoteRow> noteRow(String id) =>
+        (db.select(db.notes)..where((t) => t.id.equals(id))).getSingle();
+
+    test('createNote stamps the notebook (or leaves it uncategorized)',
         () async {
-      final id = await repo.ensureDefaultNotebook();
-      final notebooks = await repo.watchNotebooks().first;
-      expect(notebooks, hasLength(1));
-      expect(notebooks.single.id, id);
-      expect(notebooks.single.name, 'Notebook');
-      expect(notebooks.single.isDefault, isTrue);
-
-      // Idempotent: a second call returns the same id, no duplicate created.
-      expect(await repo.ensureDefaultNotebook(), id);
-      expect(await repo.watchNotebooks().first, hasLength(1));
-    });
-
-    test('ensureDefaultNotebook reconciles duplicate defaults to the earliest',
-        () async {
-      final first = await repo.ensureDefaultNotebook();
-      // Simulate a second default arriving (e.g. pulled from the server) by
-      // forcing another default row in directly.
-      final second = await repo.createNotebook('Other');
-      await (db.update(db.notebooks)..where((t) => t.id.equals(second)))
-          .write(const NotebooksCompanion(isDefault: Value(true)));
-
-      final kept = await repo.ensureDefaultNotebook();
-      expect(kept, first, reason: 'earliest-created default wins');
-      final live = await repo.watchNotebooks().first;
-      expect(live.map((n) => n.id), isNot(contains(second)));
-    });
-
-    test('createNote stamps the notebook', () async {
       final nb = await repo.createNotebook('Work');
-      final id = await repo.createNote(type: 'text', notebook: nb);
-      final note = await (db.select(db.notes)..where((t) => t.id.equals(id)))
-          .getSingle();
-      expect(note.notebook, nb);
+      final inNb = await repo.createNote(type: 'text', notebook: nb);
+      final loose = await repo.createNote(type: 'text'); // no notebook
+      expect((await noteRow(inNb)).notebook, nb);
+      expect((await noteRow(loose)).notebook, '');
     });
 
-    test('deleteNotebook moves notes to the default', () async {
-      final defaultId = await repo.ensureDefaultNotebook();
+    test('deleteNotebook moves notes to "no notebook"', () async {
       final nb = await repo.createNotebook('Work');
       final id = await repo.createNote(type: 'text', notebook: nb);
 
       await repo.deleteNotebook(nb, moveNotesToDefault: true);
 
-      final note = await (db.select(db.notes)..where((t) => t.id.equals(id)))
-          .getSingle();
-      expect(note.notebook, defaultId);
+      final note = await noteRow(id);
+      expect(note.notebook, '', reason: 'note is now uncategorized');
       expect(note.deleted, isFalse);
       expect((await repo.watchNotebooks().first).map((n) => n.id),
           isNot(contains(nb)));
@@ -314,61 +283,45 @@ void main() {
 
       await repo.deleteNotebook(nb, moveNotesToDefault: false);
 
-      final note = await (db.select(db.notes)..where((t) => t.id.equals(id)))
-          .getSingle();
-      expect(note.deleted, isTrue);
+      expect((await noteRow(id)).deleted, isTrue);
     });
 
-    test('the default notebook cannot be deleted', () async {
-      final defaultId = await repo.ensureDefaultNotebook();
-      await repo.deleteNotebook(defaultId, moveNotesToDefault: false);
-      expect((await repo.watchNotebooks().first).map((n) => n.id),
-          contains(defaultId));
-    });
-
-    test('ensureDefaultNotebook promotes an existing "Notebook" when the '
-        'default flag was lost (no fresh duplicate)', () async {
-      // A "Notebook"-named row exists but isn't flagged default (e.g. a merge
-      // dropped the flag), making it a deletable orphan.
-      final orphan = await repo.createNotebook('Notebook');
-
-      final id = await repo.ensureDefaultNotebook();
-
-      expect(id, orphan, reason: 'the existing row is promoted, not replaced');
-      final notebooks = await repo.watchNotebooks().first;
-      expect(notebooks, hasLength(1), reason: 'no fresh duplicate created');
-      expect(notebooks.single.isDefault, isTrue);
-    });
-
-    test('healNotebooks restores a soft-deleted notebook that still holds '
-        'live notes', () async {
-      final nb = await repo.createNotebook('Work');
-      final note = await repo.createNote(type: 'text', notebook: nb);
-      // Simulate a merge anomaly: the notebook is soft-deleted but its note is
-      // still live and still points at it.
-      await (db.update(db.notebooks)..where((t) => t.id.equals(nb)))
-          .write(const NotebooksCompanion(deleted: Value(true)));
-
-      await repo.healNotebooks();
-
-      final live = await repo.watchNotebooks().first;
-      expect(live.map((n) => n.id), contains(nb),
-          reason: 'notebook resurfaces so its note is no longer stranded');
-      final row = await (db.select(db.notes)..where((t) => t.id.equals(note)))
-          .getSingle();
-      expect(row.notebook, nb);
-    });
-
-    test('healNotebooks leaves a soft-deleted notebook with no live notes '
-        'deleted', () async {
-      final nb = await repo.createNotebook('Empty');
-      await (db.update(db.notebooks)..where((t) => t.id.equals(nb)))
-          .write(const NotebooksCompanion(deleted: Value(true)));
-
-      await repo.healNotebooks();
-
+    test('any notebook can be deleted (no protected default)', () async {
+      final nb = await repo.createNotebook('Anything');
+      await repo.deleteNotebook(nb, moveNotesToDefault: true);
       expect((await repo.watchNotebooks().first).map((n) => n.id),
           isNot(contains(nb)));
+    });
+
+    test('noteInScope: All notes / No notebook / specific notebook', () async {
+      final work = await repo.createNotebook('Work');
+      final inWork = await noteRow(
+          await repo.createNote(type: 'text', notebook: work));
+      final loose = await noteRow(await repo.createNote(type: 'text'));
+      // A note pointing at an unknown/deleted notebook is also "no notebook".
+      final orphan = await noteRow(
+          await repo.createNote(type: 'text', notebook: 'goneNotebookId'));
+      final known = {work};
+
+      // All notes: everything.
+      for (final n in [inWork, loose, orphan]) {
+        expect(noteInScope(n, kAllNotes, known), isTrue);
+      }
+      // No notebook: only the uncategorized + orphaned.
+      expect(noteInScope(inWork, kNoNotebook, known), isFalse);
+      expect(noteInScope(loose, kNoNotebook, known), isTrue);
+      expect(noteInScope(orphan, kNoNotebook, known), isTrue);
+      // A specific notebook: only its own notes.
+      expect(noteInScope(inWork, work, known), isTrue);
+      expect(noteInScope(loose, work, known), isFalse);
+      expect(noteInScope(orphan, work, known), isFalse);
+    });
+
+    test('setNoteNotebook to "" clears the relation', () async {
+      final nb = await repo.createNotebook('Work');
+      final id = await repo.createNote(type: 'text', notebook: nb);
+      await repo.setNoteNotebook(id, '');
+      expect((await noteRow(id)).notebook, '');
     });
   });
 

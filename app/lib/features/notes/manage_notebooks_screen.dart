@@ -4,9 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/local/database.dart';
 import '../../data/notes_repository.dart';
 
-/// Manage notebooks: create, rename, and delete. The default notebook can be
-/// renamed but not deleted. Deleting a notebook offers to move its notes to the
-/// default notebook or send them to Trash.
+/// Manage notebooks: create, rename, and delete. Deleting a notebook offers to
+/// move its notes out to "No notebook" (uncategorized) or send them to Trash.
 class ManageNotebooksScreen extends ConsumerStatefulWidget {
   const ManageNotebooksScreen({super.key});
 
@@ -62,7 +61,7 @@ class _ManageNotebooksScreenState extends ConsumerState<ManageNotebooksScreen> {
   }
 
   Future<void> _delete(NotebookRow notebook) async {
-    // Three-way choice: move the notes to the default notebook, delete them
+    // Three-way choice: move the notes out to "No notebook", delete them
     // (to Trash), or cancel.
     final choice = await showDialog<String>(
       context: context,
@@ -77,7 +76,7 @@ class _ManageNotebooksScreenState extends ConsumerState<ManageNotebooksScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop('move'),
-            child: const Text('Move to default'),
+            child: const Text('Keep notes'),
           ),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop('trash'),
@@ -134,10 +133,8 @@ class _ManageNotebooksScreenState extends ConsumerState<ManageNotebooksScreen> {
                   children: [
                     for (final nb in notebooks)
                       ListTile(
-                        leading: Icon(
-                            nb.isDefault ? Icons.book : Icons.book_outlined),
+                        leading: const Icon(Icons.book_outlined),
                         title: Text(nb.name),
-                        subtitle: nb.isDefault ? const Text('Default') : null,
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
@@ -147,12 +144,9 @@ class _ManageNotebooksScreenState extends ConsumerState<ManageNotebooksScreen> {
                               onPressed: () => _rename(nb),
                             ),
                             IconButton(
-                              tooltip: nb.isDefault
-                                  ? 'The default notebook can\'t be deleted'
-                                  : 'Delete',
+                              tooltip: 'Delete',
                               icon: const Icon(Icons.delete_outline),
-                              onPressed:
-                                  nb.isDefault ? null : () => _delete(nb),
+                              onPressed: () => _delete(nb),
                             ),
                           ],
                         ),

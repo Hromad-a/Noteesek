@@ -57,12 +57,12 @@ checklist_items, attachments, labels, notebooks, regardless of owner.
 ### Merge (keep all)
 1. Re-own all local rows to B (`owner = B`, `dirty = true`) — claims offline and
    other-account data into B.
-2. *If* "combine same-name notebooks" is on: build a name→notebook map across
-   local + server; for each duplicate name keep the earliest-created (tie-break
-   by id), reassign the others' notes to it, soft-delete the duplicates. Default
-   off → pure union (two same-named notebooks coexist).
-3. Normal sync (push local up, pull server down) → union on both sides.
-4. Default-notebook reconciliation (existing `ensureDefaultNotebook`).
+2. Normal sync (push local up, pull server down) → union on both sides.
+3. *If* "combine same-name notebooks" is on: build a name→notebook map across the
+   unioned set; for each duplicate name keep the earliest-created (tie-break by
+   id), reassign the others' notes to it, soft-delete the duplicates, then sync
+   again. Default off → pure union (two same-named notebooks coexist). There is
+   no default-notebook reconciliation (the default notebook concept was removed).
 
 ### Keep local only (mirror local → server)
 1. Re-own all local rows to B (`owner = B`, dirty).
@@ -141,7 +141,7 @@ Gate the whole feature on `!kIsWeb`.
   - `Future<void> keepServerReplace()`
 - `local_notes_repository.dart` — a `reownAll(String userId)` (generalises
   `claimLocalNotes` to *all* local rows, not just the `local` sentinel) and a
-  `combineNotebooksByName(...)` helper.
+  `combineNotebooksByName()` helper.
 - `sync_engine.dart` — a server-summary/ids fetch + a "soft-delete server ids"
   helper for the mirror path (reuses the existing resilient push/pull).
 - `login_screen.dart` — the branch above.
@@ -156,9 +156,9 @@ Gate the whole feature on `!kIsWeb`.
 - **Interrupted runs** (network drop mid-mirror): each strategy must be safe to
   re-run. Re-own is idempotent; push/pull are idempotent (per the sync
   invariants); server-extra soft-deletes are idempotent. A retry resumes cleanly.
-- **Default notebook**: both sides have one (`is_default`, named "Notebook").
-  Merge with combine-off still reconciles defaults via the existing is_default
-  logic (independent of the name toggle), so you don't end up with two defaults.
+- **Notebooks**: there is no default notebook. After a union, same-named
+  notebooks coexist unless "combine same-name notebooks" is on, which folds each
+  duplicate name into its earliest-created notebook.
 - **Large datasets**: summary id-fetch and mirror deletes must paginate.
 - **`watchHasPending`** isn't owner-scoped; after re-own everything is B's, so the
   indicator is correct. (Pre-existing other-account dirty rows are re-owned too.)

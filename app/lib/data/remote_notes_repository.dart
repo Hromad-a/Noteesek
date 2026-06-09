@@ -465,85 +465,9 @@ class RemoteNotesRepository implements NotesRepository {
 
   @override
   Stream<List<NotebookRow>> watchNotebooks() => _view(() {
-        // Oldest first so the default notebook stays on top.
         final list = _notebooks.values.where((n) => !n.deleted).toList()
           ..sort((a, b) => (a.created ?? '').compareTo(b.created ?? ''));
         return list;
-      });
-
-  @override
-  Future<String> ensureDefaultNotebook() => _guard(() async {
-        await _ensureLoaded();
-        final defaults = _notebooks.values
-            .where((n) => !n.deleted && n.isDefault)
-            .toList()
-          ..sort((a, b) {
-            final c = (a.created ?? '').compareTo(b.created ?? '');
-            return c != 0 ? c : a.id.compareTo(b.id);
-          });
-
-        if (defaults.isNotEmpty) {
-          // Reconcile duplicate defaults down to the earliest-created.
-          final keep = defaults.first;
-          for (final dup in defaults.skip(1)) {
-            final r = await _pb
-                .collection('notebooks')
-                .update(dup.id, body: {'deleted': true});
-            _notebooks[dup.id] = _notebookFrom(r);
-          }
-          _events.add(null);
-          return keep.id;
-        }
-
-        // No notebook is flagged default — a merge may have dropped the flag.
-        // Promote an existing "Notebook"-named notebook rather than spawning a
-        // fresh one (which would leave the old, now-deletable copy behind).
-        final named = _notebooks.values
-            .where((n) =>
-                !n.deleted && n.name.trim().toLowerCase() == 'notebook')
-            .toList()
-          ..sort((a, b) {
-            final c = (a.created ?? '').compareTo(b.created ?? '');
-            return c != 0 ? c : a.id.compareTo(b.id);
-          });
-        if (named.isNotEmpty) {
-          final keep = named.first;
-          final r = await _pb
-              .collection('notebooks')
-              .update(keep.id, body: {'is_default': true});
-          _notebooks[keep.id] = _notebookFrom(r);
-          _events.add(null);
-          return keep.id;
-        }
-
-        final r = await _pb.collection('notebooks').create(body: {
-          'owner': _ownerId,
-          'name': 'Notebook',
-          'is_default': true,
-          'deleted': false,
-        });
-        _notebooks[r.id] = _notebookFrom(r);
-        _events.add(null);
-        return r.id;
-      }, '');
-
-  @override
-  Future<void> healNotebooks() => _guardVoid(() async {
-        await _ensureLoaded();
-        final deleted =
-            _notebooks.values.where((n) => n.deleted).map((n) => n.id).toSet();
-        if (deleted.isEmpty) return;
-        final holdsLive = _notes.values
-            .where((n) => !n.deleted && deleted.contains(n.notebook))
-            .map((n) => n.notebook)
-            .toSet();
-        for (final id in holdsLive) {
-          final r = await _pb
-              .collection('notebooks')
-              .update(id, body: {'deleted': false});
-          _notebooks[id] = _notebookFrom(r);
-        }
-        if (holdsLive.isNotEmpty) _events.add(null);
       });
 
   @override
@@ -551,7 +475,6 @@ class RemoteNotesRepository implements NotesRepository {
         final r = await _pb.collection('notebooks').create(body: {
           'owner': _ownerId,
           'name': name.trim(),
-          'is_default': false,
           'deleted': false,
         });
         _notebooks[r.id] = _notebookFrom(r);
@@ -572,14 +495,12 @@ class RemoteNotesRepository implements NotesRepository {
   Future<void> deleteNotebook(String id, {required bool moveNotesToDefault}) =>
       _guardVoid(() async {
         final nb = _notebooks[id];
-        if (nb == null || nb.isDefault) return; // never delete the default
+        if (nb == null) return;
 
-        final defaultId =
-            moveNotesToDefault ? await ensureDefaultNotebook() : '';
         for (final note
             in _notes.values.where((n) => n.notebook == id).toList()) {
           if (moveNotesToDefault) {
-            await setNoteNotebook(note.id, defaultId);
+            await setNoteNotebook(note.id, ''); // → no notebook
           } else {
             await softDelete(note.id);
           }
@@ -739,7 +660,6 @@ class RemoteNotesRepository implements NotesRepository {
         id: r.id,
         owner: r.getStringValue('owner'),
         name: r.getStringValue('name'),
-        isDefault: r.getBoolValue('is_default'),
         deleted: r.getBoolValue('deleted'),
         created: r.getStringValue('created'),
         updated: r.getStringValue('updated'),

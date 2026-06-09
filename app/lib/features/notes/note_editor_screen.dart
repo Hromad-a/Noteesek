@@ -158,10 +158,12 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
 
   Future<void> _moveToNotebook(NoteRow note) async {
     final notebooks = ref.read(notebooksProvider).asData?.value ?? const [];
-    if (notebooks.isEmpty) return;
     final known = {for (final n in notebooks) n.id};
-    final defaultId = ref.read(defaultNotebookIdProvider);
-    final current = effectiveNotebookId(note, known, defaultId);
+    // The note's current notebook, or '' (no notebook) when empty/unknown.
+    final current =
+        note.notebook.isNotEmpty && known.contains(note.notebook)
+            ? note.notebook
+            : '';
 
     final chosen = await showModalBottomSheet<String>(
       context: context,
@@ -180,14 +182,19 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
               child: ListView(
                 shrinkWrap: true,
                 children: [
+                  ListTile(
+                    leading: Icon(current.isEmpty
+                        ? Icons.check
+                        : Icons.label_off_outlined),
+                    title: const Text('No notebook'),
+                    onTap: () => Navigator.of(sheetContext).pop(''),
+                  ),
                   for (final nb in notebooks)
                     ListTile(
                       leading: Icon(nb.id == current
-                          ? Icons.book
+                          ? Icons.check
                           : Icons.book_outlined),
                       title: Text(nb.name),
-                      trailing:
-                          nb.id == current ? const Icon(Icons.check) : null,
                       onTap: () => Navigator.of(sheetContext).pop(nb.id),
                     ),
                 ],

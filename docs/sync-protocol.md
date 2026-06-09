@@ -156,20 +156,19 @@ otherwise get wrong (`server/pb_hooks/`, `server/pb_migrations/`):
 - `created`/`updated` are server-managed `autodate` fields; the client never
   sets them, so the LWW timestamp can't be forged.
 
-## Notebooks & the default notebook
+## Notebooks
 
-A note belongs to **exactly one** notebook (`notes.notebook`, a single relation).
+A note belongs to **at most one** notebook (`notes.notebook`, a single relation).
 Notebooks sync as ordinary owner-scoped, soft-deletable records (LWW like
-everything else). An empty or unknown `notebook` value resolves to the user's
-**default notebook** on the client, so a note never disappears if its notebook
-was deleted before it was reassigned.
+everything else). An empty or unknown `notebook` value means **no notebook**
+(uncategorized) — there is no default notebook, so a note never disappears if its
+notebook was deleted: it simply becomes uncategorized and still shows under "All
+notes" / "No notebook".
 
-Each user has one default notebook (`is_default = true`, named "Notebook",
-rename-only). Because a device can create a local default offline *and* later
-pull the account's existing default, duplicate defaults are possible briefly.
-They are reconciled deterministically: the **earliest-created** default (tie-broken
-by `id`) is kept and the rest are soft-deleted. Every device makes the same
-choice, so they converge.
+(Historically each user had a mandatory default notebook with an `is_default`
+flag. That was removed — see `1700000013_drop_notebook_default.js` and the drift
+v7→v8 migration, which empty any existing default notebook's notes out to "no
+notebook" and drop the column.)
 
 ## What v1 deliberately omits
 

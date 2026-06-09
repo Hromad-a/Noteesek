@@ -87,9 +87,6 @@ class ReconciliationService {
       await _repo.combineNotebooksByName();
       await _engine.syncOnce();
     }
-    // Reconcile duplicate default notebooks (one from each side), then settle.
-    await _repo.ensureDefaultNotebook();
-    await _engine.syncOnce();
   }
 
   /// Keep server only: discard ALL local data (wipe + reset cursors), then pull
@@ -97,8 +94,6 @@ class ReconciliationService {
   Future<void> keepServerReplace() async {
     await _db.wipeAllLocal();
     await _engine.syncOnce(); // cursors cleared → full pull
-    await _repo.ensureDefaultNotebook();
-    await _engine.syncOnce();
   }
 
   /// Keep local only: make the server exactly match this device. Re-own + push
@@ -120,8 +115,6 @@ class ReconciliationService {
       }
     }
     await _engine.syncOnce(); // pull the tombstones + our pushes, settle
-    await _repo.ensureDefaultNotebook();
-    await _engine.syncOnce();
   }
 
   /// Per collection, the ids of live server records not present locally — what
@@ -171,9 +164,7 @@ class ReconciliationService {
         .get();
     final nbs = await (_db.select(_db.notebooks)
           ..where((t) =>
-              t.owner.isNotValue(userId) &
-              t.deleted.equals(false) &
-              t.isDefault.equals(false)))
+              t.owner.isNotValue(userId) & t.deleted.equals(false)))
         .get();
     return notes.length + nbs.length;
   }

@@ -27,17 +27,24 @@ List<String> labelIdsOf(NoteRow note) => labelIdsOfRaw(note.labels);
 /// Encodes label ids into the JSON-array string stored on a note.
 String encodeLabelIds(List<String> ids) => jsonEncode(ids);
 
-/// Resolves which notebook a note effectively belongs to: its own [NoteRow.notebook]
-/// when that points at a known (non-deleted) notebook, otherwise the default
-/// notebook. This makes "default" a safe catch-all — notes whose notebook was
-/// deleted (or was never set) surface in the default notebook instead of
-/// vanishing.
-String effectiveNotebookId(
-    NoteRow note, Set<String> knownNotebookIds, String defaultNotebookId) {
-  if (note.notebook.isNotEmpty && knownNotebookIds.contains(note.notebook)) {
-    return note.notebook;
-  }
-  return defaultNotebookId;
+/// The notebook selector scope shown in the grid. A scope is either of these two
+/// sentinels or a concrete notebook id.
+///
+/// - [kAllNotes] (the default): every note, regardless of notebook.
+/// - [kNoNotebook]: only uncategorized notes — those whose [NoteRow.notebook] is
+///   empty or points at a deleted/unknown notebook.
+const String kAllNotes = '';
+const String kNoNotebook = '__no_notebook__';
+
+/// Whether [note] belongs to the given selector [scope]. A note counts as "in a
+/// notebook" only when its [NoteRow.notebook] is non-empty and present in
+/// [knownNotebookIds]; otherwise it is uncategorized ("no notebook").
+bool noteInScope(NoteRow note, String scope, Set<String> knownNotebookIds) {
+  if (scope == kAllNotes) return true;
+  final inNotebook =
+      note.notebook.isNotEmpty && knownNotebookIds.contains(note.notebook);
+  if (scope == kNoNotebook) return !inNotebook;
+  return inNotebook && note.notebook == scope;
 }
 
 /// A checklist item to create as part of an imported note.
@@ -151,34 +158,20 @@ abstract interface class NotesRepository {
   // Notebooks
   Stream<List<NotebookRow>> watchNotebooks();
 
-  /// Ensure the active owner has exactly one default notebook. If a notebook is
-  /// already flagged default, duplicates are reconciled down to the
-  /// earliest-created one. If none is flagged (e.g. a merge dropped the flag),
-  /// an existing "Notebook"-named notebook is promoted rather than a fresh one
-  /// being created, so the old copy isn't left behind as a deletable orphan.
-  /// Returns the default notebook's id.
-  Future<String> ensureDefaultNotebook();
-
-  /// Repair notebook state after a sync/merge: restore any soft-deleted
-  /// notebook that still holds live (non-deleted) notes, so those notes
-  /// resurface in their real notebook instead of being stranded under the
-  /// default. Safe to call on every notes-screen mount.
-  Future<void> healNotebooks();
-
   Future<String> createNotebook(String name);
   Future<void> renameNotebook(String id, String name);
 
-  /// Soft-delete a notebook. Its notes are either reassigned to the default
-  /// notebook ([moveNotesToDefault] = true) or soft-deleted to Trash.
+  /// Soft-delete a notebook. Its notes are either reassigned to "no notebook"
+  /// ([moveNotesToDefault] = true) or soft-deleted to Trash.
   Future<void> deleteNotebook(String id, {required bool moveNotesToDefault});
 
-  /// Move a note into [notebookId].
+  /// Move a note into [notebookId] (empty string = no notebook).
   Future<void> setNoteNotebook(String noteId, String notebookId);
 
   /// Combine notebooks that share a name (trimmed, case-insensitive) into one:
-  /// keep one per name (a default, else earliest-created), reassign the others'
-  /// notes to it, and soft-delete the duplicates. Used by the Merge
-  /// reconciliation when "combine same-name notebooks" is on. No-op on web.
+  /// keep the earliest-created per name, reassign the others' notes to it, and
+  /// soft-delete the duplicates. Used by the Merge reconciliation when "combine
+  /// same-name notebooks" is on. No-op on web.
   Future<void> combineNotebooksByName();
 
   // Checklist items
@@ -347,27 +340,18 @@ List<NoteRow> applySearchFilters(
   }).toList();
 }
 
-/// All of the user's (non-deleted) notebooks, ordered oldest-first so the
-/// default notebook stays at the top.
+/// All of the user's (non-deleted) notebooks, ordered oldest-first.
 final notebooksProvider = StreamProvider<List<NotebookRow>>((ref) {
   return ref.watch(notesRepositoryProvider).watchNotebooks();
 });
 
-/// The default notebook's id (the `isDefault` row), or '' until one exists.
-final defaultNotebookIdProvider = Provider<String>((ref) {
-  final notebooks = ref.watch(notebooksProvider).asData?.value ?? const [];
-  for (final nb in notebooks) {
-    if (nb.isDefault) return nb.id;
-  }
-  return notebooks.isNotEmpty ? notebooks.first.id : '';
-});
-
-/// The notebook id the user last selected (persisted). Empty = default.
+/// The selector scope the user last chose (persisted): [kAllNotes] (default),
+/// [kNoNotebook], or a notebook id.
 class SelectedNotebookNotifier extends Notifier<String> {
   @override
   String build() {
     final prefs = ref.watch(sharedPreferencesProvider);
-    return prefs.getString(AppConfig.kSelectedNotebook) ?? '';
+    return prefs.getString(AppConfig.kSelectedNotebook) ?? kAllNotes;
   }
 
   Future<void> set(String id) async {
@@ -512,38 +496,37 @@ List<NoteRow> sortNotes(List<NoteRow> notes, NoteSort sort) {
   return list;
 }
 
-/// The notebook actually shown in the grid: the user's selection when it still
-/// exists, otherwise the default. Used to filter the active/archive/trash lists.
+/// The scope actually shown in the grid: the user's selection when it's still a
+/// valid scope ([kAllNotes], [kNoNotebook], or an existing notebook id),
+/// otherwise [kAllNotes]. A stale id (e.g. the removed default notebook)
+/// collapses to "All notes". Used to filter the active/archive/trash lists.
 final activeNotebookIdProvider = Provider<String>((ref) {
   final selected = ref.watch(selectedNotebookIdProvider);
+  if (selected == kAllNotes || selected == kNoNotebook) return selected;
   final notebooks = ref.watch(notebooksProvider).asData?.value ?? const [];
   final known = {for (final n in notebooks) n.id};
-  if (selected.isNotEmpty && known.contains(selected)) return selected;
-  return ref.watch(defaultNotebookIdProvider);
+  return known.contains(selected) ? selected : kAllNotes;
 });
 
 /// A snapshot of the notebook filtering inputs, resolved synchronously during a
 /// provider build so the (later-running) stream `.map` closure stays pure.
 class _NotebookFilter {
-  const _NotebookFilter(this.selected, this.known, this.defaultId);
+  const _NotebookFilter(this.scope, this.known);
 
-  final String selected;
+  final String scope;
   final Set<String> known;
-  final String defaultId;
 
-  List<NoteRow> apply(List<NoteRow> notes) => notes
-      .where((n) => effectiveNotebookId(n, known, defaultId) == selected)
-      .toList();
+  List<NoteRow> apply(List<NoteRow> notes) =>
+      notes.where((n) => noteInScope(n, scope, known)).toList();
 }
 
 /// Resolves the current notebook filter. Watches its dependencies during build,
 /// so the owning provider rebuilds whenever the selection or notebooks change.
 _NotebookFilter _notebookFilter(Ref ref) {
-  final selected = ref.watch(activeNotebookIdProvider);
+  final scope = ref.watch(activeNotebookIdProvider);
   final notebooks = ref.watch(notebooksProvider).asData?.value ?? const [];
   final known = {for (final n in notebooks) n.id};
-  final defaultId = ref.watch(defaultNotebookIdProvider);
-  return _NotebookFilter(selected, known, defaultId);
+  return _NotebookFilter(scope, known);
 }
 
 /// Active notes for the grid: filtered by the current search query, the
@@ -559,12 +542,10 @@ final activeNotesProvider = StreamProvider<List<NoteRow>>((ref) {
 
   List<NoteRow> scopeNotebook(List<NoteRow> notes) {
     return switch (filters.notebookId) {
-      null => nbFilter.apply(notes), // inherit the grid's selected notebook
+      null => nbFilter.apply(notes), // inherit the grid's selected scope
       SearchFilters.allNotebooks => notes, // all notebooks
-      final id => notes
-          .where((n) =>
-              effectiveNotebookId(n, nbFilter.known, nbFilter.defaultId) == id)
-          .toList(),
+      final scope =>
+        notes.where((n) => noteInScope(n, scope, nbFilter.known)).toList(),
     };
   }
 

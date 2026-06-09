@@ -327,9 +327,7 @@ class LocalNotesRepository implements NotesRepository {
       updated: Value(pbNow()),
       dirty: const Value(true),
     ));
-    // Claim locally-created notebooks too so the default (and any others) sync
-    // up under the account. Duplicate defaults are reconciled by
-    // [ensureDefaultNotebook] once the server's default is pulled.
+    // Claim locally-created notebooks too so they sync up under the account.
     await (_db.update(_db.notebooks)
           ..where((t) => t.owner.equals(AppConfig.localOwner)))
         .write(NotebooksCompanion(
@@ -375,8 +373,7 @@ class LocalNotesRepository implements NotesRepository {
   Future<void> combineNotebooksByName() async {
     await _db.transaction(() async {
       final nbs = await (_db.select(_db.notebooks)
-            ..where((t) =>
-                t.owner.equals(_ownerId) & t.deleted.equals(false))
+            ..where((t) => t.owner.equals(_ownerId) & t.deleted.equals(false))
             ..orderBy([
               (t) => OrderingTerm(expression: t.created),
               (t) => OrderingTerm(expression: t.id),
@@ -391,10 +388,9 @@ class LocalNotesRepository implements NotesRepository {
       final now = pbNow();
       for (final group in byName.values) {
         if (group.length < 2) continue;
-        // Keep a default if the group has one, else the earliest-created.
-        final keeper =
-            group.firstWhere((n) => n.isDefault, orElse: () => group.first);
-        for (final dup in group.where((n) => n.id != keeper.id)) {
+        // Keep the earliest-created; fold the rest into it.
+        final keeper = group.first;
+        for (final dup in group.skip(1)) {
           await (_db.update(_db.notes)..where((t) => t.notebook.equals(dup.id)))
               .write(NotesCompanion(
                   notebook: Value(keeper.id),
@@ -417,13 +413,9 @@ class LocalNotesRepository implements NotesRepository {
           ..limit(1))
         .get();
     if (note.isNotEmpty) return true;
-    // A lone offline default notebook doesn't count — only foreign non-default
-    // notebooks (real, user-created collections).
     final nb = await (_db.select(_db.notebooks)
           ..where((t) =>
-              t.owner.isNotValue(userId) &
-              t.deleted.equals(false) &
-              t.isDefault.equals(false))
+              t.owner.isNotValue(userId) & t.deleted.equals(false))
           ..limit(1))
         .get();
     return nb.isNotEmpty;
@@ -517,90 +509,6 @@ class LocalNotesRepository implements NotesRepository {
   }
 
   @override
-  Future<String> ensureDefaultNotebook() async {
-    final existing = await (_db.select(_db.notebooks)
-          ..where((t) =>
-              t.deleted.equals(false) &
-              t.owner.equals(_ownerId) &
-              t.isDefault.equals(true))
-          ..orderBy([(t) => OrderingTerm(expression: t.created)]))
-        .get();
-
-    if (existing.isNotEmpty) {
-      // Reconcile any duplicate defaults (e.g. one created offline + one pulled
-      // from the server) down to the earliest-created. Soft-delete the rest;
-      // their notes fall back to the survivor via [effectiveNotebookId].
-      final keep = existing.first;
-      for (final dup in existing.skip(1)) {
-        await (_db.update(_db.notebooks)..where((t) => t.id.equals(dup.id)))
-            .write(NotebooksCompanion(
-          deleted: const Value(true),
-          updated: Value(pbNow()),
-          dirty: const Value(true),
-        ));
-      }
-      return keep.id;
-    }
-
-    // No notebook is flagged default — a merge may have dropped the flag.
-    // Promote an existing "Notebook"-named notebook rather than spawning a
-    // fresh one (which would leave the old, now-deletable copy alongside it).
-    final named = await (_db.select(_db.notebooks)
-          ..where((t) =>
-              t.deleted.equals(false) &
-              t.owner.equals(_ownerId) &
-              t.name.lower().equals('notebook'))
-          ..orderBy([(t) => OrderingTerm(expression: t.created)]))
-        .get();
-    if (named.isNotEmpty) {
-      final keep = named.first;
-      await (_db.update(_db.notebooks)..where((t) => t.id.equals(keep.id)))
-          .write(NotebooksCompanion(
-        isDefault: const Value(true),
-        updated: Value(pbNow()),
-        dirty: const Value(true),
-      ));
-      return keep.id;
-    }
-
-    final id = newPbId();
-    final now = pbNow();
-    await _db.into(_db.notebooks).insert(NotebooksCompanion.insert(
-          id: id,
-          owner: _ownerId,
-          name: const Value('Notebook'),
-          isDefault: const Value(true),
-          created: Value(now),
-          updated: Value(now),
-          dirty: const Value(true),
-        ));
-    return id;
-  }
-
-  @override
-  Future<void> healNotebooks() async {
-    await _db.transaction(() async {
-      final deletedNbs = await (_db.select(_db.notebooks)
-            ..where((t) => t.owner.equals(_ownerId) & t.deleted.equals(true)))
-          .get();
-      for (final nb in deletedNbs) {
-        final live = await (_db.select(_db.notes)
-              ..where((t) => t.notebook.equals(nb.id) & t.deleted.equals(false))
-              ..limit(1))
-            .get();
-        if (live.isNotEmpty) {
-          await (_db.update(_db.notebooks)..where((t) => t.id.equals(nb.id)))
-              .write(NotebooksCompanion(
-            deleted: const Value(false),
-            updated: Value(pbNow()),
-            dirty: const Value(true),
-          ));
-        }
-      }
-    });
-  }
-
-  @override
   Future<String> createNotebook(String name) async {
     final id = newPbId();
     final now = pbNow();
@@ -631,11 +539,9 @@ class LocalNotesRepository implements NotesRepository {
       {required bool moveNotesToDefault}) async {
     final nb = await (_db.select(_db.notebooks)..where((t) => t.id.equals(id)))
         .getSingleOrNull();
-    if (nb == null || nb.isDefault) return; // never delete the default
+    if (nb == null) return;
 
     await _db.transaction(() async {
-      final defaultId =
-          moveNotesToDefault ? await ensureDefaultNotebook() : '';
       final notes = await (_db.select(_db.notes)
             ..where((t) => t.notebook.equals(id) & t.deleted.equals(false)))
           .get();
@@ -643,7 +549,7 @@ class LocalNotesRepository implements NotesRepository {
         await _patch(
           n.id,
           moveNotesToDefault
-              ? NotesCompanion(notebook: Value(defaultId))
+              ? const NotesCompanion(notebook: Value('')) // → no notebook
               : const NotesCompanion(deleted: Value(true)),
         );
       }

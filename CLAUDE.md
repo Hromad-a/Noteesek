@@ -71,9 +71,9 @@ for children):
 - `attachments`: note (rel), **file (protected)**, deleted, … (image bytes)
 - `labels`: name, deleted, created, updated (user tags; assigned via
   `notes.labels`, stored locally as a JSON id array string)
-- `notebooks`: name, **is_default**, deleted, created, updated (a note belongs to
-  exactly one notebook; empty/unknown `notes.notebook` → the user's default
-  notebook)
+- `notebooks`: name, deleted, created, updated (a note belongs to **at most one**
+  notebook; an empty/unknown `notes.notebook` means **no notebook**, i.e.
+  uncategorized — there is no default notebook)
 
 Protected files require a short-lived token (`pb.files.getToken()`) to download.
 `created`/`updated` are autodate; `updated` drives last-write-wins sync. Labels
@@ -103,8 +103,9 @@ text + checklist notes · pin · **archive** (drawer) · **trash** (restore /
 delete-forever / empty) · image attachments (protected) · offline substring
 search (title/body/checklist) · **note colors** (curated themed palette,
 `note_colors.dart`) · **labels** (create/assign/filter via drawer, manage on
-`ManageLabelsScreen`) · **notebooks** (one-per-note collections; switch/create
-via the grid bottom-bar selector, manage on `ManageNotebooksScreen`) ·
+`ManageLabelsScreen`) · **notebooks** (optional, at-most-one-per-note
+collections; "All notes" / "No notebook" / per-notebook scopes via the grid
+bottom-bar selector, manage on `ManageNotebooksScreen`) ·
 **account settings** (change password / server URL / sign out) · **Markdown
 export** (bulk: all active+archived notes → one zip of `notes/*.md` +
 `attachments/*`, share sheet on mobile / download on web) · **single-note
@@ -121,18 +122,23 @@ nudge · **sign out of all devices** · **pull-to-refresh** sync (mobile) ·
 docs/sign-in-reconciliation.md) · empty notes auto-move to Trash on close.
 
 ### Notebooks (`features/notes/`)
-- A note belongs to exactly one notebook (`notes.notebook`). Empty/unknown →
-  the default notebook, resolved by `effectiveNotebookId()` so notes never
-  vanish. The grid, archive, trash, and search are all scoped to the selected
-  notebook (provider-level filtering in `notes_repository.dart`).
-- `selectedNotebookIdProvider` (persisted) + `activeNotebookIdProvider` (falls
-  back to default) drive the filtering; `notebooksProvider` /
-  `defaultNotebookIdProvider` expose the list + default id.
-- The default notebook (`is_default`, named "Notebook") is rename-only and
-  reconciled to one-per-user by `ensureDefaultNotebook()` (called on the notes
-  screen mount). Switch/create lives in the bottom-bar `_NotebookSelector`;
-  rename/delete on `ManageNotebooksScreen` (delete offers move-to-default or
-  trash-notes). The note editor's overflow menu has "Move to notebook".
+- A note belongs to **at most one** notebook (`notes.notebook`). There is **no
+  default notebook**: an empty/unknown notebook means "no notebook"
+  (uncategorized). The grid selector scope is one of `kAllNotes` (`''`, the
+  default — show everything), `kNoNotebook` (uncategorized only), or a notebook
+  id. `noteInScope()` implements the filter; grid/archive/trash/search all honour
+  the scope (provider-level filtering in `notes_repository.dart`).
+- `selectedNotebookIdProvider` (persisted) + `activeNotebookIdProvider` (collapses
+  a stale id to `kAllNotes`) drive the filtering; `notebooksProvider` exposes the
+  list. New notes from "All notes"/"No notebook" are uncategorized; from a
+  notebook scope they inherit it.
+- Switch/create lives in the bottom-bar `_NotebookSelector`; every notebook is
+  rename/delete-able on `ManageNotebooksScreen` (delete offers move-to-no-notebook
+  or trash-notes). The note editor's overflow menu has "Move to notebook" (with a
+  "No notebook" option). The old default-notebook machinery was removed; the
+  `is_default` column is dropped by a drift v7→v8 migration + the
+  `1700000013_drop_notebook_default.js` PocketBase migration (both also empty the
+  old default notebook out to "no notebook").
 
 ### Markdown export (`features/export/`)
 - `markdown_export.dart` — pure renderer: YAML frontmatter (title, labels,

@@ -30,12 +30,11 @@ void main() {
   });
 
   test('notebooks created on device A pull down to a fresh device B', () async {
-    // Device A: a default notebook + two user notebooks, then sync up.
+    // Device A: two notebooks, then sync up.
     final dbA = AppDatabase(NativeDatabase.memory());
     final repoA = LocalNotesRepository(dbA, userId);
     final engineA = SyncEngine(dbA, pb);
 
-    final defId = await repoA.ensureDefaultNotebook();
     final workId = await repoA.createNotebook('Work');
     final homeId = await repoA.createNotebook('Home');
 
@@ -43,8 +42,7 @@ void main() {
 
     // Confirm they're on the server.
     final serverList = await pb.collection('notebooks').getFullList();
-    expect(serverList.map((r) => r.id),
-        containsAll([defId, workId, homeId]));
+    expect(serverList.map((r) => r.id), containsAll([workId, homeId]));
 
     // Device B: fresh DB, same account → pull.
     final dbB = AppDatabase(NativeDatabase.memory());
@@ -54,41 +52,9 @@ void main() {
     await engineB.syncOnce();
 
     final nbB = await repoB.watchNotebooks().first;
-    expect(nbB.map((n) => n.name), containsAll(['Notebook', 'Work', 'Home']),
+    expect(nbB.map((n) => n.name), containsAll(['Work', 'Home']),
         reason: 'all notebooks should have pulled down to the fresh device');
-    expect(nbB.map((n) => n.id), containsAll([defId, workId, homeId]));
-
-    await dbA.close();
-    await dbB.close();
-  });
-
-  test('fresh sign-in race: ensureDefaultNotebook before sync still keeps others',
-      () async {
-    // Device A: default + two user notebooks on the server (unique names).
-    final dbA = AppDatabase(NativeDatabase.memory());
-    final repoA = LocalNotesRepository(dbA, userId);
-    final engineA = SyncEngine(dbA, pb);
-    await repoA.ensureDefaultNotebook();
-    await repoA.createNotebook('Alpha');
-    await repoA.createNotebook('Beta');
-    await engineA.syncOnce();
-
-    // Device B (fresh): mimic the real sign-in order —
-    //   ensureDefaultNotebook() (creates a LOCAL default) BEFORE the first pull,
-    //   then sync, then ensureDefaultNotebook() again (reconcile).
-    final dbB = AppDatabase(NativeDatabase.memory());
-    final repoB = LocalNotesRepository(dbB, userId);
-    final engineB = SyncEngine(dbB, pb);
-
-    await repoB.ensureDefaultNotebook(); // local default, dirty
-    await engineB.syncOnce(); // push local default, pull server notebooks
-    await repoB.ensureDefaultNotebook(); // reconcile duplicate defaults
-
-    final names = (await repoB.watchNotebooks().first).map((n) => n.name);
-    expect(names, containsAll(['Alpha', 'Beta']),
-        reason: 'user notebooks must survive the default-reconciliation race');
-    expect(names.where((n) => n == 'Notebook').length, 1,
-        reason: 'exactly one default after reconciliation');
+    expect(nbB.map((n) => n.id), containsAll([workId, homeId]));
 
     await dbA.close();
     await dbB.close();
@@ -100,7 +66,6 @@ void main() {
     final dbS = AppDatabase(NativeDatabase.memory());
     final repoS = LocalNotesRepository(dbS, userId);
     final engineS = SyncEngine(dbS, pb);
-    await repoS.ensureDefaultNotebook(); // server default
     final serverNb = await repoS.createNotebook('ServerNotebook');
     final serverNote = await repoS.createNote(type: 'text', notebook: serverNb);
     await repoS.updateNoteFields(serverNote, title: 'from server');
@@ -109,7 +74,6 @@ void main() {
     // --- New phone used OFFLINE (no account): owner = the local sentinel. ---
     final dbB = AppDatabase(NativeDatabase.memory());
     final repoLocal = LocalNotesRepository(dbB, AppConfig.localOwner);
-    await repoLocal.ensureDefaultNotebook(); // a *local* default
     final localNb = await repoLocal.createNotebook('LocalNotebook');
     final localNote =
         await repoLocal.createNote(type: 'text', notebook: localNb);
@@ -121,14 +85,10 @@ void main() {
     final engineB = SyncEngine(dbB, pb);
     await repoB.claimLocalNotes(userId);
     await engineB.syncOnce();
-    await repoB.ensureDefaultNotebook();
-    await engineB.syncOnce(); // push the default reconciliation, settle
 
     // Local now holds BOTH sets of notebooks + notes (union).
     final nbNames = (await repoB.watchNotebooks().first).map((n) => n.name);
     expect(nbNames, containsAll(['ServerNotebook', 'LocalNotebook']));
-    expect(nbNames.where((n) => n == 'Notebook').length, 1,
-        reason: 'the two defaults reconcile to one');
 
     final noteTitles =
         (await repoB.watchActive().first).map((n) => n.title).toList();
@@ -150,7 +110,6 @@ void main() {
     final db = AppDatabase(NativeDatabase.memory());
     final repoA = LocalNotesRepository(db, userId);
     final engineA = SyncEngine(db, pb);
-    await repoA.ensureDefaultNotebook();
     final nA = await repoA.createNote(type: 'text');
     await repoA.updateNoteFields(nA, title: 'account A secret');
     await engineA.syncOnce();
@@ -197,7 +156,6 @@ void main() {
     final dbS = AppDatabase(NativeDatabase.memory());
     final repoS = LocalNotesRepository(dbS, userId);
     final engineS = SyncEngine(dbS, pb);
-    await repoS.ensureDefaultNotebook();
     await repoS.createNotebook('SvcServerNb');
     final sNote = await repoS.createNote(type: 'text');
     await repoS.updateNoteFields(sNote, title: 'svc from server');
@@ -206,7 +164,6 @@ void main() {
     // Device used offline: foreign ('local') notebook + note.
     final db = AppDatabase(NativeDatabase.memory());
     final repoLocal = LocalNotesRepository(db, AppConfig.localOwner);
-    await repoLocal.ensureDefaultNotebook();
     await repoLocal.createNotebook('SvcLocalNb');
     final lNote = await repoLocal.createNote(type: 'text');
     await repoLocal.updateNoteFields(lNote, title: 'svc from phone');
@@ -238,7 +195,6 @@ void main() {
     final dbS = AppDatabase(NativeDatabase.memory());
     final repoS = LocalNotesRepository(dbS, userId);
     final engineS = SyncEngine(dbS, pb);
-    await repoS.ensureDefaultNotebook();
     await repoS.createNotebook('KSServerNb');
     final sNote = await repoS.createNote(type: 'text');
     await repoS.updateNoteFields(sNote, title: 'ks server note');
@@ -247,7 +203,6 @@ void main() {
     // Device with offline-only data (not on the server).
     final db = AppDatabase(NativeDatabase.memory());
     final repoLocal = LocalNotesRepository(db, AppConfig.localOwner);
-    await repoLocal.ensureDefaultNotebook();
     await repoLocal.createNotebook('KSLocalNb');
     final lNote = await repoLocal.createNote(type: 'text');
     await repoLocal.updateNoteFields(lNote, title: 'ks local note');
@@ -292,7 +247,6 @@ void main() {
     final dbS = AppDatabase(NativeDatabase.memory());
     final repoS = LocalNotesRepository(dbS, userM);
     final engineS = SyncEngine(dbS, pbM);
-    await repoS.ensureDefaultNotebook();
     await repoS.createNotebook('OnlyOnServer');
     final sNote = await repoS.createNote(type: 'text');
     await repoS.updateNoteFields(sNote, title: 'server-only note');
@@ -301,7 +255,6 @@ void main() {
     // Device has its own offline data.
     final db = AppDatabase(NativeDatabase.memory());
     final repoLocal = LocalNotesRepository(db, AppConfig.localOwner);
-    await repoLocal.ensureDefaultNotebook();
     await repoLocal.createNotebook('OnDevice');
     final lNote = await repoLocal.createNote(type: 'text');
     await repoLocal.updateNoteFields(lNote, title: 'device note');
@@ -335,6 +288,20 @@ void main() {
     await db.close();
   });
 
+  test('server stamps owner on create regardless of client value (owner.pb.js)',
+      () async {
+    // A blank/wrong client owner must NOT fail the create: the server forces
+    // owner = the authenticated user. (Against a server without owner.pb.js this
+    // create would be rejected by the createRule, so this also verifies the hook
+    // is deployed.)
+    final rec = await pb.collection('notebooks').create(body: {
+      'owner': '',
+      'name': 'ForcedOwner',
+      'deleted': false,
+    });
+    expect(rec.getStringValue('owner'), userId);
+  });
+
   test('merge with combineSameName combines a notebook present on both sides',
       () async {
     final pbC = PocketBase(baseUrl);
@@ -351,7 +318,6 @@ void main() {
     final dbS = AppDatabase(NativeDatabase.memory());
     final repoS = LocalNotesRepository(dbS, userC);
     final engineS = SyncEngine(dbS, pbC);
-    await repoS.ensureDefaultNotebook();
     final sNb = await repoS.createNotebook('Shared');
     final sNote = await repoS.createNote(type: 'text', notebook: sNb);
     await repoS.updateNoteFields(sNote, title: 'shared server note');
@@ -360,7 +326,6 @@ void main() {
     // Device: its own 'Shared' notebook (different id) with a note.
     final db = AppDatabase(NativeDatabase.memory());
     final repoLocal = LocalNotesRepository(db, AppConfig.localOwner);
-    await repoLocal.ensureDefaultNotebook();
     final lNb = await repoLocal.createNotebook('Shared');
     final lNote = await repoLocal.createNote(type: 'text', notebook: lNb);
     await repoLocal.updateNoteFields(lNote, title: 'shared device note');
@@ -384,20 +349,5 @@ void main() {
 
     await dbS.close();
     await db.close();
-  });
-
-  test('server stamps owner on create regardless of client value (owner.pb.js)',
-      () async {
-    // A blank/wrong client owner must NOT fail the create: the server forces
-    // owner = the authenticated user. (Against a server without owner.pb.js this
-    // create would be rejected by the createRule, so this also verifies the hook
-    // is deployed.)
-    final rec = await pb.collection('notebooks').create(body: {
-      'owner': '',
-      'name': 'ForcedOwner',
-      'is_default': false,
-      'deleted': false,
-    });
-    expect(rec.getStringValue('owner'), userId);
   });
 }
