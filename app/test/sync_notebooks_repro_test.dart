@@ -5,6 +5,7 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pocketbase/pocketbase.dart';
 
+import 'package:noteesek/config/app_config.dart';
 import 'package:noteesek/data/local/database.dart';
 import 'package:noteesek/data/local_notes_repository.dart';
 import 'package:noteesek/sync/sync_engine.dart';
@@ -89,6 +90,55 @@ void main() {
         reason: 'exactly one default after reconciliation');
 
     await dbA.close();
+    await dbB.close();
+  });
+
+  test('sign-in merges offline-local data with different server data (union)',
+      () async {
+    // --- Server side: a notebook + a note created on "another device". ---
+    final dbS = AppDatabase(NativeDatabase.memory());
+    final repoS = LocalNotesRepository(dbS, userId);
+    final engineS = SyncEngine(dbS, pb);
+    await repoS.ensureDefaultNotebook(); // server default
+    final serverNb = await repoS.createNotebook('ServerNotebook');
+    final serverNote = await repoS.createNote(type: 'text', notebook: serverNb);
+    await repoS.updateNoteFields(serverNote, title: 'from server');
+    await engineS.syncOnce();
+
+    // --- New phone used OFFLINE (no account): owner = the local sentinel. ---
+    final dbB = AppDatabase(NativeDatabase.memory());
+    final repoLocal = LocalNotesRepository(dbB, AppConfig.localOwner);
+    await repoLocal.ensureDefaultNotebook(); // a *local* default
+    final localNb = await repoLocal.createNotebook('LocalNotebook');
+    final localNote =
+        await repoLocal.createNote(type: 'text', notebook: localNb);
+    await repoLocal.updateNoteFields(localNote, title: 'from phone');
+
+    // --- Sign in: claim local rows to the account, sync, reconcile defaults
+    //     (mirrors login_screen + the notes screen's ensureDefaultNotebook). ---
+    final repoB = LocalNotesRepository(dbB, userId);
+    final engineB = SyncEngine(dbB, pb);
+    await repoB.claimLocalNotes(userId);
+    await engineB.syncOnce();
+    await repoB.ensureDefaultNotebook();
+    await engineB.syncOnce(); // push the default reconciliation, settle
+
+    // Local now holds BOTH sets of notebooks + notes (union).
+    final nbNames = (await repoB.watchNotebooks().first).map((n) => n.name);
+    expect(nbNames, containsAll(['ServerNotebook', 'LocalNotebook']));
+    expect(nbNames.where((n) => n == 'Notebook').length, 1,
+        reason: 'the two defaults reconcile to one');
+
+    final noteTitles =
+        (await repoB.watchActive().first).map((n) => n.title).toList();
+    expect(noteTitles, containsAll(['from server', 'from phone']));
+
+    // And the server has both too (the phone's data was pushed up).
+    final serverNotes = await pb.collection('notes').getFullList();
+    expect(serverNotes.map((r) => r.getStringValue('title')),
+        containsAll(['from server', 'from phone']));
+
+    await dbS.close();
     await dbB.close();
   });
 
