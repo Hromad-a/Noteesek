@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:markdown_widget/markdown_widget.dart';
 
 import '../../data/local/database.dart';
 import '../../data/notes_repository.dart';
@@ -53,6 +54,10 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
   final _bodyFocus = FocusNode();
   bool _seeded = false;
   String? _seededType;
+
+  /// When Markdown is enabled, toggles the text body between editing and a
+  /// rendered read view.
+  bool _previewMarkdown = false;
 
   // Per-item text controllers for checklists, keyed by item id.
   final Map<String, TextEditingController> _itemCtrls = {};
@@ -238,6 +243,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
         }
         _seed(note);
         final bg = noteColorFor(context, note.color);
+        final markdownOn = ref.watch(markdownEnabledProvider);
 
         return PopScope(
           canPop: true,
@@ -270,6 +276,15 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
                       note.pinned ? Icons.push_pin : Icons.push_pin_outlined),
                   onPressed: () => _repo.setPinned(note.id, !note.pinned),
                 ),
+                if (markdownOn && note.type == 'text')
+                  IconButton(
+                    tooltip: _previewMarkdown ? 'Edit' : 'Preview',
+                    icon: Icon(_previewMarkdown
+                        ? Icons.edit_outlined
+                        : Icons.visibility_outlined),
+                    onPressed: () =>
+                        setState(() => _previewMarkdown = !_previewMarkdown),
+                  ),
                 PopupMenuButton<_OverflowAction>(
                   onSelected: (action) async {
                     switch (action) {
@@ -391,29 +406,46 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
                           onForgetController: (id) =>
                               _itemCtrls.remove(id)?.dispose(),
                         )
-                      : GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: () => _bodyFocus.requestFocus(),
-                          child: Padding(
-                            padding:
-                                const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                            child: TextField(
-                              controller: _bodyCtrl,
-                              focusNode: _bodyFocus,
-                              decoration: const InputDecoration(
-                                hintText: 'Note',
-                                border: InputBorder.none,
-                              ),
-                              expands: true,
-                              maxLines: null,
-                              minLines: null,
-                              textAlignVertical: TextAlignVertical.top,
-                              keyboardType: TextInputType.multiline,
-                              onChanged: (v) =>
-                                  _repo.updateNoteFields(note.id, body: v),
+                      : (markdownOn && _previewMarkdown)
+                          ? _MarkdownPreview(text: note.body)
+                          : Column(
+                              children: [
+                                if (markdownOn)
+                                  _MarkdownToolbar(
+                                    controller: _bodyCtrl,
+                                    onChanged: (v) => _repo
+                                        .updateNoteFields(note.id, body: v),
+                                  ),
+                                Expanded(
+                                  child: GestureDetector(
+                                    behavior: HitTestBehavior.opaque,
+                                    onTap: () => _bodyFocus.requestFocus(),
+                                    child: Padding(
+                                      padding: const EdgeInsets.fromLTRB(
+                                          16, 8, 16, 16),
+                                      child: TextField(
+                                        controller: _bodyCtrl,
+                                        focusNode: _bodyFocus,
+                                        decoration: const InputDecoration(
+                                          hintText: 'Note',
+                                          border: InputBorder.none,
+                                        ),
+                                        expands: true,
+                                        maxLines: null,
+                                        minLines: null,
+                                        textAlignVertical:
+                                            TextAlignVertical.top,
+                                        keyboardType:
+                                            TextInputType.multiline,
+                                        onChanged: (v) => _repo
+                                            .updateNoteFields(note.id,
+                                                body: v),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
-                          ),
-                        ),
                 ),
               ],
             ),
@@ -976,6 +1008,105 @@ class _ChecklistEditorState extends ConsumerState<_ChecklistEditor> {
           ],
         );
       },
+    );
+  }
+}
+
+/// Read-only Markdown render of a note body (the editor's preview mode).
+class _MarkdownPreview extends StatelessWidget {
+  const _MarkdownPreview({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    if (text.trim().isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+        child: Text('Nothing to preview',
+            style: TextStyle(color: Theme.of(context).disabledColor)),
+      );
+    }
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      child: MarkdownBlock(
+        data: text,
+        config: Theme.of(context).brightness == Brightness.dark
+            ? MarkdownConfig.darkConfig
+            : MarkdownConfig.defaultConfig,
+      ),
+    );
+  }
+}
+
+/// A compact Markdown formatting toolbar that edits [controller] in place
+/// (wrapping the selection or prefixing the current line) and reports the new
+/// text via [onChanged] so the editor persists it.
+class _MarkdownToolbar extends StatelessWidget {
+  const _MarkdownToolbar({required this.controller, required this.onChanged});
+
+  final TextEditingController controller;
+  final ValueChanged<String> onChanged;
+
+  /// Selection clamped to a valid range (cursor at end when unfocused).
+  (int, int) get _range {
+    final s = controller.selection;
+    if (s.start < 0) return (controller.text.length, controller.text.length);
+    return (s.start, s.end);
+  }
+
+  void _wrap(String left, String right) {
+    final (start, end) = _range;
+    final text = controller.text;
+    final selected = text.substring(start, end);
+    final replaced = '$left$selected$right';
+    final newText = text.replaceRange(start, end, replaced);
+    controller.value = TextEditingValue(
+      text: newText,
+      selection: TextSelection.collapsed(offset: end + left.length),
+    );
+    onChanged(newText);
+  }
+
+  void _linePrefix(String prefix) {
+    final (start, _) = _range;
+    final text = controller.text;
+    final lineStart =
+        start == 0 ? 0 : text.lastIndexOf('\n', start - 1) + 1;
+    final newText = text.replaceRange(lineStart, lineStart, prefix);
+    controller.value = TextEditingValue(
+      text: newText,
+      selection: TextSelection.collapsed(offset: start + prefix.length),
+    );
+    onChanged(newText);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    Widget btn(IconData icon, String tip, VoidCallback onTap) => IconButton(
+          icon: Icon(icon, size: 20),
+          tooltip: tip,
+          visualDensity: VisualDensity.compact,
+          onPressed: onTap,
+        );
+    return Material(
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            btn(Icons.format_bold, 'Bold', () => _wrap('**', '**')),
+            btn(Icons.format_italic, 'Italic', () => _wrap('*', '*')),
+            btn(Icons.title, 'Heading', () => _linePrefix('# ')),
+            btn(Icons.format_list_bulleted, 'Bullet list',
+                () => _linePrefix('- ')),
+            btn(Icons.checklist, 'Checkbox', () => _linePrefix('- [ ] ')),
+            btn(Icons.format_quote, 'Quote', () => _linePrefix('> ')),
+            btn(Icons.code, 'Code', () => _wrap('`', '`')),
+            btn(Icons.link, 'Link', () => _wrap('[', '](url)')),
+          ],
+        ),
+      ),
     );
   }
 }

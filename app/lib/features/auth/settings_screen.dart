@@ -697,6 +697,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
           const _SectionHeader('Appearance'),
           _ThemeModeSelector(),
+          Consumer(builder: (context, ref, _) {
+            final on = ref.watch(markdownEnabledProvider);
+            return SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              secondary: const Icon(Icons.text_format),
+              title: const Text('Markdown formatting'),
+              subtitle: const Text(
+                  'Render note text as Markdown and show a formatting toolbar'),
+              value: on,
+              onChanged: (v) =>
+                  ref.read(markdownEnabledProvider.notifier).set(v),
+            );
+          }),
           const SizedBox(height: 24),
 
           // App lock is a device-local feature → mobile only.

@@ -40,4 +40,7 @@ class AppConfig {
   /// allowed. The PIN hash itself lives in secure storage, not here.
   static const String kAppLockEnabled = 'app_lock_enabled';
   static const String kAppLockBiometric = 'app_lock_biometric';
+
+  /// Render note bodies as Markdown (and show the editor formatting toolbar).
+  static const String kMarkdownEnabled = 'markdown_enabled';
 }

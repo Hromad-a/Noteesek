@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:markdown_widget/markdown_widget.dart';
 
 import '../../data/local/database.dart';
 import '../../data/notes_repository.dart';
@@ -54,6 +55,7 @@ class _NoteCardState extends ConsumerState<NoteCard> {
     final isDragTarget = widget.isDragTarget;
     final theme = Theme.of(context);
     final hasTitle = note.title.trim().isNotEmpty;
+    final markdownOn = ref.watch(markdownEnabledProvider);
 
     final selectionMode =
         widget.selectable && ref.watch(selectionModeProvider);
@@ -99,12 +101,28 @@ class _NoteCardState extends ConsumerState<NoteCard> {
                   if (note.type == 'checklist')
                     _ChecklistPreview(noteId: note.id)
                   else if (note.body.trim().isNotEmpty)
-                    Text(
-                      note.body,
-                      style: theme.textTheme.bodyMedium,
-                      maxLines: 10,
-                      overflow: TextOverflow.ellipsis,
-                    )
+                    (markdownOn
+                        ? ClipRect(
+                            child: ConstrainedBox(
+                              constraints:
+                                  const BoxConstraints(maxHeight: 220),
+                              // Non-interactive: the whole card handles the tap.
+                              child: IgnorePointer(
+                                child: MarkdownBlock(
+                                  data: note.body,
+                                  config: theme.brightness == Brightness.dark
+                                      ? MarkdownConfig.darkConfig
+                                      : MarkdownConfig.defaultConfig,
+                                ),
+                              ),
+                            ),
+                          )
+                        : Text(
+                            note.body,
+                            style: theme.textTheme.bodyMedium,
+                            maxLines: 10,
+                            overflow: TextOverflow.ellipsis,
+                          ))
                   else if (!hasTitle)
                     Text(
                       'Empty note',

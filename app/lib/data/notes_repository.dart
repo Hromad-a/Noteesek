@@ -420,6 +420,26 @@ final checklistAutoSortProvider =
     NotifierProvider<ChecklistAutoSortNotifier, bool>(
         ChecklistAutoSortNotifier.new);
 
+/// Whether note bodies render as Markdown (and the editor shows a formatting
+/// toolbar). Persisted, global. Off by default.
+class MarkdownEnabledNotifier extends Notifier<bool> {
+  @override
+  bool build() {
+    final prefs = ref.watch(sharedPreferencesProvider);
+    return prefs.getBool(AppConfig.kMarkdownEnabled) ?? false;
+  }
+
+  Future<void> set(bool value) async {
+    final prefs = ref.read(sharedPreferencesProvider);
+    await prefs.setBool(AppConfig.kMarkdownEnabled, value);
+    state = value;
+  }
+}
+
+final markdownEnabledProvider =
+    NotifierProvider<MarkdownEnabledNotifier, bool>(
+        MarkdownEnabledNotifier.new);
+
 /// Which field the notes are ordered by. `custom` is the manual drag-reorder
 /// order (the `position` column).
 enum NoteSortField { custom, edited, created }
