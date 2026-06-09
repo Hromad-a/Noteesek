@@ -12,3 +12,16 @@ void showAppSnackBar(String message) {
     ?..hideCurrentSnackBar()
     ..showSnackBar(SnackBar(content: Text(message)));
 }
+
+/// Shows [message] with an "Undo" action that runs [onUndo]. Uses the app-wide
+/// messenger so it survives the screen that triggered it being popped (e.g. the
+/// note editor closing after a delete).
+void showUndoSnackBar({required String message, required VoidCallback onUndo}) {
+  scaffoldMessengerKey.currentState
+    ?..hideCurrentSnackBar()
+    ..showSnackBar(SnackBar(
+      content: Text(message),
+      duration: const Duration(seconds: 5),
+      action: SnackBarAction(label: 'Undo', onPressed: onUndo),
+    ));
+}

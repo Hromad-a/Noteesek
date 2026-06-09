@@ -7,6 +7,7 @@ import '../../data/local/database.dart';
 import '../../data/notes_repository.dart';
 import '../../providers.dart';
 import '../../sync/sync_controller.dart';
+import '../../ui/app_messenger.dart';
 import '../auth/login_screen.dart';
 import '../auth/settings_screen.dart';
 import '../export/share_note_sheet.dart';
@@ -443,7 +444,18 @@ class _SelectionAppBar extends ConsumerWidget implements PreferredSizeWidget {
                 await _moveToNotebook(context, ref, ids);
                 done();
               case 'delete':
-                await Future.wait(ids.map((id) => repo.softDelete(id)));
+                final deleted = ids.toList();
+                await Future.wait(deleted.map((id) => repo.softDelete(id)));
+                showUndoSnackBar(
+                  message: deleted.length == 1
+                      ? 'Note moved to Trash'
+                      : '${deleted.length} notes moved to Trash',
+                  onUndo: () {
+                    for (final id in deleted) {
+                      repo.restore(id);
+                    }
+                  },
+                );
                 done();
             }
           },

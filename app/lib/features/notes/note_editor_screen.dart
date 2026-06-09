@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../data/local/database.dart';
 import '../../data/notes_repository.dart';
+import '../../ui/app_messenger.dart';
 import '../export/share_note_sheet.dart';
 import 'note_colors.dart';
 
@@ -288,7 +289,12 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
                       case _OverflowAction.archive:
                         await _repo.setArchived(note.id, !note.archived);
                       case _OverflowAction.delete:
-                        await _repo.softDelete(note.id);
+                        final repo = _repo;
+                        await repo.softDelete(note.id);
+                        showUndoSnackBar(
+                          message: 'Note moved to Trash',
+                          onUndo: () => repo.restore(note.id),
+                        );
                         if (context.mounted) Navigator.of(context).maybePop();
                     }
                   },
