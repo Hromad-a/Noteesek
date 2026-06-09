@@ -38,10 +38,27 @@ class _ReconciliationScreenState extends ConsumerState<ReconciliationScreen> {
   _Strategy _selected = _Strategy.merge;
   bool _running = false;
 
+  /// Word the user must type to enable a destructive choice.
+  static const _confirmWord = 'REPLACE';
+  final _confirmCtrl = TextEditingController();
+
+  bool get _isDestructive =>
+      _selected == _Strategy.keepLocal || _selected == _Strategy.keepServer;
+
+  bool get _canContinue =>
+      !_isDestructive ||
+      _confirmCtrl.text.trim().toUpperCase() == _confirmWord;
+
   @override
   void initState() {
     super.initState();
     _inspect();
+  }
+
+  @override
+  void dispose() {
+    _confirmCtrl.dispose();
+    super.dispose();
   }
 
   Future<void> _inspect() async {
@@ -57,15 +74,23 @@ class _ReconciliationScreenState extends ConsumerState<ReconciliationScreen> {
     }
   }
 
+  void _select(_Strategy s) {
+    setState(() {
+      _selected = s;
+      _confirmCtrl.clear();
+    });
+  }
+
   Future<void> _run() async {
     setState(() => _running = true);
     try {
       switch (_selected) {
         case _Strategy.merge:
           await _service.merge(userId: widget.userId);
-        case _Strategy.keepLocal:
         case _Strategy.keepServer:
-          return; // disabled in Phase 1
+          await _service.keepServerReplace();
+        case _Strategy.keepLocal:
+          return; // disabled until Phase 3
       }
       if (mounted) Navigator.of(context).pop(true);
     } catch (e) {
@@ -117,7 +142,7 @@ class _ReconciliationScreenState extends ConsumerState<ReconciliationScreen> {
               icon: Icons.merge_outlined,
               recommended: true,
               selected: _selected == _Strategy.merge,
-              onTap: () => setState(() => _selected = _Strategy.merge),
+              onTap: () => _select(_Strategy.merge),
             ),
             _OptionTile(
               title: 'Keep this device only',
@@ -127,13 +152,18 @@ class _ReconciliationScreenState extends ConsumerState<ReconciliationScreen> {
             ),
             _OptionTile(
               title: 'Keep the server only',
-              subtitle: "Replace this device's data with the server's.",
-              icon: Icons.cloud_outlined,
-              disabledNote: 'Coming soon',
+              subtitle: 'Replace this device with the server. '
+                  '${s.localOnly} item${s.localOnly == 1 ? '' : 's'} here '
+                  '${s.localOnly == 1 ? "isn't" : "aren't"} on the server and '
+                  'will be lost.',
+              icon: Icons.cloud_download_outlined,
+              selected: _selected == _Strategy.keepServer,
+              onTap: () => _select(_Strategy.keepServer),
             ),
+            if (_isDestructive) _confirmGuard(context),
             const SizedBox(height: 24),
             FilledButton(
-              onPressed: _running ? null : _run,
+              onPressed: (_running || !_canContinue) ? null : _run,
               child: const Text('Continue'),
             ),
             const SizedBox(height: 8),
@@ -145,20 +175,64 @@ class _ReconciliationScreenState extends ConsumerState<ReconciliationScreen> {
           ],
         ),
         if (_running)
-          const ColoredBox(
-            color: Color(0x88000000),
+          ColoredBox(
+            color: const Color(0x88000000),
             child: Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  CircularProgressIndicator(),
-                  SizedBox(height: 12),
-                  Text('Merging…', style: TextStyle(color: Colors.white)),
+                  const CircularProgressIndicator(),
+                  const SizedBox(height: 12),
+                  Text(
+                    _selected == _Strategy.keepServer
+                        ? 'Replacing…'
+                        : 'Merging…',
+                    style: const TextStyle(color: Colors.white),
+                  ),
                 ],
               ),
             ),
           ),
       ],
+    );
+  }
+
+  /// Type-to-confirm gate shown for the destructive options.
+  Widget _confirmGuard(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.warning_amber_rounded,
+                  size: 20, color: theme.colorScheme.error),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'This permanently deletes data and cannot be undone.',
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: theme.colorScheme.error),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _confirmCtrl,
+            autocorrect: false,
+            enableSuggestions: false,
+            textCapitalization: TextCapitalization.characters,
+            decoration: const InputDecoration(
+              border: OutlineInputBorder(),
+              labelText: 'Type $_confirmWord to confirm',
+            ),
+            onChanged: (_) => setState(() {}),
+          ),
+        ],
+      ),
     );
   }
 }

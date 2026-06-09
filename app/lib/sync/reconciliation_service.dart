@@ -14,6 +14,8 @@ class ReconcileSummary {
     required this.foreignItems,
     required this.serverNotebooks,
     required this.serverNotes,
+    required this.localOnly,
+    required this.serverOnly,
   });
 
   /// Local (this device) counts — across all owners, non-deleted.
@@ -27,6 +29,14 @@ class ReconcileSummary {
   /// Server (this account) counts — non-deleted.
   final int serverNotebooks;
   final int serverNotes;
+
+  /// Notes+notebooks present on the device but NOT on the server (by id). These
+  /// are what "Keep server only" would permanently lose.
+  final int localOnly;
+
+  /// Notes+notebooks present on the server but NOT on the device (by id). These
+  /// are what "Keep local only" would delete from the server.
+  final int serverOnly;
 }
 
 /// Runs the sign-in reconciliation strategies (mobile only). Phase 1 implements
@@ -40,22 +50,27 @@ class ReconciliationService {
   final PocketBase _pb;
   final SyncEngine _engine;
 
-  /// Local vs server counts for the chooser. Server counts come from
-  /// `totalItems` on a 1-row list query; local counts from the drift DB.
+  /// Local vs server snapshot for the chooser. Compares note + notebook id sets
+  /// so the destructive options can show exactly how much each would remove.
   Future<ReconcileSummary> inspect(String userId) async {
-    final localNotes =
-        await _countLive(_db.notes, _db.notes.deleted);
-    final localNotebooks =
-        await _countLive(_db.notebooks, _db.notebooks.deleted);
-    final foreignItems = await _countForeign(userId);
-    final serverNotes = await _serverCount('notes');
-    final serverNotebooks = await _serverCount('notebooks');
+    final localNoteIds = await _localIds(_db.notes, _db.notes.deleted);
+    final localNbIds = await _localIds(_db.notebooks, _db.notebooks.deleted);
+    final serverNoteIds = await _serverIds('notes');
+    final serverNbIds = await _serverIds('notebooks');
+
+    final localOnly = localNoteIds.difference(serverNoteIds).length +
+        localNbIds.difference(serverNbIds).length;
+    final serverOnly = serverNoteIds.difference(localNoteIds).length +
+        serverNbIds.difference(localNbIds).length;
+
     return ReconcileSummary(
-      localNotebooks: localNotebooks,
-      localNotes: localNotes,
-      foreignItems: foreignItems,
-      serverNotebooks: serverNotebooks,
-      serverNotes: serverNotes,
+      localNotebooks: localNbIds.length,
+      localNotes: localNoteIds.length,
+      foreignItems: await _countForeign(userId),
+      serverNotebooks: serverNbIds.length,
+      serverNotes: serverNoteIds.length,
+      localOnly: localOnly,
+      serverOnly: serverOnly,
     );
   }
 
@@ -73,14 +88,34 @@ class ReconciliationService {
     await _engine.syncOnce();
   }
 
+  /// Keep server only: discard ALL local data (wipe + reset cursors), then pull
+  /// the account fresh. Local-only records are lost (the guarded choice).
+  Future<void> keepServerReplace() async {
+    await _db.wipeAllLocal();
+    await _engine.syncOnce(); // cursors cleared → full pull
+    await _repo.ensureDefaultNotebook();
+    await _engine.syncOnce();
+  }
+
   // ---- helpers ----
 
-  /// Counts non-deleted rows in [table] using its [deletedCol].
-  Future<int> _countLive(
+  /// Ids of non-deleted rows in [table] (by its [deletedCol]).
+  Future<Set<String>> _localIds(
       TableInfo table, GeneratedColumn<bool> deletedCol) async {
-    final c = countAll(filter: deletedCol.equals(false));
-    final row = await (_db.selectOnly(table)..addColumns([c])).getSingle();
-    return row.read(c) ?? 0;
+    final rows = await (_db.select(table)
+          ..where((_) => deletedCol.equals(false)))
+        .get();
+    return {for (final r in rows) (r as dynamic).id as String};
+  }
+
+  /// Ids of non-deleted server records in [collection] (fetches the id only).
+  Future<Set<String>> _serverIds(String collection) async {
+    final recs = await _pb.collection(collection).getFullList(
+          batch: 500,
+          fields: 'id',
+          filter: 'deleted = false',
+        );
+    return {for (final r in recs) r.id};
   }
 
   Future<int> _countForeign(String userId) async {
@@ -94,14 +129,5 @@ class ReconciliationService {
               t.isDefault.equals(false)))
         .get();
     return notes.length + nbs.length;
-  }
-
-  Future<int> _serverCount(String collection) async {
-    final res = await _pb.collection(collection).getList(
-          page: 1,
-          perPage: 1,
-          filter: 'deleted = false',
-        );
-    return res.totalItems;
   }
 }

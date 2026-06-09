@@ -232,6 +232,48 @@ void main() {
     await db.close();
   });
 
+  test('ReconciliationService.keepServerReplace discards local, pulls server',
+      () async {
+    // Server: a notebook + note on the account.
+    final dbS = AppDatabase(NativeDatabase.memory());
+    final repoS = LocalNotesRepository(dbS, userId);
+    final engineS = SyncEngine(dbS, pb);
+    await repoS.ensureDefaultNotebook();
+    await repoS.createNotebook('KSServerNb');
+    final sNote = await repoS.createNote(type: 'text');
+    await repoS.updateNoteFields(sNote, title: 'ks server note');
+    await engineS.syncOnce();
+
+    // Device with offline-only data (not on the server).
+    final db = AppDatabase(NativeDatabase.memory());
+    final repoLocal = LocalNotesRepository(db, AppConfig.localOwner);
+    await repoLocal.ensureDefaultNotebook();
+    await repoLocal.createNotebook('KSLocalNb');
+    final lNote = await repoLocal.createNote(type: 'text');
+    await repoLocal.updateNoteFields(lNote, title: 'ks local note');
+
+    final repoB = LocalNotesRepository(db, userId);
+    final engineB = SyncEngine(db, pb);
+    final service = ReconciliationService(db, repoB, pb, engineB);
+
+    final summary = await service.inspect(userId);
+    expect(summary.localOnly, greaterThanOrEqualTo(2),
+        reason: 'offline notebook + note are local-only');
+
+    await service.keepServerReplace();
+
+    final nbNames = (await repoB.watchNotebooks().first).map((n) => n.name);
+    expect(nbNames, contains('KSServerNb'));
+    expect(nbNames, isNot(contains('KSLocalNb')),
+        reason: 'local-only data is discarded');
+    final titles = (await repoB.watchActive().first).map((n) => n.title);
+    expect(titles, contains('ks server note'));
+    expect(titles, isNot(contains('ks local note')));
+
+    await dbS.close();
+    await db.close();
+  });
+
   test('server stamps owner on create regardless of client value (owner.pb.js)',
       () async {
     // A blank/wrong client owner must NOT fail the create: the server forces
