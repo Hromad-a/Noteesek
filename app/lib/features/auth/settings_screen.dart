@@ -11,6 +11,7 @@ import 'package:pocketbase/pocketbase.dart';
 
 import '../../config/app_config.dart';
 import '../../data/notes_repository.dart';
+import '../backup/backup_service.dart' as backup;
 import '../lock/app_lock.dart';
 import '../../providers.dart';
 import '../../sync/sync_controller.dart';
@@ -317,6 +318,66 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         ],
       ),
     );
+  }
+
+  // ---------------- Backup / restore (mobile) ----------------
+
+  String _backupFileName() {
+    final d = DateTime.now();
+    String two(int v) => v.toString().padLeft(2, '0');
+    return 'noteesek-backup-${d.year}${two(d.month)}${two(d.day)}.json';
+  }
+
+  Future<void> _backUp() async {
+    _snack('Preparing backup…');
+    try {
+      final bytes = await backup.BackupService(ref.read(databaseProvider)).export();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      await deliverBytes(bytes, _backupFileName(), 'application/json');
+    } catch (e) {
+      if (mounted) _snack('Backup failed: $e');
+    }
+  }
+
+  Future<void> _restore() async {
+    final file = await openFile(acceptedTypeGroups: [
+      const XTypeGroup(
+        label: 'Noteesek backup',
+        extensions: ['json'],
+        mimeTypes: ['application/json'],
+      ),
+    ]);
+    if (file == null || !mounted) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Restore backup?'),
+        content: const Text(
+            'Notes from the backup are merged into this device; where ids '
+            'match, the backup version wins. This cannot be undone.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Restore')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    _snack('Restoring…');
+    try {
+      final bytes = await file.readAsBytes();
+      final n = await backup.BackupService(ref.read(databaseProvider)).import(bytes);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      _snack('Restored $n note${n == 1 ? '' : 's'}');
+    } catch (e) {
+      if (mounted) _snack('Restore failed: $e');
+    }
   }
 
   // ---------------- Wipe data ----------------
@@ -690,6 +751,24 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             subtitle: const Text('From a Markdown export or Google Keep'),
             onTap: _importNotes,
           ),
+          // Full device backup/restore — only meaningful where there's a local
+          // DB (mobile).
+          if (!kIsWeb) ...[
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.backup_outlined),
+              title: const Text('Back up to file'),
+              subtitle: const Text('Everything on this device, as one JSON file'),
+              onTap: _backUp,
+            ),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.restore_outlined),
+              title: const Text('Restore from backup'),
+              subtitle: const Text('Merge a backup file into this device'),
+              onTap: _restore,
+            ),
+          ],
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: _wipeBusy

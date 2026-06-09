@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -5,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:noteesek/data/local/database.dart';
 import 'package:noteesek/data/local_notes_repository.dart';
 import 'package:noteesek/data/notes_repository.dart';
+import 'package:noteesek/features/backup/backup_service.dart';
 import 'package:noteesek/features/import/import_models.dart';
 import 'package:noteesek/features/import/import_service.dart';
 
@@ -123,6 +126,36 @@ void main() {
     expect(notes.every((n) => n.owner == 'owner1' && n.dirty), isTrue);
     final nbs = await db.select(db.notebooks).get();
     expect(nbs.every((n) => n.owner == 'owner1' && n.dirty), isTrue);
+  });
+
+  test('backup export → wipe → import round-trips notes/items/labels/images',
+      () async {
+    final nb = await repo.createNotebook('Trip');
+    final n = await repo.createNote(type: 'text', notebook: nb);
+    await repo.updateNoteFields(n, title: 'Packing', body: 'socks');
+    await repo.createLabel('travel');
+    final cl = await repo.createNote(type: 'checklist');
+    await repo.addItem(cl, content: 'passport');
+    final bytes = Uint8List.fromList([4, 8, 15, 16, 23, 42]);
+    await repo.addAttachment(n, bytes);
+
+    final svc = BackupService(db);
+    final backup = await svc.export();
+
+    await db.wipeAllLocal();
+    expect(await repo.watchActive().first, isEmpty);
+
+    final restored = await svc.import(backup);
+    expect(restored, 2); // the text note + the checklist
+
+    final titles = (await repo.watchActive().first).map((x) => x.title);
+    expect(titles, contains('Packing'));
+    expect((await repo.watchNotebooks().first).map((x) => x.name),
+        contains('Trip'));
+    expect((await repo.watchLabels().first).map((x) => x.name),
+        contains('travel'));
+    expect((await repo.watchItems(cl).first).single.content, 'passport');
+    expect((await repo.watchAttachments(n).first).single.data, bytes);
   });
 
   test('setLabelColor persists the color and dirties the label', () async {
