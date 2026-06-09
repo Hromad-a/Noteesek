@@ -329,6 +329,15 @@ class LocalNotesRepository implements NotesRepository {
       updated: Value(pbNow()),
       dirty: const Value(true),
     ));
+    // …and locally-created labels. Without this they keep owner='local', which
+    // fails the server's owner relation on push, so they'd never sync up.
+    await (_db.update(_db.labels)
+          ..where((t) => t.owner.equals(AppConfig.localOwner)))
+        .write(LabelsCompanion(
+      owner: Value(userId),
+      updated: Value(pbNow()),
+      dirty: const Value(true),
+    ));
   }
 
   // ---- Labels ----

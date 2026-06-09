@@ -29,28 +29,77 @@ class SyncEngine {
   /// Runs one full sync cycle. Safe to call concurrently — overlapping calls
   /// are ignored. Returns true if it ran, false if skipped (already running or
   /// not authenticated).
+  ///
+  /// Each collection's push/pull is an independent step: a non-connectivity
+  /// failure in one (e.g. a single malformed record, or a per-collection API
+  /// error) is logged and the remaining steps still run, so one bad collection
+  /// can't strand the others (notably: a labels-pull failure must not block the
+  /// notebooks/notes pull). A connectivity error aborts the cycle and is
+  /// rethrown so the caller can show the "server not responding" state.
   Future<bool> syncOnce() async {
     if (_running || !_pb.authStore.isValid) return false;
     _running = true;
     try {
       // Push labels and notebooks first so a note's `labels`/`notebook`
-      // relations resolve, then parents before children so a child's `note`
-      // relation resolves.
-      await _pushLabels();
-      await _pushNotebooks();
-      await _pushNotes();
-      await _pushItems();
-      await _pushAttachments();
-      // Pull in the same order.
-      await _pullLabels();
-      await _pullNotebooks();
-      await _pullNotes();
-      await _pullItems();
-      await _pullAttachments();
+      // relations resolve, then parents before children; pull in the same order.
+      const steps = <(String, String)>[
+        ('push', _labels),
+        ('push', _notebooks),
+        ('push', _notes),
+        ('push', _items),
+        ('push', _attachments),
+        ('pull', _labels),
+        ('pull', _notebooks),
+        ('pull', _notes),
+        ('pull', _items),
+        ('pull', _attachments),
+      ];
+      for (final (phase, collection) in steps) {
+        try {
+          await _runStep(phase, collection);
+        } catch (e) {
+          // Server unreachable: the whole cycle is doomed — abort and let the
+          // caller surface the offline state and retry later.
+          if (_isConnectivityError(e)) rethrow;
+          // Otherwise (data/API error on one collection): skip it, keep going.
+          _logStepFailure(phase, collection, e);
+        }
+      }
       return true;
     } finally {
       _running = false;
     }
+  }
+
+  Future<void> _runStep(String phase, String collection) {
+    final push = phase == 'push';
+    return switch (collection) {
+      _labels => push ? _pushLabels() : _pullLabels(),
+      _notebooks => push ? _pushNotebooks() : _pullNotebooks(),
+      _notes => push ? _pushNotes() : _pullNotes(),
+      _items => push ? _pushItems() : _pullItems(),
+      _attachments => push ? _pushAttachments() : _pullAttachments(),
+      _ => Future<void>.value(),
+    };
+  }
+
+  void _logStepFailure(String phase, String collection, Object e) {
+    // ignore: avoid_print
+    print('SyncEngine: $phase $collection failed (skipped): $e');
+  }
+
+  /// True for "can't reach the server" errors (offline, server down, timeout) as
+  /// opposed to a real API/data error.
+  bool _isConnectivityError(Object e) {
+    if (e is ClientException && e.statusCode == 0) return true;
+    final s = e.toString().toLowerCase();
+    return s.contains('socketexception') ||
+        s.contains('connection refused') ||
+        s.contains('failed host lookup') ||
+        s.contains('network is unreachable') ||
+        s.contains('connection closed') ||
+        s.contains('timed out') ||
+        s.contains('timeout');
   }
 
   /// Permanently delete a note on the server (children cascade-delete via the
