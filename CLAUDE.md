@@ -155,7 +155,11 @@ docs/sign-in-reconciliation.md) · empty notes auto-move to Trash on close.
 - **Single-note export** (`single_note_export.dart`): editor overflow "Share /
   export" → Markdown (bare `.md`, or md+attachments zip when it has images),
   plain text (`note_plaintext.dart`), or PDF (`note_pdf.dart`, `pdf` pkg,
-  delivered cross-platform via `printing`). Pure renderers are unit-tested.
+  delivered cross-platform via `printing`). The PDF renders the body **as
+  Markdown** (`markdown_pdf.dart` maps the `markdown` AST → `pdf` widgets:
+  headings, emphasis, lists, quotes, code, rules) and draws checklist boxes. It
+  bundles Roboto latin+latin-ext (`assets/fonts/`, loaded by `pdf_fonts.dart`) so
+  Unicode like Czech diacritics renders — the built-in WinAnsi fonts can't.
 
 ### Import (`features/import/`)
 - Settings → Data & storage → "Import notes" → pick a source (Markdown / Google

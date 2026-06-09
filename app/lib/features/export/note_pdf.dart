@@ -5,6 +5,8 @@ import 'package:pdf/widgets.dart' as pw;
 
 import '../../data/local/database.dart';
 import '../../data/notes_repository.dart' show labelIdsOf;
+import 'markdown_pdf.dart';
+import 'pdf_fonts.dart';
 
 /// Renders a single note to a PDF document and returns its bytes. Title, an
 /// optional labels line, then the body (or checklist as ☑/☐ lines), followed
@@ -16,7 +18,8 @@ Future<Uint8List> buildNotePdf({
   Map<String, String> labelNames = const {},
   Map<String, String> notebookNames = const {},
 }) async {
-  final doc = pw.Document();
+  final fonts = await PdfFonts.load();
+  final doc = pw.Document(theme: fonts.theme);
 
   final live = items.where((i) => !i.deleted).toList()
     ..sort((a, b) => a.position.compareTo(b.position));
@@ -53,7 +56,8 @@ Future<Uint8List> buildNotePdf({
               child: pw.Row(
                 crossAxisAlignment: pw.CrossAxisAlignment.start,
                 children: [
-                  pw.Text(item.checked ? '☑ ' : '☐ '),
+                  _checkbox(item.checked),
+                  pw.SizedBox(width: 6),
                   pw.Expanded(
                     child: pw.Text(
                       item.content,
@@ -69,7 +73,7 @@ Future<Uint8List> buildNotePdf({
             ),
           )
         else if (note.body.trim().isNotEmpty)
-          pw.Text(note.body.trimRight()),
+          ...markdownToPdfWidgets(note.body, mono: fonts.mono),
         for (final img in images)
           pw.Padding(
             padding: const pw.EdgeInsets.only(top: 12),
@@ -81,3 +85,24 @@ Future<Uint8List> buildNotePdf({
 
   return doc.save();
 }
+
+/// A drawn checkbox (a bordered square, with a tick when [checked]) — drawn
+/// rather than a ☑/☐ glyph, which the bundled Roboto doesn't include.
+pw.Widget _checkbox(bool checked) => pw.Container(
+      width: 11,
+      height: 11,
+      margin: const pw.EdgeInsets.only(top: 2),
+      decoration: pw.BoxDecoration(
+        border: pw.Border.all(color: PdfColors.grey700, width: 0.8),
+        borderRadius: pw.BorderRadius.circular(2),
+        color: checked ? PdfColors.grey700 : null,
+      ),
+      child: checked
+          ? pw.Center(
+              child: pw.Text('x',
+                  style: pw.TextStyle(
+                      color: PdfColors.white,
+                      fontSize: 9,
+                      fontWeight: pw.FontWeight.bold)))
+          : null,
+    );

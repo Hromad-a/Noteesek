@@ -55,6 +55,7 @@ dependencies:
   # Single-note PDF export (cross-platform share/print/download).
   pdf: ^3.11.0
   printing: ^5.13.0
+  markdown: ^7.3.0 # parse note bodies → formatted PDF widgets
   # Import file picking. file_selector (first-party, flutter/packages) is used
   # instead of file_picker, whose Android module broke the release build
   # (v11 Kotlin plugin unresolved; v8 hardcodes an old compileSdk).
@@ -85,6 +86,13 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  # Roboto (latin + latin-ext, ~264 KB) bundled for PDF export so note bodies
+  # render real Unicode (e.g. Czech diacritics) instead of missing glyphs. Loaded
+  # at export time via rootBundle (see features/export/pdf_fonts.dart), not as a
+  # Flutter `fonts:` family.
+  assets:
+    - assets/fonts/
 
 flutter_launcher_icons:
   image_path: "icon.png"
