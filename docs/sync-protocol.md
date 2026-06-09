@@ -73,9 +73,9 @@ For each collection, fetch records changed since the cursor:
 
 ```
 GET /api/collections/<name>/records
-    ?filter=(updated > "{last_synced_at}")
-    &sort=updated
-    &perPage=200          # paginate until exhausted
+    ?filter=(updated >= "{last_synced_at}")   # inclusive — see invariants below
+    &sort=updated,id                          # deterministic order (tie-break by id)
+    &perPage=200                              # paginate until exhausted
 ```
 
 For each incoming record, compare with the local row by `id`:
@@ -87,8 +87,29 @@ For each incoming record, compare with the local row by `id`:
 | exists, dirty, server `updated` > local `updated` | **server wins** — overwrite, drop local edit (LWW) |
 | exists, dirty, server `updated` ≤ local `updated` | keep local; it will win on next push                |
 
-Advance `last_synced_at` to the max `updated` seen. Incoming `deleted = true`
-records are applied (the row is hidden/removed locally).
+Advance `last_synced_at` over the **contiguous successfully-applied prefix**.
+Incoming `deleted = true` records are applied (the row is hidden/removed locally).
+
+#### Reliability invariants (why the query is shaped this way)
+
+- **Inclusive boundary.** The filter is `updated >= last_synced_at`, *not* `>`.
+  A strict `>` permanently skips any record the server stamps with the exact
+  cursor timestamp (same millisecond as the previous pull's newest record).
+  Re-pulling boundary records is safe because apply is **idempotent**
+  (insert-or-update keyed by `id` + the LWW check above).
+- **Deterministic order.** Sort is `updated,id` (not `updated` alone) so
+  pagination is stable when timestamps tie — otherwise a record can fall between
+  page boundaries and be missed.
+- **Per-record isolation.** One record that fails to apply does not abort the
+  rest, and the cursor only advances over the contiguous applied prefix, so a
+  failed record (and anything after it) is retried next cycle, never skipped.
+- **Per-collection isolation.** Each collection's push/pull is an independent
+  step. A non-connectivity error in one collection is logged and skipped so it
+  can't strand the others; a connectivity error aborts the cycle and surfaces
+  the offline state.
+- **Attachment bytes are retried cursor-independently.** A protected file whose
+  bytes failed to download is re-fetched on a later cycle by a dedicated pass
+  (it wouldn't reappear under the `updated` cursor once its metadata synced).
 
 ### Tie-breaking
 
@@ -110,6 +131,30 @@ devices without a central clock.
   relations and a child's `note` relation always resolve to an existing record.
 - A checklist item or attachment whose parent note is `deleted` is treated as
   deleted locally (the server cascade-deletes children on hard purge).
+
+## Server-side safeguards
+
+The server is the authority, so it enforces invariants the client could
+otherwise get wrong (`server/pb_hooks/`, `server/pb_migrations/`):
+
+- **Owner is stamped server-side on create** (`owner.pb.js` + migration
+  `1700000011`). For `notes`, `labels`, and `notebooks`, an
+  `onRecordCreateRequest` hook forces `owner = @request.auth.id` regardless of
+  what the client sent, removing the "record created locally but never syncs up"
+  failure mode caused by a stale/empty client owner (e.g. the offline `local`
+  sentinel). Because PocketBase checks the `createRule` *before* the hook, the
+  createRule is relaxed to `@request.auth.id != ""` (authenticated) so the hook
+  can take over ownership; list/view/update/delete rules stay owner-scoped, so
+  access is unchanged.
+- **All app collections are owner-scoped** by collection rules
+  (`owner = @request.auth.id`, or `note.owner` for children), so a pull only ever
+  returns the caller's own records and a write can only touch them.
+- **Indexes for incremental pulls.** Every synced collection has an index on
+  `updated` (composite `(owner, updated)` for notes/labels/notebooks; a plain
+  `updated` index on checklist_items/attachments) so `updated >= cursor` pulls
+  stay efficient as data grows.
+- `created`/`updated` are server-managed `autodate` fields; the client never
+  sets them, so the LWW timestamp can't be forged.
 
 ## Notebooks & the default notebook
 

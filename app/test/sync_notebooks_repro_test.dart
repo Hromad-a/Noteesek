@@ -91,4 +91,19 @@ void main() {
     await dbA.close();
     await dbB.close();
   });
+
+  test('server stamps owner on create regardless of client value (owner.pb.js)',
+      () async {
+    // A blank/wrong client owner must NOT fail the create: the server forces
+    // owner = the authenticated user. (Against a server without owner.pb.js this
+    // create would be rejected by the createRule, so this also verifies the hook
+    // is deployed.)
+    final rec = await pb.collection('notebooks').create(body: {
+      'owner': '',
+      'name': 'ForcedOwner',
+      'is_default': false,
+      'deleted': false,
+    });
+    expect(rec.getStringValue('owner'), userId);
+  });
 }

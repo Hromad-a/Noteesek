@@ -53,6 +53,9 @@ class SyncEngine {
         ('pull', _notes),
         ('pull', _items),
         ('pull', _attachments),
+        // Retry any attachment whose bytes haven't downloaded yet (independent
+        // of the pull cursor).
+        ('bytes', _attachments),
       ];
       for (final (phase, collection) in steps) {
         try {
@@ -72,6 +75,7 @@ class SyncEngine {
   }
 
   Future<void> _runStep(String phase, String collection) {
+    if (phase == 'bytes') return _downloadPendingAttachmentBytes();
     final push = phase == 'push';
     return switch (collection) {
       _labels => push ? _pushLabels() : _pullLabels(),
@@ -388,6 +392,38 @@ class SyncEngine {
     }, _localAttachmentUpdated);
   }
 
+  /// Downloads bytes for any attachment that has a server file but no local
+  /// bytes yet. This is cursor-independent: a byte download that failed during
+  /// [_pullAttachments] would otherwise never retry, because the record's
+  /// `updated` is already at/under the pull cursor and won't reappear. Runs
+  /// every cycle and is cheap once everything is downloaded (no rows match).
+  Future<void> _downloadPendingAttachmentBytes() async {
+    final pending = await (_db.select(_db.attachments)
+          ..where((t) =>
+              t.deleted.equals(false) &
+              t.file.equals('').not() &
+              t.data.isNull()))
+        .get();
+    for (final a in pending) {
+      try {
+        final rec = await _pb.collection(_attachments).getOne(a.id);
+        final filename = rec.getStringValue('file');
+        if (filename.isEmpty || rec.getBoolValue('deleted')) continue;
+        final bytes = await _downloadFile(rec, filename);
+        if (bytes != null) {
+          await (_db.update(_db.attachments)..where((t) => t.id.equals(a.id)))
+              .write(AttachmentsCompanion(data: Value(bytes)));
+        }
+      } on ClientException catch (e) {
+        if (e.statusCode == 404) {
+          // Record gone server-side; nothing to download. Leave the row.
+          continue;
+        }
+        rethrow; // connectivity/other — let the cycle handle/abort
+      }
+    }
+  }
+
   Future<Uint8List?> _downloadFile(RecordModel rec, String filename) async {
     try {
       // Attachment files are protected, so a short-lived file token is required.
@@ -409,6 +445,19 @@ class SyncEngine {
 
   /// Generic pull loop: fetch records changed since the cursor, apply each with
   /// last-write-wins, then advance the cursor.
+  ///
+  /// Reliability details:
+  /// - The filter is `updated >= cursor` (inclusive). A strict `>` would skip
+  ///   any record the server stamps with the exact cursor timestamp (same
+  ///   millisecond as the newest record from the previous pull), losing it
+  ///   forever. Re-applying boundary records is harmless because [apply] is
+  ///   idempotent (insert-or-update keyed by id).
+  /// - Sort is `updated,id` so pagination is deterministic when timestamps tie
+  ///   (the spec's tie-break) — otherwise a record could fall between pages.
+  /// - Each record is applied independently; a single record that fails to
+  ///   apply doesn't abort the rest. The cursor only advances over the
+  ///   *contiguous* successfully-applied prefix, so a failed record (and
+  ///   everything after it) is retried next cycle rather than skipped.
   Future<void> _pull(
     String collection,
     Future<void> Function(RecordModel rec) apply,
@@ -416,36 +465,47 @@ class SyncEngine {
   ) async {
     final cursor = await _cursor(collection);
     var page = 1;
-    var maxUpdated = cursor;
+    // Highest `updated` of the contiguous successfully-applied prefix. Never
+    // advanced past a record that failed to apply.
+    var safeCursor = cursor;
+    var failed = false;
 
     while (true) {
       final res = await _pb.collection(collection).getList(
             page: page,
             perPage: 200,
-            sort: 'updated',
-            filter: 'updated > "$cursor"',
+            sort: 'updated,id',
+            filter: 'updated >= "$cursor"',
           );
       for (final rec in res.items) {
         final serverUpdated = rec.getStringValue('updated');
-        if (serverUpdated.compareTo(maxUpdated) > 0) {
-          maxUpdated = serverUpdated;
-        }
-        final local = await localState(rec.id);
-        // Apply unless we hold a dirty local edit that is newer-or-equal:
-        // string compare of ISO timestamps == chronological compare (LWW).
-        final keepLocal = local != null &&
-            local.dirty &&
-            local.updated.compareTo(serverUpdated) >= 0;
-        if (!keepLocal) {
-          await apply(rec);
+        try {
+          final local = await localState(rec.id);
+          // Apply unless we hold a dirty local edit that is newer-or-equal:
+          // string compare of ISO timestamps == chronological compare (LWW).
+          final keepLocal = local != null &&
+              local.dirty &&
+              local.updated.compareTo(serverUpdated) >= 0;
+          if (!keepLocal) {
+            await apply(rec);
+          }
+          // Records arrive in ascending (updated,id) order, so advancing to the
+          // latest success keeps the cursor at the end of the success prefix.
+          if (!failed) safeCursor = serverUpdated;
+        } catch (e) {
+          // One bad record: skip it, stop advancing the cursor (so it's retried
+          // next cycle), but keep applying the rest best-effort.
+          failed = true;
+          // ignore: avoid_print
+          print('SyncEngine: pull $collection record ${rec.id} failed: $e');
         }
       }
       if (page >= res.totalPages || res.items.isEmpty) break;
       page++;
     }
 
-    if (maxUpdated != cursor) {
-      await _setCursor(collection, maxUpdated);
+    if (safeCursor != cursor) {
+      await _setCursor(collection, safeCursor);
     }
   }
 
