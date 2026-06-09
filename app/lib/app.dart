@@ -11,6 +11,9 @@ import 'features/onboarding/onboarding_screen.dart';
 import 'providers.dart';
 import 'ui/app_messenger.dart';
 
+/// Lavender brand seed for the Material 3 color scheme (light + dark).
+const Color _seed = Color(0xFFCEB1E8);
+
 class NoteesekApp extends ConsumerStatefulWidget {
   const NoteesekApp({super.key});
 
@@ -79,13 +82,22 @@ class _NoteesekAppState extends ConsumerState<NoteesekApp>
       scaffoldMessengerKey: scaffoldMessengerKey,
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        colorSchemeSeed: const Color(0xFFCEB1E8),
-        brightness: Brightness.light,
+        // `vibrant` keeps the lavender hue but with more chroma than the default
+        // `tonalSpot`, so light surfaces/containers carry more visible purple.
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: _seed,
+          brightness: Brightness.light,
+          dynamicSchemeVariant: DynamicSchemeVariant.vibrant,
+        ),
+        scaffoldBackgroundColor: const Color(0xFFF6EEFB), // soft lavender canvas
         useMaterial3: true,
       ),
       darkTheme: ThemeData(
-        colorSchemeSeed: const Color(0xFFCEB1E8),
-        brightness: Brightness.dark,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: _seed,
+          brightness: Brightness.dark,
+          dynamicSchemeVariant: DynamicSchemeVariant.vibrant,
+        ),
         useMaterial3: true,
       ),
       themeMode: ref.watch(themeModeProvider),
