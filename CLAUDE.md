@@ -208,7 +208,11 @@ flutter analyze
 - App ID: `com.noteesek.app`. State mgmt: Riverpod 3 (`StateProvider` is legacy;
   use `Notifier`).
 
+## Roadmap
+Planned features + the decisions behind them live in [docs/roadmap.md](docs/roadmap.md)
+(undo, per-label colors, app lock, JSON backup, markdown, quick capture,
+onboarding, sign-out-everywhere).
+
 ## Deferred / ideas
-Release-signed APK, iOS, FTS5 search, reminders, per-label colors, HTTPS (then
-tighten cleartext). CI publishes multi-arch images to `ghcr.io/hromad-a/noteesek`
-on version tags.
+Release-signed APK, iOS, FTS5 search, reminders, HTTPS (then tighten cleartext).
+CI publishes multi-arch images to `ghcr.io/hromad-a/noteesek` on version tags.

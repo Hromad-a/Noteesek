@@ -53,15 +53,23 @@ onBootstrap((e) => {
   $app.save(settings);
 
   // Point the user password-reset email at our own web app, which reads the
-  // ?reset=<token> query param and shows the confirm screen. {APP_URL} and
-  // {TOKEN} are PocketBase template placeholders.
+  // ?reset=<token> query param and shows the confirm screen. {TOKEN} is a
+  // PocketBase placeholder.
+  //
+  // For the link's origin we DON'T use the {APP_URL} placeholder: PocketBase
+  // normalizes settings.meta.appURL and drops any explicit port (so
+  // http://host:8090 would render as http://host). Instead, when APP_URL is
+  // pinned in env we bake the literal value straight into the template so the
+  // port survives. When it isn't pinned, fall back to {APP_URL} (auto-derived
+  // from the request origin by the hook below, which keeps the port from Host).
+  const linkBase = appUrl ? appUrl : "{APP_URL}";
   try {
     const users = $app.findCollectionByNameOrId("users");
     users.resetPasswordTemplate.subject = "Reset your Noteesek password";
     users.resetPasswordTemplate.body = [
       "<p>Hello,</p>",
       "<p>Click the button below to choose a new password. This link expires soon.</p>",
-      '<p><a class="btn" href="{APP_URL}/?reset={TOKEN}" target="_blank" rel="noopener">Reset password</a></p>',
+      '<p><a class="btn" href="' + linkBase + '/?reset={TOKEN}" target="_blank" rel="noopener">Reset password</a></p>',
       "<p>If the button doesn't work, open the app and paste this code:</p>",
       "<p><strong>{TOKEN}</strong></p>",
       "<p>If you didn't request a password reset, you can safely ignore this email.</p>",
