@@ -19,7 +19,10 @@ class LocalNotesRepository implements NotesRepository {
   @override
   Stream<List<NoteRow>> watchActive() {
     return (_db.select(_db.notes)
-          ..where((t) => t.deleted.equals(false) & t.archived.equals(false))
+          ..where((t) =>
+              t.owner.equals(_ownerId) &
+              t.deleted.equals(false) &
+              t.archived.equals(false))
           ..orderBy([
             (t) => OrderingTerm(expression: t.pinned, mode: OrderingMode.desc),
             (t) => OrderingTerm(expression: t.position, mode: OrderingMode.asc),
@@ -30,7 +33,10 @@ class LocalNotesRepository implements NotesRepository {
   @override
   Stream<List<NoteRow>> watchArchived() {
     return (_db.select(_db.notes)
-          ..where((t) => t.deleted.equals(false) & t.archived.equals(true))
+          ..where((t) =>
+              t.owner.equals(_ownerId) &
+              t.deleted.equals(false) &
+              t.archived.equals(true))
           ..orderBy([
             (t) => OrderingTerm(expression: t.updated, mode: OrderingMode.desc),
           ]))
@@ -59,6 +65,7 @@ class LocalNotesRepository implements NotesRepository {
 
     return (_db.select(_db.notes)
           ..where((t) =>
+              t.owner.equals(_ownerId) &
               t.deleted.equals(false) &
               t.archived.equals(false) &
               (t.title.lower().like(pattern) |
@@ -187,7 +194,7 @@ class LocalNotesRepository implements NotesRepository {
   @override
   Stream<List<NoteRow>> watchTrash() {
     return (_db.select(_db.notes)
-          ..where((t) => t.deleted.equals(true))
+          ..where((t) => t.owner.equals(_ownerId) & t.deleted.equals(true))
           ..orderBy([
             (t) => OrderingTerm(expression: t.updated, mode: OrderingMode.desc),
           ]))
@@ -300,7 +307,8 @@ class LocalNotesRepository implements NotesRepository {
 
   @override
   Future<List<String>> trashedNoteIds() =>
-      (_db.select(_db.notes)..where((t) => t.deleted.equals(true)))
+      (_db.select(_db.notes)
+            ..where((t) => t.owner.equals(_ownerId) & t.deleted.equals(true)))
           .map((r) => r.id)
           .get();
 
@@ -345,7 +353,7 @@ class LocalNotesRepository implements NotesRepository {
   @override
   Stream<List<LabelRow>> watchLabels() {
     return (_db.select(_db.labels)
-          ..where((t) => t.deleted.equals(false))
+          ..where((t) => t.owner.equals(_ownerId) & t.deleted.equals(false))
           ..orderBy([
             (t) => OrderingTerm(expression: t.name.lower()),
           ]))

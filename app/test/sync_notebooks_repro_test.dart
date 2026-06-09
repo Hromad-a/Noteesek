@@ -142,6 +142,54 @@ void main() {
     await dbB.close();
   });
 
+  test('signing into a different account does not leak the first account data',
+      () async {
+    // Account A (the suite user): create + sync a note, so the local DB mirrors
+    // account A and is clean (dirty = false).
+    final db = AppDatabase(NativeDatabase.memory());
+    final repoA = LocalNotesRepository(db, userId);
+    final engineA = SyncEngine(db, pb);
+    await repoA.ensureDefaultNotebook();
+    final nA = await repoA.createNote(type: 'text');
+    await repoA.updateNoteFields(nA, title: 'account A secret');
+    await engineA.syncOnce();
+
+    // "Sign out" keeps the data on the device. Now sign in as a DIFFERENT
+    // account B on the SAME local DB.
+    final pbB = PocketBase(baseUrl);
+    final emailB = 'acctB_${DateTime.now().microsecondsSinceEpoch}@example.com';
+    await pbB.collection('users').create(body: {
+      'email': emailB,
+      'password': 'password123',
+      'passwordConfirm': 'password123',
+    });
+    await pbB.collection('users').authWithPassword(emailB, 'password123');
+    final userB = pbB.authStore.record!.id;
+
+    final repoB = LocalNotesRepository(db, userB);
+    final engineB = SyncEngine(db, pbB);
+    await repoB.claimLocalNotes(userB); // only claims owner='local' rows (none)
+    await engineB.syncOnce(); // push (nothing dirty) + pull B's (empty)
+
+    // Account B's server must NOT contain account A's note.
+    final bServer = await pbB.collection('notes').getFullList();
+    expect(bServer.map((r) => r.getStringValue('title')),
+        isNot(contains('account A secret')),
+        reason: "first account's data must not be pushed to the second");
+
+    // B's session shows none of A's notes (hidden by the owner filter)…
+    final bVisible = await repoB.watchActive().first;
+    expect(bVisible.map((n) => n.title), isNot(contains('account A secret')));
+
+    // …but A's data is still on the device, tagged with A's owner.
+    final all = await db.select(db.notes).get();
+    expect(
+        all.where((n) => n.owner == userId && n.title == 'account A secret'),
+        isNotEmpty);
+
+    await db.close();
+  });
+
   test('server stamps owner on create regardless of client value (owner.pb.js)',
       () async {
     // A blank/wrong client owner must NOT fail the create: the server forces
