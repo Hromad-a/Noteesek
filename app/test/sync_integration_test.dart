@@ -129,6 +129,33 @@ void main() {
     await dbB.close();
   });
 
+  test('logout-everywhere rotates the token and returns a fresh one', () async {
+    final c = PocketBase(baseUrl);
+    final email = 'loe_${DateTime.now().microsecondsSinceEpoch}@example.com';
+    await c.collection('users').create(body: {
+      'email': email,
+      'password': 'password123',
+      'passwordConfirm': 'password123',
+    });
+    await c.collection('users').authWithPassword(email, 'password123');
+    final oldToken = c.authStore.token;
+
+    final res = await c.send('/api/noteesek/logout-everywhere', method: 'POST');
+    final newToken = (res as Map)['token'] as String;
+    expect(newToken, isNotEmpty);
+    expect(newToken, isNot(oldToken));
+
+    // The client still holds the now-stale token → an auth-required call fails.
+    await expectLater(
+      c.collection('users').authRefresh(),
+      throwsA(isA<ClientException>()),
+    );
+    // The fresh token still works.
+    final c2 = PocketBase(baseUrl)..authStore.save(newToken, c.authStore.record);
+    final refreshed = await c2.collection('users').authRefresh();
+    expect(refreshed.record.id, isNotEmpty);
+  });
+
   test('label color syncs to a second device', () async {
     final dbA = AppDatabase(NativeDatabase.memory());
     final repoA = LocalNotesRepository(dbA, userId);

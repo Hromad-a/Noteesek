@@ -137,6 +137,44 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
   }
 
+  /// Revoke every other session (rotates the account's token key server-side)
+  /// and keep this device signed in with the fresh token it returns.
+  Future<void> _signOutEverywhere() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Sign out of all devices?'),
+        content: const Text(
+            'Every other device signed into this account is signed out '
+            'immediately. This device stays signed in.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Sign out others')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    final pb = ref.read(pocketBaseProvider);
+    try {
+      final res = await pb.send('/api/noteesek/logout-everywhere',
+          method: 'POST');
+      final token = (res is Map ? res['token'] : null) as String?;
+      if (token != null && token.isNotEmpty) {
+        // Adopt the fresh token so this device isn't logged out too.
+        pb.authStore.save(token, pb.authStore.record);
+      }
+      _snack('Signed out of all other devices');
+    } on ClientException catch (e) {
+      _snack(_humanizeError(e));
+    } catch (e) {
+      _snack('Failed: $e');
+    }
+  }
+
   Future<void> _signOut() async {
     final navigator = Navigator.of(context);
     ref.read(pocketBaseProvider).authStore.clear();
@@ -808,6 +846,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             const SizedBox(height: 32),
             const Divider(),
             const SizedBox(height: 8),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.devices_outlined),
+              title: const Text('Sign out of all devices'),
+              subtitle: const Text(
+                  'Invalidate every other login; this device stays signed in'),
+              onTap: _signOutEverywhere,
+            ),
             ListTile(
               contentPadding: EdgeInsets.zero,
               leading: Icon(Icons.logout, color: scheme.error),
