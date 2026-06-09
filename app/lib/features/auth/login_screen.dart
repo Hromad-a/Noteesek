@@ -6,10 +6,12 @@ import 'package:flutter/services.dart' show TextInput;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pocketbase/pocketbase.dart';
 
+import '../../config/app_config.dart';
 import '../../data/notes_repository.dart';
 import '../../providers.dart';
 import '../../sync/sync_controller.dart';
 import 'password_reset_screen.dart';
+import 'reconciliation_screen.dart';
 
 /// Connect to a self-hosted PocketBase server to enable sync (login or
 /// register). The server URL is editable and persisted. On success, existing
@@ -72,13 +74,34 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       // Credentials worked — let the OS/password manager offer to save them.
       TextInput.finishAutofillContext();
 
-      // Claim local notes for this account and kick off the first sync.
-      // (No-ops on web, where there are no local notes and no sync engine.)
       final userId = pb.authStore.record!.id;
       await ref.read(activeOwnerProvider.notifier).set(userId);
-      await ref.read(notesRepositoryProvider).claimLocalNotes(userId);
-      if (!kIsWeb) {
-        unawaited(ref.read(syncControllerProvider.notifier).syncNow());
+      final repo = ref.read(notesRepositoryProvider);
+
+      // If the device holds data that diverges from this account (offline notes
+      // or a different account's leftover data), let the user choose how to
+      // reconcile before the first sync. Otherwise just claim + sync as before.
+      if (!kIsWeb && await repo.hasForeignLocalData(userId)) {
+        if (!mounted) return;
+        final proceeded = await Navigator.of(context).push<bool>(
+          MaterialPageRoute(
+            builder: (_) => ReconciliationScreen(userId: userId),
+          ),
+        );
+        if (proceeded != true) {
+          // Cancelled → undo the sign-in; the user stays on this screen.
+          pb.authStore.clear();
+          await ref
+              .read(activeOwnerProvider.notifier)
+              .set(AppConfig.localOwner);
+          return;
+        }
+        // The reconciliation screen already ran the chosen strategy (incl. sync).
+      } else {
+        await repo.claimLocalNotes(userId);
+        if (!kIsWeb) {
+          unawaited(ref.read(syncControllerProvider.notifier).syncNow());
+        }
       }
 
       // Mobile: this screen was pushed → pop back. Web: it's the gate, so the

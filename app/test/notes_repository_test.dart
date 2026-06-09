@@ -91,6 +91,40 @@ void main() {
     expect(text.body, contains('2024-01-02'));
   });
 
+  test('hasForeignLocalData: ignores own data + a lone offline default', () async {
+    // Only this account's data → no foreign data.
+    await repo.ensureDefaultNotebook();
+    await repo.createNote(type: 'text');
+    expect(await repo.hasForeignLocalData('owner1'), isFalse);
+
+    // A lone offline default notebook (different owner) doesn't count…
+    final repoLocal = LocalNotesRepository(db, 'local');
+    await repoLocal.ensureDefaultNotebook();
+    expect(await repo.hasForeignLocalData('owner1'), isFalse);
+
+    // …but a foreign note does.
+    await repoLocal.createNote(type: 'text');
+    expect(await repo.hasForeignLocalData('owner1'), isTrue);
+  });
+
+  test('reownAll re-owns every local row (any owner) to the user', () async {
+    final repoLocal = LocalNotesRepository(db, 'local');
+    await repoLocal.createNote(type: 'text'); // owner='local'
+    await repoLocal.createNotebook('Offline');
+    final repoOther = LocalNotesRepository(db, 'accountX');
+    await repoOther.createNote(type: 'text'); // owner='accountX'
+
+    expect(await repo.hasForeignLocalData('owner1'), isTrue);
+    await repo.reownAll('owner1');
+    expect(await repo.hasForeignLocalData('owner1'), isFalse);
+
+    final notes = await db.select(db.notes).get();
+    expect(notes, isNotEmpty);
+    expect(notes.every((n) => n.owner == 'owner1' && n.dirty), isTrue);
+    final nbs = await db.select(db.notebooks).get();
+    expect(nbs.every((n) => n.owner == 'owner1' && n.dirty), isTrue);
+  });
+
   test('reorderItems reassigns positions to the given order', () async {
     final id = await repo.createNote(type: 'checklist');
     final a = await repo.addItem(id, content: 'a');

@@ -8,6 +8,7 @@ import 'package:pocketbase/pocketbase.dart';
 import 'package:noteesek/config/app_config.dart';
 import 'package:noteesek/data/local/database.dart';
 import 'package:noteesek/data/local_notes_repository.dart';
+import 'package:noteesek/sync/reconciliation_service.dart';
 import 'package:noteesek/sync/sync_engine.dart';
 
 const baseUrl = 'http://localhost:8090';
@@ -187,6 +188,47 @@ void main() {
         all.where((n) => n.owner == userId && n.title == 'account A secret'),
         isNotEmpty);
 
+    await db.close();
+  });
+
+  test('ReconciliationService.merge unions offline-local with server data',
+      () async {
+    // Server: a notebook + note on the account.
+    final dbS = AppDatabase(NativeDatabase.memory());
+    final repoS = LocalNotesRepository(dbS, userId);
+    final engineS = SyncEngine(dbS, pb);
+    await repoS.ensureDefaultNotebook();
+    await repoS.createNotebook('SvcServerNb');
+    final sNote = await repoS.createNote(type: 'text');
+    await repoS.updateNoteFields(sNote, title: 'svc from server');
+    await engineS.syncOnce();
+
+    // Device used offline: foreign ('local') notebook + note.
+    final db = AppDatabase(NativeDatabase.memory());
+    final repoLocal = LocalNotesRepository(db, AppConfig.localOwner);
+    await repoLocal.ensureDefaultNotebook();
+    await repoLocal.createNotebook('SvcLocalNb');
+    final lNote = await repoLocal.createNote(type: 'text');
+    await repoLocal.updateNoteFields(lNote, title: 'svc from phone');
+
+    // Sign in as the account → inspect + merge.
+    final repoB = LocalNotesRepository(db, userId);
+    final engineB = SyncEngine(db, pb);
+    final service = ReconciliationService(db, repoB, pb, engineB);
+
+    final summary = await service.inspect(userId);
+    expect(summary.foreignItems, greaterThan(0),
+        reason: 'offline notebook + note are foreign to the account');
+    expect(summary.serverNotes, greaterThanOrEqualTo(1));
+
+    await service.merge(userId: userId);
+
+    final nbNames = (await repoB.watchNotebooks().first).map((n) => n.name);
+    expect(nbNames, containsAll(['SvcServerNb', 'SvcLocalNb']));
+    final titles = (await repoB.watchActive().first).map((n) => n.title);
+    expect(titles, containsAll(['svc from server', 'svc from phone']));
+
+    await dbS.close();
     await db.close();
   });
 

@@ -1,0 +1,304 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../data/notes_repository.dart';
+import '../../providers.dart';
+import '../../sync/reconciliation_service.dart';
+import '../../sync/sync_controller.dart';
+
+/// Shown on mobile sign-in when the device holds data that diverges from the
+/// account's server data (see docs/sign-in-reconciliation.md). Lets the user
+/// choose how to reconcile. Pops `true` once a strategy has run, `false` if the
+/// user cancels (the caller then undoes the sign-in).
+///
+/// Phase 1: **Merge** is functional; the destructive options are shown but
+/// disabled until their phases land.
+class ReconciliationScreen extends ConsumerStatefulWidget {
+  const ReconciliationScreen({super.key, required this.userId});
+
+  final String userId;
+
+  @override
+  ConsumerState<ReconciliationScreen> createState() =>
+      _ReconciliationScreenState();
+}
+
+enum _Strategy { merge, keepLocal, keepServer }
+
+class _ReconciliationScreenState extends ConsumerState<ReconciliationScreen> {
+  ReconciliationService get _service => ReconciliationService(
+        ref.read(databaseProvider),
+        ref.read(notesRepositoryProvider),
+        ref.read(pocketBaseProvider),
+        ref.read(syncEngineProvider),
+      );
+
+  ReconcileSummary? _summary;
+  Object? _inspectError;
+  _Strategy _selected = _Strategy.merge;
+  bool _running = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _inspect();
+  }
+
+  Future<void> _inspect() async {
+    setState(() {
+      _summary = null;
+      _inspectError = null;
+    });
+    try {
+      final s = await _service.inspect(widget.userId);
+      if (mounted) setState(() => _summary = s);
+    } catch (e) {
+      if (mounted) setState(() => _inspectError = e);
+    }
+  }
+
+  Future<void> _run() async {
+    setState(() => _running = true);
+    try {
+      switch (_selected) {
+        case _Strategy.merge:
+          await _service.merge(userId: widget.userId);
+        case _Strategy.keepLocal:
+        case _Strategy.keepServer:
+          return; // disabled in Phase 1
+      }
+      if (mounted) Navigator.of(context).pop(true);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _running = false);
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text('Reconcile failed: $e')));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: false, // a choice (or Cancel) must be made; no silent back-out
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Reconcile your data'),
+          automaticallyImplyLeading: false,
+        ),
+        body: _inspectError != null
+            ? _ErrorBody(error: _inspectError!, onRetry: _inspect)
+            : _summary == null
+                ? const Center(child: CircularProgressIndicator())
+                : _buildChooser(context, _summary!),
+      ),
+    );
+  }
+
+  Widget _buildChooser(BuildContext context, ReconcileSummary s) {
+    final theme = Theme.of(context);
+    return Stack(
+      children: [
+        ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            Text(
+              'You have data on this device to reconcile with this account.',
+              style: theme.textTheme.bodyLarge,
+            ),
+            const SizedBox(height: 16),
+            _SummaryCard(summary: s),
+            const SizedBox(height: 24),
+            _OptionTile(
+              title: 'Merge — keep everything',
+              subtitle:
+                  "Combine this device's data with the account's. Nothing is "
+                  'deleted.',
+              icon: Icons.merge_outlined,
+              recommended: true,
+              selected: _selected == _Strategy.merge,
+              onTap: () => setState(() => _selected = _Strategy.merge),
+            ),
+            _OptionTile(
+              title: 'Keep this device only',
+              subtitle: 'Make the server match this device.',
+              icon: Icons.smartphone_outlined,
+              disabledNote: 'Coming soon',
+            ),
+            _OptionTile(
+              title: 'Keep the server only',
+              subtitle: "Replace this device's data with the server's.",
+              icon: Icons.cloud_outlined,
+              disabledNote: 'Coming soon',
+            ),
+            const SizedBox(height: 24),
+            FilledButton(
+              onPressed: _running ? null : _run,
+              child: const Text('Continue'),
+            ),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed:
+                  _running ? null : () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+          ],
+        ),
+        if (_running)
+          const ColoredBox(
+            color: Color(0x88000000),
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 12),
+                  Text('Merging…', style: TextStyle(color: Colors.white)),
+                ],
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _SummaryCard extends StatelessWidget {
+  const _SummaryCard({required this.summary});
+
+  final ReconcileSummary summary;
+
+  @override
+  Widget build(BuildContext context) {
+    String line(int notebooks, int notes) =>
+        '$notebooks notebook${notebooks == 1 ? '' : 's'} · '
+        '$notes note${notes == 1 ? '' : 's'}';
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.smartphone_outlined),
+              title: const Text('This device'),
+              subtitle: Text(
+                line(summary.localNotebooks, summary.localNotes) +
+                    (summary.foreignItems > 0
+                        ? '  ·  ${summary.foreignItems} from another account or offline'
+                        : ''),
+              ),
+            ),
+            const Divider(height: 1),
+            ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.cloud_outlined),
+              title: const Text('This account (server)'),
+              subtitle:
+                  Text(line(summary.serverNotebooks, summary.serverNotes)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _OptionTile extends StatelessWidget {
+  const _OptionTile({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    this.recommended = false,
+    this.selected = false,
+    this.onTap,
+    this.disabledNote,
+  });
+
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final bool recommended;
+  final bool selected;
+  final VoidCallback? onTap;
+  final String? disabledNote;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final disabled = disabledNote != null;
+    return Opacity(
+      opacity: disabled ? 0.5 : 1,
+      child: Card(
+        margin: const EdgeInsets.symmetric(vertical: 4),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(
+            color: selected
+                ? theme.colorScheme.primary
+                : theme.colorScheme.outlineVariant,
+            width: selected ? 2 : 1,
+          ),
+        ),
+        child: ListTile(
+          leading: Icon(icon),
+          title: Row(
+            children: [
+              Flexible(child: Text(title)),
+              if (recommended) ...[
+                const SizedBox(width: 8),
+                Chip(
+                  label: const Text('Recommended'),
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  labelStyle: theme.textTheme.labelSmall,
+                ),
+              ],
+            ],
+          ),
+          subtitle: Text(disabled ? '$subtitle  ($disabledNote)' : subtitle),
+          trailing: disabled
+              ? null
+              : (selected
+                  ? Icon(Icons.check_circle, color: theme.colorScheme.primary)
+                  : const Icon(Icons.radio_button_unchecked)),
+          onTap: onTap,
+        ),
+      ),
+    );
+  }
+}
+
+class _ErrorBody extends StatelessWidget {
+  const _ErrorBody({required this.error, required this.onRetry});
+
+  final Object error;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.cloud_off_outlined, size: 48),
+            const SizedBox(height: 12),
+            Text("Couldn't read the account data.\n$error",
+                textAlign: TextAlign.center),
+            const SizedBox(height: 16),
+            FilledButton(onPressed: onRetry, child: const Text('Retry')),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

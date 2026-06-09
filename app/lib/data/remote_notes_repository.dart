@@ -388,6 +388,12 @@ class RemoteNotesRepository implements NotesRepository {
   @override
   Future<void> claimLocalNotes(String userId) async {/* no local notes on web */}
 
+  @override
+  Future<void> reownAll(String userId) async {/* no local store on web */}
+
+  @override
+  Future<bool> hasForeignLocalData(String userId) async => false;
+
   // ---------------- Labels ----------------
 
   @override

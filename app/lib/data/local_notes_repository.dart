@@ -348,6 +348,48 @@ class LocalNotesRepository implements NotesRepository {
     ));
   }
 
+  @override
+  Future<void> reownAll(String userId) async {
+    await _db.transaction(() async {
+      final now = pbNow();
+      await (_db.update(_db.notes)..where((t) => t.owner.isNotValue(userId)))
+          .write(NotesCompanion(
+              owner: Value(userId),
+              updated: Value(now),
+              dirty: const Value(true)));
+      await (_db.update(_db.notebooks)
+            ..where((t) => t.owner.isNotValue(userId)))
+          .write(NotebooksCompanion(
+              owner: Value(userId),
+              updated: Value(now),
+              dirty: const Value(true)));
+      await (_db.update(_db.labels)..where((t) => t.owner.isNotValue(userId)))
+          .write(LabelsCompanion(
+              owner: Value(userId),
+              updated: Value(now),
+              dirty: const Value(true)));
+    });
+  }
+
+  @override
+  Future<bool> hasForeignLocalData(String userId) async {
+    final note = await (_db.select(_db.notes)
+          ..where((t) => t.owner.isNotValue(userId) & t.deleted.equals(false))
+          ..limit(1))
+        .get();
+    if (note.isNotEmpty) return true;
+    // A lone offline default notebook doesn't count — only foreign non-default
+    // notebooks (real, user-created collections).
+    final nb = await (_db.select(_db.notebooks)
+          ..where((t) =>
+              t.owner.isNotValue(userId) &
+              t.deleted.equals(false) &
+              t.isDefault.equals(false))
+          ..limit(1))
+        .get();
+    return nb.isNotEmpty;
+  }
+
   // ---- Labels ----
 
   @override

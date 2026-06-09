@@ -122,6 +122,18 @@ abstract interface class NotesRepository {
   /// No-op for the remote (web) implementation.
   Future<void> claimLocalNotes(String userId);
 
+  /// Re-own EVERY local note/notebook/label (any owner — the `local` sentinel
+  /// *or* a different account) to [userId], marking them dirty so the next sync
+  /// pushes them. Used by sign-in reconciliation (Merge / Keep-local). No-op on
+  /// web.
+  Future<void> reownAll(String userId);
+
+  /// True if the local DB holds meaningful data NOT owned by [userId] — a
+  /// foreign note, or a foreign non-default notebook (a lone offline default
+  /// doesn't count). Drives whether the reconciliation prompt is shown. Always
+  /// false on web (no local DB).
+  Future<bool> hasForeignLocalData(String userId);
+
   // Labels
   Stream<List<LabelRow>> watchLabels();
   Future<String> createLabel(String name);
