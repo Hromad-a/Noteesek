@@ -90,7 +90,7 @@ class _ReconciliationScreenState extends ConsumerState<ReconciliationScreen> {
         case _Strategy.keepServer:
           await _service.keepServerReplace();
         case _Strategy.keepLocal:
-          return; // disabled until Phase 3
+          await _service.keepLocalMirror(userId: widget.userId);
       }
       if (mounted) Navigator.of(context).pop(true);
     } catch (e) {
@@ -146,9 +146,13 @@ class _ReconciliationScreenState extends ConsumerState<ReconciliationScreen> {
             ),
             _OptionTile(
               title: 'Keep this device only',
-              subtitle: 'Make the server match this device.',
+              subtitle: 'Make the server match this device. '
+                  '${s.serverOnly} item${s.serverOnly == 1 ? '' : 's'} on the '
+                  'server ${s.serverOnly == 1 ? "isn't" : "aren't"} here and '
+                  'will be deleted.',
               icon: Icons.smartphone_outlined,
-              disabledNote: 'Coming soon',
+              selected: _selected == _Strategy.keepLocal,
+              onTap: () => _select(_Strategy.keepLocal),
             ),
             _OptionTile(
               title: 'Keep the server only',
@@ -184,9 +188,11 @@ class _ReconciliationScreenState extends ConsumerState<ReconciliationScreen> {
                   const CircularProgressIndicator(),
                   const SizedBox(height: 12),
                   Text(
-                    _selected == _Strategy.keepServer
-                        ? 'Replacing…'
-                        : 'Merging…',
+                    switch (_selected) {
+                      _Strategy.keepServer => 'Replacing…',
+                      _Strategy.keepLocal => 'Updating the server…',
+                      _Strategy.merge => 'Merging…',
+                    },
                     style: const TextStyle(color: Colors.white),
                   ),
                 ],
@@ -289,7 +295,6 @@ class _OptionTile extends StatelessWidget {
     this.recommended = false,
     this.selected = false,
     this.onTap,
-    this.disabledNote,
   });
 
   final String title;
@@ -298,49 +303,42 @@ class _OptionTile extends StatelessWidget {
   final bool recommended;
   final bool selected;
   final VoidCallback? onTap;
-  final String? disabledNote;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final disabled = disabledNote != null;
-    return Opacity(
-      opacity: disabled ? 0.5 : 1,
-      child: Card(
-        margin: const EdgeInsets.symmetric(vertical: 4),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: BorderSide(
-            color: selected
-                ? theme.colorScheme.primary
-                : theme.colorScheme.outlineVariant,
-            width: selected ? 2 : 1,
-          ),
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(
+          color: selected
+              ? theme.colorScheme.primary
+              : theme.colorScheme.outlineVariant,
+          width: selected ? 2 : 1,
         ),
-        child: ListTile(
-          leading: Icon(icon),
-          title: Row(
-            children: [
-              Flexible(child: Text(title)),
-              if (recommended) ...[
-                const SizedBox(width: 8),
-                Chip(
-                  label: const Text('Recommended'),
-                  visualDensity: VisualDensity.compact,
-                  padding: EdgeInsets.zero,
-                  labelStyle: theme.textTheme.labelSmall,
-                ),
-              ],
+      ),
+      child: ListTile(
+        leading: Icon(icon),
+        title: Row(
+          children: [
+            Flexible(child: Text(title)),
+            if (recommended) ...[
+              const SizedBox(width: 8),
+              Chip(
+                label: const Text('Recommended'),
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                labelStyle: theme.textTheme.labelSmall,
+              ),
             ],
-          ),
-          subtitle: Text(disabled ? '$subtitle  ($disabledNote)' : subtitle),
-          trailing: disabled
-              ? null
-              : (selected
-                  ? Icon(Icons.check_circle, color: theme.colorScheme.primary)
-                  : const Icon(Icons.radio_button_unchecked)),
-          onTap: onTap,
+          ],
         ),
+        subtitle: Text(subtitle),
+        trailing: selected
+            ? Icon(Icons.check_circle, color: theme.colorScheme.primary)
+            : const Icon(Icons.radio_button_unchecked),
+        onTap: onTap,
       ),
     );
   }

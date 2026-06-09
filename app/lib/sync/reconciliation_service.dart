@@ -97,6 +97,49 @@ class ReconciliationService {
     await _engine.syncOnce();
   }
 
+  /// Keep local only: make the server exactly match this device. Re-own + push
+  /// local up (push-only so server data isn't pulled back), then soft-delete the
+  /// server records that aren't local (the guarded choice), then settle.
+  Future<void> keepLocalMirror({required String userId}) async {
+    await _repo.reownAll(userId);
+    // Snapshot what's on the server but not local, BEFORE pushing (the push adds
+    // local ids to the server, which must not be deleted).
+    final serverOnly = await _serverOnlyByCollection();
+    await _engine.syncOnce(pushOnly: true);
+    for (final entry in serverOnly.entries) {
+      for (final id in entry.value) {
+        try {
+          await _pb.collection(entry.key).update(id, body: {'deleted': true});
+        } on ClientException catch (e) {
+          if (e.statusCode != 404) rethrow; // already gone → fine
+        }
+      }
+    }
+    await _engine.syncOnce(); // pull the tombstones + our pushes, settle
+    await _repo.ensureDefaultNotebook();
+    await _engine.syncOnce();
+  }
+
+  /// Per collection, the ids of live server records not present locally — what
+  /// the mirror deletes.
+  Future<Map<String, Set<String>>> _serverOnlyByCollection() async {
+    final tables = <String, (TableInfo, GeneratedColumn<bool>)>{
+      'notes': (_db.notes, _db.notes.deleted),
+      'notebooks': (_db.notebooks, _db.notebooks.deleted),
+      'labels': (_db.labels, _db.labels.deleted),
+      'checklist_items': (_db.checklistItems, _db.checklistItems.deleted),
+      'attachments': (_db.attachments, _db.attachments.deleted),
+    };
+    final result = <String, Set<String>>{};
+    for (final entry in tables.entries) {
+      final (table, deletedCol) = entry.value;
+      final local = await _localIds(table, deletedCol);
+      final server = await _serverIds(entry.key);
+      result[entry.key] = server.difference(local);
+    }
+    return result;
+  }
+
   // ---- helpers ----
 
   /// Ids of non-deleted rows in [table] (by its [deletedCol]).

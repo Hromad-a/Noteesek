@@ -13,7 +13,7 @@ class _OfflineEngine extends SyncEngine {
   _OfflineEngine(super.db, super.pb);
 
   @override
-  Future<bool> syncOnce() async =>
+  Future<bool> syncOnce({bool pushOnly = false}) async =>
       throw ClientException(statusCode: 0, url: Uri.parse('http://down'));
 }
 

@@ -36,26 +36,32 @@ class SyncEngine {
   /// can't strand the others (notably: a labels-pull failure must not block the
   /// notebooks/notes pull). A connectivity error aborts the cycle and is
   /// rethrown so the caller can show the "server not responding" state.
-  Future<bool> syncOnce() async {
+  ///
+  /// [pushOnly] runs just the push half (no pull / byte-download). Used by the
+  /// "Keep local only" mirror so the server's data isn't re-acquired locally
+  /// before it's deleted.
+  Future<bool> syncOnce({bool pushOnly = false}) async {
     if (_running || !_pb.authStore.isValid) return false;
     _running = true;
     try {
       // Push labels and notebooks first so a note's `labels`/`notebook`
       // relations resolve, then parents before children; pull in the same order.
-      const steps = <(String, String)>[
+      final steps = <(String, String)>[
         ('push', _labels),
         ('push', _notebooks),
         ('push', _notes),
         ('push', _items),
         ('push', _attachments),
-        ('pull', _labels),
-        ('pull', _notebooks),
-        ('pull', _notes),
-        ('pull', _items),
-        ('pull', _attachments),
-        // Retry any attachment whose bytes haven't downloaded yet (independent
-        // of the pull cursor).
-        ('bytes', _attachments),
+        if (!pushOnly) ...[
+          ('pull', _labels),
+          ('pull', _notebooks),
+          ('pull', _notes),
+          ('pull', _items),
+          ('pull', _attachments),
+          // Retry any attachment whose bytes haven't downloaded yet (independent
+          // of the pull cursor).
+          ('bytes', _attachments),
+        ],
       ];
       for (final (phase, collection) in steps) {
         try {
