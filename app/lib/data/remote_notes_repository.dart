@@ -394,6 +394,9 @@ class RemoteNotesRepository implements NotesRepository {
   @override
   Future<bool> hasForeignLocalData(String userId) async => false;
 
+  @override
+  Future<void> combineNotebooksByName() async {/* reconciliation is mobile-only */}
+
   // ---------------- Labels ----------------
 
   @override

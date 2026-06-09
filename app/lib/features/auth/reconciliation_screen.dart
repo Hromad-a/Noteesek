@@ -36,6 +36,7 @@ class _ReconciliationScreenState extends ConsumerState<ReconciliationScreen> {
   ReconcileSummary? _summary;
   Object? _inspectError;
   _Strategy _selected = _Strategy.merge;
+  bool _combineSameName = false;
   bool _running = false;
 
   /// Word the user must type to enable a destructive choice.
@@ -86,7 +87,8 @@ class _ReconciliationScreenState extends ConsumerState<ReconciliationScreen> {
     try {
       switch (_selected) {
         case _Strategy.merge:
-          await _service.merge(userId: widget.userId);
+          await _service.merge(
+              userId: widget.userId, combineSameName: _combineSameName);
         case _Strategy.keepServer:
           await _service.keepServerReplace();
         case _Strategy.keepLocal:
@@ -144,6 +146,22 @@ class _ReconciliationScreenState extends ConsumerState<ReconciliationScreen> {
               selected: _selected == _Strategy.merge,
               onTap: () => _select(_Strategy.merge),
             ),
+            if (_selected == _Strategy.merge)
+              Padding(
+                padding: const EdgeInsets.only(left: 16, right: 8, bottom: 4),
+                child: CheckboxListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  value: _combineSameName,
+                  onChanged: _running
+                      ? null
+                      : (v) => setState(() => _combineSameName = v ?? false),
+                  title: const Text('Combine notebooks with the same name'),
+                  subtitle: const Text(
+                      'Otherwise same-named notebooks are kept separate.'),
+                ),
+              ),
             _OptionTile(
               title: 'Keep this device only',
               subtitle: 'Make the server match this device. '

@@ -335,6 +335,57 @@ void main() {
     await db.close();
   });
 
+  test('merge with combineSameName combines a notebook present on both sides',
+      () async {
+    final pbC = PocketBase(baseUrl);
+    final emailC = 'combine_${DateTime.now().microsecondsSinceEpoch}@example.com';
+    await pbC.collection('users').create(body: {
+      'email': emailC,
+      'password': 'password123',
+      'passwordConfirm': 'password123',
+    });
+    await pbC.collection('users').authWithPassword(emailC, 'password123');
+    final userC = pbC.authStore.record!.id;
+
+    // Server: a 'Shared' notebook with a note.
+    final dbS = AppDatabase(NativeDatabase.memory());
+    final repoS = LocalNotesRepository(dbS, userC);
+    final engineS = SyncEngine(dbS, pbC);
+    await repoS.ensureDefaultNotebook();
+    final sNb = await repoS.createNotebook('Shared');
+    final sNote = await repoS.createNote(type: 'text', notebook: sNb);
+    await repoS.updateNoteFields(sNote, title: 'shared server note');
+    await engineS.syncOnce();
+
+    // Device: its own 'Shared' notebook (different id) with a note.
+    final db = AppDatabase(NativeDatabase.memory());
+    final repoLocal = LocalNotesRepository(db, AppConfig.localOwner);
+    await repoLocal.ensureDefaultNotebook();
+    final lNb = await repoLocal.createNotebook('Shared');
+    final lNote = await repoLocal.createNote(type: 'text', notebook: lNb);
+    await repoLocal.updateNoteFields(lNote, title: 'shared device note');
+
+    final repoB = LocalNotesRepository(db, userC);
+    final engineB = SyncEngine(db, pbC);
+    final service = ReconciliationService(db, repoB, pbC, engineB);
+
+    await service.merge(userId: userC, combineSameName: true);
+
+    final shared =
+        (await repoB.watchNotebooks().first).where((n) => n.name == 'Shared');
+    expect(shared.length, 1, reason: 'the two Shared notebooks combine into one');
+    final keeperId = shared.single.id;
+    // Both notes survive and live in the single combined notebook.
+    final notes = await repoB.watchActive().first;
+    final sharedNotes = notes.where((n) =>
+        n.title == 'shared server note' || n.title == 'shared device note');
+    expect(sharedNotes.length, 2);
+    expect(sharedNotes.every((n) => n.notebook == keeperId), isTrue);
+
+    await dbS.close();
+    await db.close();
+  });
+
   test('server stamps owner on create regardless of client value (owner.pb.js)',
       () async {
     // A blank/wrong client owner must NOT fail the create: the server forces

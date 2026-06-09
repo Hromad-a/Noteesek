@@ -372,6 +372,45 @@ class LocalNotesRepository implements NotesRepository {
   }
 
   @override
+  Future<void> combineNotebooksByName() async {
+    await _db.transaction(() async {
+      final nbs = await (_db.select(_db.notebooks)
+            ..where((t) =>
+                t.owner.equals(_ownerId) & t.deleted.equals(false))
+            ..orderBy([
+              (t) => OrderingTerm(expression: t.created),
+              (t) => OrderingTerm(expression: t.id),
+            ]))
+          .get();
+
+      final byName = <String, List<NotebookRow>>{};
+      for (final nb in nbs) {
+        byName.putIfAbsent(nb.name.trim().toLowerCase(), () => []).add(nb);
+      }
+
+      final now = pbNow();
+      for (final group in byName.values) {
+        if (group.length < 2) continue;
+        // Keep a default if the group has one, else the earliest-created.
+        final keeper =
+            group.firstWhere((n) => n.isDefault, orElse: () => group.first);
+        for (final dup in group.where((n) => n.id != keeper.id)) {
+          await (_db.update(_db.notes)..where((t) => t.notebook.equals(dup.id)))
+              .write(NotesCompanion(
+                  notebook: Value(keeper.id),
+                  updated: Value(now),
+                  dirty: const Value(true)));
+          await (_db.update(_db.notebooks)..where((t) => t.id.equals(dup.id)))
+              .write(NotebooksCompanion(
+                  deleted: const Value(true),
+                  updated: Value(now),
+                  dirty: const Value(true)));
+        }
+      }
+    });
+  }
+
+  @override
   Future<bool> hasForeignLocalData(String userId) async {
     final note = await (_db.select(_db.notes)
           ..where((t) => t.owner.isNotValue(userId) & t.deleted.equals(false))

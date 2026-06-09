@@ -163,6 +163,12 @@ abstract interface class NotesRepository {
   /// Move a note into [notebookId].
   Future<void> setNoteNotebook(String noteId, String notebookId);
 
+  /// Combine notebooks that share a name (trimmed, case-insensitive) into one:
+  /// keep one per name (a default, else earliest-created), reassign the others'
+  /// notes to it, and soft-delete the duplicates. Used by the Merge
+  /// reconciliation when "combine same-name notebooks" is on. No-op on web.
+  Future<void> combineNotebooksByName();
+
   // Checklist items
   Stream<List<ChecklistItemRow>> watchItems(String noteId);
   Future<String> addItem(String noteId, {String content});

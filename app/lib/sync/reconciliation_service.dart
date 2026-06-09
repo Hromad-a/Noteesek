@@ -75,14 +75,18 @@ class ReconciliationService {
   }
 
   /// Merge: re-own all local data into [userId], then sync (push local up, pull
-  /// server down) for a union on both sides. [combineSameName] (Phase 4) is
-  /// accepted but not yet applied.
+  /// server down) for a union on both sides. When [combineSameName] is set,
+  /// notebooks that share a name are combined into one after the union.
   Future<void> merge({
     required String userId,
     bool combineSameName = false,
   }) async {
     await _repo.reownAll(userId);
-    await _engine.syncOnce();
+    await _engine.syncOnce(); // union: both sides' notebooks/notes are now local
+    if (combineSameName) {
+      await _repo.combineNotebooksByName();
+      await _engine.syncOnce();
+    }
     // Reconcile duplicate default notebooks (one from each side), then settle.
     await _repo.ensureDefaultNotebook();
     await _engine.syncOnce();

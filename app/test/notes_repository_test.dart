@@ -125,6 +125,27 @@ void main() {
     expect(nbs.every((n) => n.owner == 'owner1' && n.dirty), isTrue);
   });
 
+  test('combineNotebooksByName merges same-name notebooks + moves notes',
+      () async {
+    final a = await repo.createNotebook('Work'); // earliest → keeper
+    final b = await repo.createNotebook('Work');
+    final keep = await repo.createNotebook('Personal'); // unique → untouched
+    final na = await repo.createNote(type: 'text', notebook: a);
+    final nb = await repo.createNote(type: 'text', notebook: b);
+
+    await repo.combineNotebooksByName();
+
+    final nbs = await repo.watchNotebooks().first;
+    expect(nbs.where((n) => n.name == 'Work').map((n) => n.id), [a],
+        reason: 'the two Work notebooks collapse to the earliest');
+    expect(nbs.where((n) => n.name == 'Personal').map((n) => n.id), [keep]);
+
+    final notes = await db.select(db.notes).get();
+    expect(notes.firstWhere((n) => n.id == na).notebook, a);
+    expect(notes.firstWhere((n) => n.id == nb).notebook, a,
+        reason: "the duplicate's note is moved to the keeper");
+  });
+
   test('reorderItems reassigns positions to the given order', () async {
     final id = await repo.createNote(type: 'checklist');
     final a = await repo.addItem(id, content: 'a');
