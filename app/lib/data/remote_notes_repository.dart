@@ -429,6 +429,14 @@ class RemoteNotesRepository implements NotesRepository {
       });
 
   @override
+  Future<void> setLabelColor(String id, String color) => _guardVoid(() async {
+        final r =
+            await _pb.collection('labels').update(id, body: {'color': color});
+        _labels[id] = _labelFrom(r);
+        _events.add(null);
+      });
+
+  @override
   Future<void> deleteLabel(String id) => _guardVoid(() async {
         final r =
             await _pb.collection('labels').update(id, body: {'deleted': true});
@@ -702,6 +710,7 @@ class RemoteNotesRepository implements NotesRepository {
         id: r.id,
         owner: r.getStringValue('owner'),
         name: r.getStringValue('name'),
+        color: r.getStringValue('color'),
         deleted: r.getBoolValue('deleted'),
         created: r.getStringValue('created'),
         updated: r.getStringValue('updated'),

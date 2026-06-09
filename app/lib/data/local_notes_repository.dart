@@ -468,6 +468,17 @@ class LocalNotesRepository implements NotesRepository {
   }
 
   @override
+  Future<void> setLabelColor(String id, String color) async {
+    await (_db.update(_db.labels)..where((t) => t.id.equals(id))).write(
+      LabelsCompanion(
+        color: Value(color),
+        updated: Value(pbNow()),
+        dirty: const Value(true),
+      ),
+    );
+  }
+
+  @override
   Future<void> deleteLabel(String id) async {
     await _db.transaction(() async {
       await (_db.update(_db.labels)..where((t) => t.id.equals(id))).write(

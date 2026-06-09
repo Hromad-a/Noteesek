@@ -125,6 +125,14 @@ void main() {
     expect(nbs.every((n) => n.owner == 'owner1' && n.dirty), isTrue);
   });
 
+  test('setLabelColor persists the color and dirties the label', () async {
+    final id = await repo.createLabel('Home');
+    await repo.setLabelColor(id, 'mint');
+    final label = (await repo.watchLabels().first).single;
+    expect(label.color, 'mint');
+    expect(label.dirty, isTrue);
+  });
+
   test('combineNotebooksByName merges same-name notebooks + moves notes',
       () async {
     final a = await repo.createNotebook('Work'); // earliest → keeper

@@ -110,6 +110,9 @@ class Labels extends Table {
   TextColumn get owner => text()();
   TextColumn get name => text().withDefault(const Constant(''))();
 
+  /// Color key for the label's chip (see note_colors.dart). Empty = no color.
+  TextColumn get color => text().withDefault(const Constant(''))();
+
   /// Soft delete tombstone so removals propagate before being purged.
   BoolColumn get deleted => boolean().withDefault(const Constant(false))();
   TextColumn get created => text().nullable()();
@@ -165,7 +168,7 @@ class AppDatabase extends _$AppDatabase {
             ));
 
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 7;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -187,6 +190,9 @@ class AppDatabase extends _$AppDatabase {
           if (from < 6) {
             await m.addColumn(notes, notes.notebook);
             await m.createTable(notebooks);
+          }
+          if (from < 7) {
+            await m.addColumn(labels, labels.color);
           }
         },
       );

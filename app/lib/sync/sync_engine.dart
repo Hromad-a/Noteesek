@@ -143,6 +143,7 @@ class SyncEngine {
       final body = {
         'owner': l.owner,
         'name': l.name,
+        'color': l.color,
         'deleted': l.deleted,
       };
       final saved = await _upsert(_labels, l.id, body);
@@ -305,6 +306,7 @@ class SyncEngine {
             id: Value(rec.id),
             owner: Value(rec.getStringValue('owner')),
             name: Value(rec.getStringValue('name')),
+            color: Value(rec.getStringValue('color')),
             deleted: Value(rec.getBoolValue('deleted')),
             created: Value(rec.getStringValue('created')),
             updated: Value(rec.getStringValue('updated')),

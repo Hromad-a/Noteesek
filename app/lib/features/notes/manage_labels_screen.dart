@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/local/database.dart';
 import '../../data/notes_repository.dart';
+import 'note_colors.dart';
 
 /// Manage labels: create, rename, and delete. Deleting a label also removes it
 /// from every note that carried it.
@@ -57,6 +58,55 @@ class _ManageLabelsScreenState extends ConsumerState<ManageLabelsScreen> {
     if (name != null && name.isNotEmpty && name != label.name) {
       await ref.read(notesRepositoryProvider).renameLabel(label.id, name);
     }
+  }
+
+  Future<void> _pickColor(LabelRow label) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Label color',
+                  style: Theme.of(sheetContext).textTheme.titleMedium),
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 14,
+                runSpacing: 14,
+                children: [
+                  for (final c in kNoteColors)
+                    InkWell(
+                      borderRadius: BorderRadius.circular(20),
+                      onTap: () async {
+                        await ref
+                            .read(notesRepositoryProvider)
+                            .setLabelColor(label.id, c.key);
+                        if (sheetContext.mounted) {
+                          Navigator.of(sheetContext).pop();
+                        }
+                      },
+                      child: CircleAvatar(
+                        radius: 20,
+                        backgroundColor: noteSwatchFor(sheetContext, c.key),
+                        child: c.key.isEmpty
+                            ? const Icon(Icons.format_color_reset_outlined,
+                                size: 20)
+                            : (label.color == c.key
+                                ? const Icon(Icons.check, size: 20)
+                                : null),
+                      ),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _delete(LabelRow label) async {
@@ -125,7 +175,20 @@ class _ManageLabelsScreenState extends ConsumerState<ManageLabelsScreen> {
                   children: [
                     for (final l in labels)
                       ListTile(
-                        leading: const Icon(Icons.label_outline),
+                        leading: InkWell(
+                          borderRadius: BorderRadius.circular(20),
+                          onTap: () => _pickColor(l),
+                          child: CircleAvatar(
+                            radius: 14,
+                            backgroundColor: noteSwatchFor(context, l.color),
+                            child: Icon(
+                              l.color.isEmpty
+                                  ? Icons.label_outline
+                                  : Icons.label,
+                              size: 16,
+                            ),
+                          ),
+                        ),
                         title: Text(l.name),
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,

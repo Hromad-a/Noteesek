@@ -906,7 +906,10 @@ class _LabelsSection extends ConsumerWidget {
         for (final l in labels)
           ListTile(
             dense: true,
-            leading: const Icon(Icons.label_outline),
+            leading: Icon(
+              l.color.isEmpty ? Icons.label_outline : Icons.label,
+              color: noteColorFor(context, l.color),
+            ),
             title: Text(l.name, maxLines: 1, overflow: TextOverflow.ellipsis),
             onTap: () => _push(
               context,
@@ -1056,6 +1059,10 @@ class _FilterSheet extends ConsumerWidget {
                 children: [
                   for (final l in labels)
                     FilterChip(
+                      avatar: l.color.isEmpty
+                          ? null
+                          : CircleAvatar(
+                              backgroundColor: noteSwatchFor(context, l.color)),
                       label: Text(l.name),
                       selected: filters.labelIds.contains(l.id),
                       onSelected: (_) => notifier.toggleLabel(l.id),

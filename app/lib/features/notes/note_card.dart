@@ -299,19 +299,20 @@ class _CardLabels extends ConsumerWidget {
     final assigned = labelIdsOf(note);
     if (assigned.isEmpty) return const SizedBox.shrink();
     final labels = ref.watch(labelsProvider).asData?.value ?? const [];
-    final names = {for (final l in labels) l.id: l.name};
+    final byId = {for (final l in labels) l.id: l};
     final visible =
-        assigned.where(names.containsKey).map((id) => names[id]!).toList();
+        assigned.where(byId.containsKey).map((id) => byId[id]!).toList();
     if (visible.isEmpty) return const SizedBox.shrink();
 
     final theme = Theme.of(context);
     final shown = visible.take(3).toList();
     final extra = visible.length - shown.length;
 
-    Widget chip(String text) => Container(
+    Widget chip(String text, String colorKey) => Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
           decoration: BoxDecoration(
-            color: theme.colorScheme.surfaceContainerHighest,
+            color: noteColorFor(context, colorKey) ??
+                theme.colorScheme.surfaceContainerHighest,
             borderRadius: BorderRadius.circular(8),
           ),
           child: Text(text,
@@ -326,8 +327,8 @@ class _CardLabels extends ConsumerWidget {
         spacing: 4,
         runSpacing: 4,
         children: [
-          for (final name in shown) chip(name),
-          if (extra > 0) chip('+$extra'),
+          for (final l in shown) chip(l.name, l.color),
+          if (extra > 0) chip('+$extra', ''),
         ],
       ),
     );

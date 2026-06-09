@@ -129,6 +129,27 @@ void main() {
     await dbB.close();
   });
 
+  test('label color syncs to a second device', () async {
+    final dbA = AppDatabase(NativeDatabase.memory());
+    final repoA = LocalNotesRepository(dbA, userId);
+    final engineA = SyncEngine(dbA, pb);
+    final lid = await repoA.createLabel('Colored');
+    await repoA.setLabelColor(lid, 'coral');
+    await engineA.syncOnce();
+
+    final dbB = AppDatabase(NativeDatabase.memory());
+    final repoB = LocalNotesRepository(dbB, userId);
+    final engineB = SyncEngine(dbB, pb);
+    await engineB.syncOnce();
+
+    final label =
+        (await repoB.watchLabels().first).firstWhere((l) => l.id == lid);
+    expect(label.color, 'coral');
+
+    await dbA.close();
+    await dbB.close();
+  });
+
   test('soft delete propagates to the other device', () async {
     final dbA = AppDatabase(NativeDatabase.memory());
     final repoA = LocalNotesRepository(dbA, userId);

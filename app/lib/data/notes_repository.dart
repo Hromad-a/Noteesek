@@ -139,6 +139,9 @@ abstract interface class NotesRepository {
   Future<String> createLabel(String name);
   Future<void> renameLabel(String id, String name);
 
+  /// Set a label's color key (see note_colors.dart; '' = no color).
+  Future<void> setLabelColor(String id, String color);
+
   /// Soft-delete a label and remove its id from every note that carries it.
   Future<void> deleteLabel(String id);
 
