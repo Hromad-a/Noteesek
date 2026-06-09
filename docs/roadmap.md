@@ -35,13 +35,13 @@ as items ship (move them to "Shipped" with the commit/tag).
 Build order (small → big, value-first): undo → per-label colors → app lock →
 JSON backup → markdown → quick capture → onboarding → sign-out-everywhere.
 
-### 0. Sign-in reconciliation — app, large — see [sign-in-reconciliation.md](sign-in-reconciliation.md)
+### 0. Sign-in reconciliation — ✅ DONE — see [sign-in-reconciliation.md](sign-in-reconciliation.md)
 On sign-in, when the device holds local data that diverges from the account's
 server data, prompt to **Merge** (union; optional combine-same-name notebooks),
 **Keep local only** (mirror local → server), or **Keep server only** (replace
 local). Reconciles data of any owner (re-owns offline/other-account data into the
 account); destructive choices show impact counts + require type-to-confirm.
-Mobile only. Full design + phasing in the linked doc.
+Mobile only. All 4 phases shipped.
 
 ### 1. Undo (delete-to-trash) — app, low
 Snackbar **Undo** after a note (single or bulk selection) is sent to Trash;

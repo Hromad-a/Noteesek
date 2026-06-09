@@ -1,7 +1,13 @@
 # Sign-in reconciliation (design)
 
-**Status:** planned. **Platform:** mobile only (web has no local DB — sign-in
-there is just auth). Captured 2026-06-09.
+**Status:** ✅ implemented (all 4 phases). **Platform:** mobile only (web has no
+local DB — sign-in there is just auth). Captured 2026-06-09.
+
+Code: `features/auth/reconciliation_screen.dart`,
+`sync/reconciliation_service.dart`, repo primitives `reownAll` /
+`hasForeignLocalData` / `combineNotebooksByName`, `SyncEngine.syncOnce(pushOnly:)`,
+wired in `login_screen.dart`. Tests: `test/sync_notebooks_repro_test.dart`
+(integration) + `test/notes_repository_test.dart` (unit).
 
 When a user signs into an account on a phone that already holds local data that
 diverges from that account's server data, prompt them to choose how to reconcile
@@ -170,9 +176,12 @@ Gate the whole feature on `!kIsWeb`.
 
 ## Phasing (this is the largest roadmap item)
 
-1. Detection + `ReconciliationScreen` shell + **Merge** path (re-own + union),
-   wired into login. Ship the common case first.
-2. **Keep server only** (replace) + guard.
-3. **Keep local only** (mirror) + guard — the most complex (server-side deletes).
-4. **Combine same-name notebooks** toggle.
-5. Integration + widget tests throughout.
+1. ✅ Detection + `ReconciliationScreen` shell + **Merge** path (re-own + union),
+   wired into login.
+2. ✅ **Keep server only** (replace) + impact count + type-to-confirm guard.
+3. ✅ **Keep local only** (mirror, push-only + server-side soft-deletes) + guard.
+4. ✅ **Combine same-name notebooks** toggle (default off).
+5. ✅ Integration tests for each strategy + unit tests for the primitives.
+
+Not done: a widget test for the guard (the type-to-confirm gating) — covered by
+manual/analyzer for now.
