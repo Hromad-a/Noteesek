@@ -16,7 +16,8 @@ migrate((app) => {
   app.save(collection);
 }, (app) => {
   const collection = app.findCollectionByNameOrId("notes");
-  const field = collection.fields.getByName("notebook");
-  if (field) collection.fields.remove(field);
+  if (collection.fields.getByName("notebook")) {
+    collection.fields.removeByName("notebook");
+  }
   app.save(collection);
 });

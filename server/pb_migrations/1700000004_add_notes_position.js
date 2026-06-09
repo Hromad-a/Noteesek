@@ -10,7 +10,8 @@ migrate((app) => {
   app.save(collection);
 }, (app) => {
   const collection = app.findCollectionByNameOrId("notes");
-  const field = collection.fields.getByName("position");
-  if (field) collection.fields.remove(field);
+  if (collection.fields.getByName("position")) {
+    collection.fields.removeByName("position");
+  }
   app.save(collection);
 });

@@ -11,7 +11,8 @@ migrate((app) => {
   app.save(collection);
 }, (app) => {
   const collection = app.findCollectionByNameOrId("labels");
-  const field = collection.fields.getByName("color");
-  if (field) collection.fields.remove(field);
+  if (collection.fields.getByName("color")) {
+    collection.fields.removeByName("color");
+  }
   app.save(collection);
 });
