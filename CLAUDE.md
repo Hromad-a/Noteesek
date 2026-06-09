@@ -112,7 +112,13 @@ share/export** (Markdown / plain text / PDF, from the editor overflow) ·
 **import** (Markdown export zip + loose `.md`, and Google Keep Takeout) ·
 **search filters** (notebook / labels / color / type / has-image) ·
 **light/dark/system theme** (Settings → Appearance) · **checklist** drag-reorder
-+ optional auto-sort-checked-to-bottom · empty notes auto-move to Trash on close.
++ optional auto-sort-checked-to-bottom · **undo** delete-to-trash · **per-label
+colors** · **app lock** (biometric + PIN, mobile) · **full JSON backup/restore**
+(mobile, lossless) · optional **Markdown** rendering + editor toolbar · **quick
+capture** (Android share-to-Noteesek) · **first-run onboarding** + connect-server
+nudge · **sign out of all devices** · **pull-to-refresh** sync (mobile) ·
+**sign-in reconciliation** (merge / keep-local / keep-server; see
+docs/sign-in-reconciliation.md) · empty notes auto-move to Trash on close.
 
 ### Notebooks (`features/notes/`)
 - A note belongs to exactly one notebook (`notes.notebook`). Empty/unknown →
