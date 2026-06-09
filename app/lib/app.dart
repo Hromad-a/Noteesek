@@ -4,15 +4,45 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'features/auth/login_screen.dart';
 import 'features/auth/password_reset_screen.dart';
+import 'features/lock/app_lock.dart';
+import 'features/lock/lock_screen.dart';
 import 'features/notes/notes_screen.dart';
 import 'providers.dart';
 import 'ui/app_messenger.dart';
 
-class NoteesekApp extends ConsumerWidget {
+class NoteesekApp extends ConsumerStatefulWidget {
   const NoteesekApp({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<NoteesekApp> createState() => _NoteesekAppState();
+}
+
+class _NoteesekAppState extends ConsumerState<NoteesekApp>
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Re-lock when the app leaves the foreground so returning to it requires
+    // an unlock. No-op when the lock is off.
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden) {
+      ref.read(appLockProvider.notifier).lock();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     // Web is an online, server-backed client → login required. Mobile is
     // local-first → opens straight to local notes.
     final Widget home;
@@ -31,6 +61,11 @@ class NoteesekApp extends ConsumerWidget {
       home = const NotesScreen();
     }
 
+    // App lock (mobile): when on and locked, the unlock gate replaces everything.
+    final lock = ref.watch(appLockProvider);
+    final gatedHome =
+        (!kIsWeb && lock.enabled && lock.locked) ? const LockScreen() : home;
+
     return MaterialApp(
       title: 'Noteesek',
       scaffoldMessengerKey: scaffoldMessengerKey,
@@ -46,7 +81,7 @@ class NoteesekApp extends ConsumerWidget {
         useMaterial3: true,
       ),
       themeMode: ref.watch(themeModeProvider),
-      home: home,
+      home: gatedHome,
     );
   }
 }

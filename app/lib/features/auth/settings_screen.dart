@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show FilteringTextInputFormatter;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
@@ -10,6 +11,7 @@ import 'package:pocketbase/pocketbase.dart';
 
 import '../../config/app_config.dart';
 import '../../data/notes_repository.dart';
+import '../lock/app_lock.dart';
 import '../../providers.dart';
 import '../../sync/sync_controller.dart';
 import '../export/export_delivery.dart';
@@ -636,6 +638,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           _ThemeModeSelector(),
           const SizedBox(height: 24),
 
+          // App lock is a device-local feature → mobile only.
+          if (!kIsWeb) ...[
+            const _SectionHeader('Security'),
+            const _AppLockSection(),
+            const SizedBox(height: 24),
+          ],
+
           const _SectionHeader('Server'),
           // Display-only: the server URL is bound to the current session and can
           // only be changed by signing out and reconnecting (see the "Connect to
@@ -1001,6 +1010,115 @@ class _ThemeModeSelector extends ConsumerWidget {
         onSelectionChanged: (s) =>
             ref.read(themeModeProvider.notifier).set(s.first),
       ),
+    );
+  }
+}
+
+/// App-lock controls: enable/disable (with a PIN), biometric toggle, change PIN.
+class _AppLockSection extends ConsumerWidget {
+  const _AppLockSection();
+
+  /// Prompts for a new PIN twice (entry + confirm). Returns the PIN, or null if
+  /// cancelled / mismatched.
+  static Future<String?> _promptNewPin(BuildContext context) {
+    final pin = TextEditingController();
+    final confirm = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) {
+        String? error;
+        return StatefulBuilder(
+          builder: (ctx, setLocal) => AlertDialog(
+            title: const Text('Set a PIN'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: pin,
+                  autofocus: true,
+                  obscureText: true,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration: const InputDecoration(labelText: 'PIN'),
+                ),
+                TextField(
+                  controller: confirm,
+                  obscureText: true,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration:
+                      InputDecoration(labelText: 'Confirm PIN', errorText: error),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () {
+                  final p = pin.text;
+                  if (p.length < 4) {
+                    setLocal(() => error = 'Use at least 4 digits');
+                  } else if (p != confirm.text) {
+                    setLocal(() => error = "PINs don't match");
+                  } else {
+                    Navigator.of(ctx).pop(p);
+                  }
+                },
+                child: const Text('Save'),
+              ),
+            ],
+          ),
+        );
+      },
+    ).whenComplete(() {
+      pin.dispose();
+      confirm.dispose();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final lock = ref.watch(appLockProvider);
+    final notifier = ref.read(appLockProvider.notifier);
+    return Column(
+      children: [
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          secondary: const Icon(Icons.lock_outline),
+          title: const Text('App lock'),
+          subtitle: const Text('Require a PIN or biometrics to open the app'),
+          value: lock.enabled,
+          onChanged: (on) async {
+            if (on) {
+              final pin = await _promptNewPin(context);
+              if (pin != null) await notifier.enable(pin);
+            } else {
+              await notifier.disable();
+            }
+          },
+        ),
+        if (lock.enabled) ...[
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            secondary: const Icon(Icons.fingerprint),
+            title: const Text('Unlock with biometrics'),
+            value: lock.biometric,
+            onChanged: notifier.setBiometric,
+          ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.password_outlined),
+            title: const Text('Change PIN'),
+            onTap: () async {
+              final pin = await _promptNewPin(context);
+              if (pin != null) await notifier.changePin(pin);
+            },
+          ),
+        ],
+      ],
     );
   }
 }

@@ -35,4 +35,9 @@ class AppConfig {
   /// Checklist editor: when true, checked items sink to a collapsible
   /// "completed" section at the bottom (Google Keep-style).
   static const String kChecklistAutoSort = 'checklist_auto_sort';
+
+  /// App lock (mobile): whether the lock is on, and whether biometric unlock is
+  /// allowed. The PIN hash itself lives in secure storage, not here.
+  static const String kAppLockEnabled = 'app_lock_enabled';
+  static const String kAppLockBiometric = 'app_lock_biometric';
 }
