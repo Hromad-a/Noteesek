@@ -14,6 +14,12 @@ import 'ui/app_messenger.dart';
 /// Lavender brand seed for the Material 3 color scheme (light + dark).
 const Color _seed = Color(0xFFCEB1E8);
 
+// Light-theme lavender surface tints (hand-picked so the grid reads as gently
+// purple). Cards sit a shade lighter than the canvas/chrome so they still pop.
+const Color _lightCanvas = Color(0xFFF7F1FC); // scaffold + app bar (lightest)
+const Color _lightChrome = Color(0xFFEFE5F9); // bottom bar + drawer
+const Color _lightCard = Color(0xFFEADFF6); // default note card (soft lavender)
+
 class NoteesekApp extends ConsumerStatefulWidget {
   const NoteesekApp({super.key});
 
@@ -89,7 +95,19 @@ class _NoteesekAppState extends ConsumerState<NoteesekApp>
           brightness: Brightness.light,
           dynamicSchemeVariant: DynamicSchemeVariant.vibrant,
         ),
-        scaffoldBackgroundColor: const Color(0xFFF6EEFB), // soft lavender canvas
+        // A gently lavender light theme: a tinted canvas + matching chrome, with
+        // cards a shade lighter so the grid reads as soft purple panels rather
+        // than stark white. (Per-note colors still override the card colour.)
+        scaffoldBackgroundColor: _lightCanvas,
+        cardTheme: const CardThemeData(color: _lightCard),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: _lightCanvas,
+          scrolledUnderElevation: 0,
+        ),
+        bottomAppBarTheme: const BottomAppBarThemeData(color: _lightChrome),
+        navigationDrawerTheme: const NavigationDrawerThemeData(
+          backgroundColor: _lightChrome,
+        ),
         useMaterial3: true,
       ),
       darkTheme: ThemeData(
