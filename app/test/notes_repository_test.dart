@@ -124,6 +124,24 @@ void main() {
     expect(nbs.every((n) => n.owner == 'owner1' && n.dirty), isTrue);
   });
 
+  test('local views show notes/notebooks/labels regardless of owner', () async {
+    // Data owned by an account id (e.g. created while signed in, or after a
+    // reconciliation re-own).
+    final account = LocalNotesRepository(db, 'account1');
+    await account.createNote(type: 'text');
+    await account.createNotebook('Work');
+    await account.createLabel('home');
+
+    // A different active owner (e.g. signed out → local sentinel) still sees it
+    // all — the local-first views are not owner-scoped.
+    final local = LocalNotesRepository(db, 'local');
+    expect(await local.watchActive().first, hasLength(1));
+    expect((await local.watchNotebooks().first).map((n) => n.name),
+        contains('Work'));
+    expect((await local.watchLabels().first).map((l) => l.name),
+        contains('home'));
+  });
+
   test('backup export → wipe → import round-trips notes/items/labels/images',
       () async {
     final nb = await repo.createNotebook('Trip');

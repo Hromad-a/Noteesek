@@ -139,6 +139,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   /// Revoke every other session (rotates the account's token key server-side)
   /// and keep this device signed in with the fresh token it returns.
+  // ignore: unused_element  (kept for when the feature is re-enabled — see build)
   Future<void> _signOutEverywhere() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -179,7 +180,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final navigator = Navigator.of(context);
     ref.read(pocketBaseProvider).authStore.clear();
     if (!kIsWeb) {
-      // Mobile: drop back to local-only ownership; notes stay on the device.
+      // Mobile: future new notes are stamped 'local' again (we're signed out).
+      // This does NOT touch existing notes/notebooks — only the owner used for
+      // new rows. Existing rows keep their account ownership and stay visible
+      // (the local grid isn't owner-scoped).
       await ref.read(activeOwnerProvider.notifier).set(AppConfig.localOwner);
     }
     // Web: the auth gate rebuilds to the login screen reactively. Mobile: pop
@@ -847,14 +851,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             const SizedBox(height: 32),
             const Divider(),
             const SizedBox(height: 8),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.devices_outlined),
-              title: const Text('Sign out of all devices'),
-              subtitle: const Text(
-                  'Invalidate every other login; this device stays signed in'),
-              onTap: _signOutEverywhere,
-            ),
+            // "Sign out of all devices" is hidden for now — it didn't reliably
+            // invalidate web sessions. Re-enable by restoring the ListTile below
+            // (and remove the ignore on _signOutEverywhere) once that's fixed.
+            // ListTile(
+            //   contentPadding: EdgeInsets.zero,
+            //   leading: const Icon(Icons.devices_outlined),
+            //   title: const Text('Sign out of all devices'),
+            //   subtitle: const Text(
+            //       'Invalidate every other login; this device stays signed in'),
+            //   onTap: _signOutEverywhere,
+            // ),
             ListTile(
               contentPadding: EdgeInsets.zero,
               leading: Icon(Icons.logout, color: scheme.error),
