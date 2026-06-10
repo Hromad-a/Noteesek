@@ -96,6 +96,13 @@ responding" indicator + snackbar.
 - Deletes are soft (`deleted=true`); Trash is manual-purge only (no auto-delete).
 - Local note owner sentinel = `'local'` (AppConfig.localOwner) until a server is
   connected, then notes are "claimed" (owner → user id) and synced.
+- **Mobile local views are NOT owner-scoped.** The drift read queries
+  (`watchActive`/`Archived`/`Trash`, `searchActive`, `watchNotebooks`,
+  `watchLabels`) show every row on the device regardless of owner. Writes still
+  stamp the active owner. So **signing out doesn't touch or hide any note/
+  notebook** — it just clears the session and resets the new-note owner to
+  `'local'`; existing rows keep their account ownership and stay visible.
+  (`hasForeignLocalData` still drives sign-in reconciliation by owner.)
 
 ## Features (current)
 Multi-user auth · offline-first mobile + optional sync · web online/realtime ·
@@ -112,14 +119,18 @@ export** (bulk: all active+archived notes → one zip of `notes/*.md` +
 share/export** (Markdown / plain text / PDF, from the editor overflow) ·
 **import** (Markdown export zip + loose `.md`, and Google Keep Takeout) ·
 **search filters** (notebook / labels / color / type / has-image) ·
-**light/dark/system theme** (Settings → Appearance) · **checklist** drag-reorder
+**light/dark/system theme** (Settings → Appearance; light theme is a softly
+lavender Material 3 `vibrant` scheme — tinted canvas/chrome + lavender default
+note cards, `app.dart`) · **checklist** drag-reorder
 + optional auto-sort-checked-to-bottom · **undo** delete-to-trash · **per-label
 colors** · **app lock** (biometric + PIN, mobile) · **full JSON backup/restore**
 (mobile, lossless) · optional **Markdown** rendering + editor toolbar · **quick
 capture** (Android share-to-Noteesek) · **first-run onboarding** + connect-server
-nudge · **sign out of all devices** · **pull-to-refresh** sync (mobile) ·
+nudge · **pull-to-refresh** sync (mobile) ·
 **sign-in reconciliation** (merge / keep-local / keep-server; see
-docs/sign-in-reconciliation.md) · empty notes auto-move to Trash on close.
+docs/sign-in-reconciliation.md) · **wipe data** (this device and/or server;
+purges all collections incl. notebooks) · empty notes auto-move to Trash on
+close.
 
 ### Notebooks (`features/notes/`)
 - A note belongs to **at most one** notebook (`notes.notebook`). There is **no

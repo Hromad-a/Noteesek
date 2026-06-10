@@ -87,12 +87,14 @@ mobile; login on web). Polish empty notes/archive/trash/search states (copy,
 illustration, quick actions). On mobile with no server connected, a dismissible
 "Connect a server to sync" card on the empty state. *Decision: all three.*
 
-### 8. Sign out everywhere — ✅ DONE
+### 8. Sign out everywhere — ⚠️ built, UI hidden
 PocketBase JWTs are stateless (no device list). A custom auth-required hook route
-(e.g. `POST /api/noteesek/logout-everywhere`) rotates the user's `tokenKey`,
+(`POST /api/noteesek/logout-everywhere`) rotates the user's `tokenKey`,
 invalidating every existing token on all devices; the current client re-auths.
-Button in Settings (web + mobile). *Decision: "sign out everywhere" only — no
-per-device tracking.*
+*Decision: "sign out everywhere" only — no per-device tracking.*
+**Status:** the Settings button is currently **hidden** — it didn't reliably
+invalidate web sessions. The handler (`_signOutEverywhere`) and the hook route
+are kept; re-enable the tile in `settings_screen.dart` once that's fixed.
 
 ## Deferred / ideas (from CLAUDE.md)
 Release-signed APK, iOS, FTS5 search, reminders, HTTPS (then tighten cleartext).

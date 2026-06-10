@@ -86,9 +86,15 @@ Feature-complete and verified against a live backend (APK + web image build):
 - [x] Multi-user auth
 - [x] Android local-first; optional server with last-write-wins sync
 - [x] Web online client (login-gated, realtime, served by the server)
-- [x] Text + checklist notes
-- [x] Pin / archive / trash (restore · delete-forever · empty)
+- [x] Text + checklist notes; pin / archive / trash (restore · delete-forever · empty)
 - [x] Image attachments (server-side **protected** files)
-- [x] Note search (title / body / checklist text)
+- [x] Note search (title / body / checklist text) + filters (notebook / label / color / type / image)
+- [x] Note colors, labels (per-label colors), and **notebooks** (optional —
+      notes can be uncategorized; "All notes" / "No notebook" scopes)
+- [x] Export (bulk + single-note Markdown / plain text / PDF) and import
+      (Markdown, Google Keep Takeout); optional in-app Markdown rendering
+- [x] Light / dark / system theme (softly lavender light theme)
+- [x] App lock (biometric + PIN), full JSON backup/restore, quick capture,
+      sign-in reconciliation (merge / keep-local / keep-server)
 
-Next: FTS5 search, labels/colors, reminders, release-signed APK, HTTPS.
+Next: FTS5 search, reminders, release-signed APK, HTTPS.
