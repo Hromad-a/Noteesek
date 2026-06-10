@@ -14,9 +14,12 @@ COPY app/pubspec.yaml app/pubspec.lock ./
 RUN flutter pub get
 
 # Build: generate drift code, then compile the web release bundle.
+# --pwa-strategy=none: the web client is online-only (no offline support), so the
+# service worker is pure downside — it pins open tabs to a cached old build after
+# a deploy (needing a hard refresh). Disabling it keeps the app always-fresh.
 COPY app/ ./
 RUN dart run build_runner build --delete-conflicting-outputs \
-    && flutter build web --release
+    && flutter build web --release --pwa-strategy=none
 
 # --- Stage 2: PocketBase serving the web app ----------------------------------
 # Single static binary on a small Alpine base. This stage IS arch-specific (the

@@ -31,6 +31,27 @@
 
   <title>noteesek</title>
   <link rel="manifest" href="manifest.json">
+
+  <!--
+    Self-heal stale installs. Earlier builds registered a Flutter service worker
+    that pinned returning visitors to a cached old app after a deploy (needing a
+    hard refresh). The app is now built with --pwa-strategy=none (no service
+    worker); this unregisters any worker still left in a returning browser and
+    drops its caches, so the next normal refresh is always fresh. Harmless once
+    no worker exists.
+  -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations()
+        .then(function (regs) { regs.forEach(function (r) { r.unregister(); }); })
+        .catch(function () {});
+      if (window.caches && caches.keys) {
+        caches.keys().then(function (keys) {
+          keys.forEach(function (k) { caches.delete(k); });
+        }).catch(function () {});
+      }
+    }
+  </script>
 </head>
 <body>
   <!--
