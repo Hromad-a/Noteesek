@@ -90,10 +90,8 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
   }
 
   Future<void> _manualSync(BuildContext context, WidgetRef ref) async {
-    final messenger = ScaffoldMessenger.of(context);
     final outcome =
         await ref.read(syncControllerProvider.notifier).syncNow(manual: true);
-    if (!context.mounted) return;
     final text = switch (outcome) {
       SyncOutcome.ok => 'Synced',
       SyncOutcome.busy => 'Sync already in progress',
@@ -103,9 +101,9 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
       SyncOutcome.failed =>
         ref.read(syncControllerProvider).message ?? 'Sync failed',
     };
-    messenger
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(text)));
+    // Route through the app messenger (atomic clear+show) so it never piles up
+    // with or gets stuck behind another snackbar (e.g. an undo).
+    showAppSnackBar(text);
   }
 
   void _onReorder(WidgetRef ref, String draggedId, String targetId, List<NoteRow> notes) {
