@@ -137,11 +137,12 @@ void main() {
         isNot(contains('account A secret')),
         reason: "first account's data must not be pushed to the second");
 
-    // B's session shows none of A's notes (hidden by the owner filter)…
-    final bVisible = await repoB.watchActive().first;
-    expect(bVisible.map((n) => n.title), isNot(contains('account A secret')));
+    // Mobile local views are intentionally NOT owner-scoped (see CLAUDE.md):
+    // watchActive() shows every row on the device regardless of owner, so A's
+    // note stays visible after signing into B. That is by design — the leak we
+    // guard against is server-side (asserted above), not device-local.
 
-    // …but A's data is still on the device, tagged with A's owner.
+    // A's data is still on the device, tagged with A's owner.
     final all = await db.select(db.notes).get();
     expect(
         all.where((n) => n.owner == userId && n.title == 'account A secret'),

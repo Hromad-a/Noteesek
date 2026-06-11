@@ -22,7 +22,14 @@ isn't removed by accident.
 2. **Reconcile all local data, any owner.** Local rows owned by the offline
    `local` sentinel *or by a different account* are all in scope; Keep-local and
    Merge **re-own** them into the account being signed in (so you can move
-   account A's notes into account B — with a clear warning).
+   account A's notes into account B — with a clear warning). Offline `local`
+   rows keep their ids (never been on the server); rows owned by a *different
+   account* are **re-id'd into fresh copies** — on a shared server their ids
+   already belong to that account, so they can't be re-owned in place (a push
+   would 404 on update and 400 on a duplicate-id create, stranding them dirty
+   forever). Re-id remaps relations (note→notebook/labels, item/attachment→note)
+   and the source account keeps its originals (merge is non-destructive), so
+   moving data into another account is a **copy**.
 3. **Same-name notebook combining: notebooks only, default OFF.** Merge offers a
    "Combine notebooks with the same name" toggle, default off (keep both). Notes
    are never name/title-merged (titles collide too easily).
@@ -55,8 +62,8 @@ checklist_items, attachments, labels, notebooks, regardless of owner.
 | **Keep server only** | replaced by server | unchanged | yes — local |
 
 ### Merge (keep all)
-1. Re-own all local rows to B (`owner = B`, `dirty = true`) — claims offline and
-   other-account data into B.
+1. Re-own all local rows to B (`owner = B`, `dirty = true`) — offline rows in
+   place, other-account rows re-id'd into fresh copies (see decision 2).
 2. Normal sync (push local up, pull server down) → union on both sides.
 3. *If* "combine same-name notebooks" is on: build a name→notebook map across the
    unioned set; for each duplicate name keep the earliest-created (tie-break by
@@ -140,16 +147,21 @@ Gate the whole feature on `!kIsWeb`.
   - `Future<void> keepLocalMirror()`
   - `Future<void> keepServerReplace()`
 - `local_notes_repository.dart` — a `reownAll(String userId)` (generalises
-  `claimLocalNotes` to *all* local rows, not just the `local` sentinel) and a
-  `combineNotebooksByName()` helper.
+  `claimLocalNotes` to *all* local rows: offline `local` rows re-owned in place,
+  other-account rows re-id'd into fresh copies with their relations remapped) and
+  a `combineNotebooksByName()` helper.
 - `sync_engine.dart` — a server-summary/ids fetch + a "soft-delete server ids"
   helper for the mirror path (reuses the existing resilient push/pull).
 - `login_screen.dart` — the branch above.
 
 ## Edge cases & risks
 
-- **Re-owning another account's data is a real move**, not a copy: after Merge or
-  Keep-local, account A's notes belong to B. The warning copy must say so.
+- **Re-owning another account's data is a copy**, not a move: on a shared server
+  account A's records can't be re-owned in place (ids are taken), so they're
+  re-id'd into fresh copies under B while A keeps its originals. The warning copy
+  should say "copy into this account". (Offline `local` data is moved in place.)
+  Note: round-tripping the same data A→B→A duplicates it, since the copies lose
+  their original-id identity link to A's records.
 - **Keep-local when the device holds a different account** deletes *all* of B's
   current server data (none of it is local). The impact count makes this explicit;
   the type-to-confirm is the backstop.
