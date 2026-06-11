@@ -181,14 +181,16 @@ close.
   Keep), then a file (`file_picker`, `withData`). Runs on mobile **and** web.
 - `markdown_import.dart` — reverses the exporter: parses YAML frontmatter,
   resolves `attachments/<id>` links from the zip, detects checklists
-  (task-list-only). Loose `.md` → title from first H1 or filename.
+  (task-list-only). Loose `.md` → title from first H1, else untitled (the
+  filename is never used as a title).
 - `keep_import.dart` — parses a Keep Takeout zip: active+archived (skips
   trashed); labels→labels, Keep color→nearest palette key, pinned/archived,
   annotations→body "Links:" block, attachments by basename.
 - `import_service.dart` — `NoteImportService.import(List<ParsedNote>)` resolves
   label/notebook **names** → ids (find-or-create, deduped per run) and writes
-  via `repo.importNote(NoteImport)`. The backend sets its own `created`, so the
-  source's original date is appended to the body as a footnote (per design).
+  via `repo.importNote(NoteImport)`. The backend sets its own `created`; the
+  source's original date is parsed (`ParsedNote.originalCreated`) but not written
+  anywhere — notes are imported verbatim, with no footnote.
 - `import_models.dart` — `ParsedNote` (label/notebook as names) + `ImportResult`.
 
 ### Account settings (`features/auth/account_settings_screen.dart`)

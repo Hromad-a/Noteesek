@@ -2,10 +2,9 @@ import '../../data/notes_repository.dart';
 import 'import_models.dart';
 
 /// Writes [ParsedNote]s into the repository, resolving label/notebook *names*
-/// to ids (creating any that don't exist yet) and preserving the source's
-/// original creation date as a body footnote (the backend assigns its own
-/// `created`). Works against either repository implementation, so imports run
-/// on both mobile (local DB → synced later) and web (straight to PocketBase).
+/// to ids (creating any that don't exist yet). Works against either repository
+/// implementation, so imports run on both mobile (local DB → synced later) and
+/// web (straight to PocketBase).
 class NoteImportService {
   NoteImportService(this._repo);
 
@@ -48,7 +47,7 @@ class NoteImportService {
       await _repo.importNote(NoteImport(
         type: note.type,
         title: note.title,
-        body: _bodyWithFootnote(note),
+        body: note.body,
         pinned: note.pinned,
         archived: note.archived,
         color: note.color,
@@ -60,16 +59,5 @@ class NoteImportService {
       imported++;
     }
     return ImportResult(imported, 0);
-  }
-
-  /// Appends the source's original creation date to the body (the backend can't
-  /// preserve `created`, so we keep it visible/searchable here instead).
-  String _bodyWithFootnote(ParsedNote note) {
-    final created = note.originalCreated;
-    if (created == null || created.trim().isEmpty) return note.body;
-    final footnote = '_Imported — originally created ${created.trim()}_';
-    return note.body.trim().isEmpty
-        ? footnote
-        : '${note.body.trimRight()}\n\n$footnote';
   }
 }

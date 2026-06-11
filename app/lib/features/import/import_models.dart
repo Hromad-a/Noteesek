@@ -32,9 +32,10 @@ class ParsedNote {
   final List<ImportedItem> items;
   final List<Uint8List> images;
 
-  /// The note's original creation timestamp from the source, if known. The
-  /// backend assigns its own `created`, so the import service appends this to
-  /// the body as a footnote rather than losing it.
+  /// The note's original creation timestamp from the source, if known. Parsed
+  /// from the source but not currently written anywhere — the backend assigns
+  /// its own `created` on import, and we no longer footnote the original into
+  /// the body (it cluttered every imported note).
   final String? originalCreated;
 }
 

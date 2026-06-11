@@ -23,10 +23,7 @@ List<ParsedNote> parseMarkdownImport(Uint8List bytes, String filename) {
   if (_looksLikeZip(bytes) || p.extension(filename).toLowerCase() == '.zip') {
     return parseMarkdownZip(bytes);
   }
-  return [
-    parseMarkdownDocument(utf8.decode(bytes, allowMalformed: true),
-        fallbackTitle: p.basenameWithoutExtension(filename)),
-  ];
+  return [parseMarkdownDocument(utf8.decode(bytes, allowMalformed: true))];
 }
 
 /// Parses our export zip: every `notes/*.md` becomes a note, with image links
@@ -48,22 +45,18 @@ List<ParsedNote> parseMarkdownZip(Uint8List zipBytes) {
     if (!file.isFile) continue;
     if (p.extension(file.name).toLowerCase() != '.md') continue;
     final text = utf8.decode(file.content as List<int>, allowMalformed: true);
-    notes.add(parseMarkdownDocument(
-      text,
-      attachments: attachments,
-      fallbackTitle: p.basenameWithoutExtension(file.name),
-    ));
+    notes.add(parseMarkdownDocument(text, attachments: attachments));
   }
   return notes;
 }
 
 /// Parses one Markdown document (optionally with YAML frontmatter as written by
 /// our exporter). [attachments] maps an image basename → bytes for `![](…)`
-/// references; [fallbackTitle] is used when no title can be derived.
+/// references. When the document has no frontmatter title and no leading H1, the
+/// note is left untitled — we never invent a title from the filename.
 ParsedNote parseMarkdownDocument(
   String markdown, {
   Map<String, Uint8List> attachments = const {},
-  String? fallbackTitle,
 }) {
   final lines = const LineSplitter().convert(markdown);
 
@@ -132,8 +125,6 @@ ParsedNote parseMarkdownDocument(
     if (raw.trim().isNotEmpty) sawNonTask = true;
     textLines.add(raw);
   }
-
-  if (title.isEmpty) title = (fallbackTitle ?? '').trim();
 
   // A note is a checklist when its content is task items only.
   if (sawTask && !sawNonTask) {

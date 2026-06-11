@@ -87,10 +87,12 @@ void main() {
     expect(items.map((i) => i.content).toList(), ['passport', 'tickets']);
     expect(items.first.checked, isTrue);
 
-    // The original creation date is preserved in the body as a footnote.
+    // The body is imported verbatim — no "Imported — originally created…"
+    // footnote is appended.
     final text = notes.firstWhere((n) => n.title == 'Note');
-    expect(text.body, contains('hello'));
-    expect(text.body, contains('2024-01-02'));
+    expect(text.body, 'hello');
+    expect(text.body, isNot(contains('Imported')));
+    expect(text.body, isNot(contains('2024-01-02')));
   });
 
   test('hasForeignAccountData: own + offline-local are fine, another account '

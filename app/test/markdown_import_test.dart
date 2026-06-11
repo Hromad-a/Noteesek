@@ -91,18 +91,23 @@ void main() {
 
   group('loose .md files (no frontmatter)', () {
     test('title from H1, rest is body', () {
-      final p = parseMarkdownDocument('# My Note\n\nhello world',
-          fallbackTitle: 'file');
+      final p = parseMarkdownDocument('# My Note\n\nhello world');
       expect(p.type, 'text');
       expect(p.title, 'My Note');
       expect(p.body, 'hello world');
     });
 
-    test('task-list-only file becomes a checklist, title from filename', () {
-      final p = parseMarkdownDocument('- [ ] a\n- [x] b',
-          fallbackTitle: 'groceries');
+    test('no H1 → untitled (filename is never used as the title)', () {
+      final p = parseMarkdownDocument('just some body text');
+      expect(p.type, 'text');
+      expect(p.title, '');
+      expect(p.body, 'just some body text');
+    });
+
+    test('task-list-only file becomes a checklist, left untitled', () {
+      final p = parseMarkdownDocument('- [ ] a\n- [x] b');
       expect(p.type, 'checklist');
-      expect(p.title, 'groceries');
+      expect(p.title, '');
       expect(p.items.length, 2);
       expect(p.items[1].checked, isTrue);
     });
