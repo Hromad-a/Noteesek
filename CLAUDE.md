@@ -124,7 +124,9 @@ lavender Material 3 `vibrant` scheme — tinted canvas/chrome + lavender default
 note cards, `app.dart`) · **checklist** drag-reorder
 + optional auto-sort-checked-to-bottom · **undo** delete-to-trash · **per-label
 colors** · **app lock** (biometric + PIN, mobile) · **full JSON backup/restore**
-(mobile, lossless) · optional **Markdown** rendering + editor toolbar · **quick
+(lossless; mobile backs up the local DB via `backup_service.dart`, web backs up
+the account via the API in `remote_backup_service.dart` — same JSON layout,
+upsert-by-id) · optional **Markdown** rendering + editor toolbar · **quick
 capture** (Android share-to-Noteesek) · **first-run onboarding** + connect-server
 nudge · **pull-to-refresh** sync (mobile) ·
 **sign-in reconciliation** (claim local data into the account; if the device
