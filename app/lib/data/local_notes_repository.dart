@@ -342,210 +342,26 @@ class LocalNotesRepository implements NotesRepository {
   }
 
   @override
-  Future<void> reownAll(String userId) async {
-    await _db.transaction(() async {
-      final now = pbNow();
-      final local = AppConfig.localOwner;
-
-      // (1) Offline `local` rows have never been on the server, so their ids are
-      // free — re-own them in place (same as claimLocalNotes).
-      await (_db.update(_db.notes)..where((t) => t.owner.equals(local))).write(
-          NotesCompanion(
-              owner: Value(userId),
-              updated: Value(now),
-              dirty: const Value(true)));
-      await (_db.update(_db.notebooks)..where((t) => t.owner.equals(local)))
-          .write(NotebooksCompanion(
-              owner: Value(userId),
-              updated: Value(now),
-              dirty: const Value(true)));
-      await (_db.update(_db.labels)..where((t) => t.owner.equals(local))).write(
-          LabelsCompanion(
-              owner: Value(userId),
-              updated: Value(now),
-              dirty: const Value(true)));
-
-      // (2) Rows owned by a *different account* can't be re-owned in place: on a
-      // shared server their ids already belong to that account, so [userId]'s
-      // push would 404 on update (the record is hidden by the owner rule) and
-      // then 400 on create (the id isn't unique). Re-id them into fresh records
-      // owned by [userId] — moving another account's data in is a *copy* (the
-      // source account keeps its originals). Relations are remapped to the new
-      // ids so the copies stay internally consistent.
-      final foreignNbs = await (_db.select(_db.notebooks)
-            ..where((t) =>
-                t.owner.isNotValue(userId) & t.owner.isNotValue(local)))
-          .get();
-      final foreignLabels = await (_db.select(_db.labels)
-            ..where((t) =>
-                t.owner.isNotValue(userId) & t.owner.isNotValue(local)))
-          .get();
-      final foreignNotes = await (_db.select(_db.notes)
-            ..where((t) =>
-                t.owner.isNotValue(userId) & t.owner.isNotValue(local)))
-          .get();
-
-      if (foreignNbs.isEmpty &&
-          foreignLabels.isEmpty &&
-          foreignNotes.isEmpty) {
-        return;
-      }
-
-      final nbMap = {for (final nb in foreignNbs) nb.id: newPbId()};
-      final labelMap = {for (final l in foreignLabels) l.id: newPbId()};
-      final noteMap = {for (final n in foreignNotes) n.id: newPbId()};
-      final oldNoteIds = noteMap.keys.toList();
-
-      // Notebooks → fresh copies.
-      for (final nb in foreignNbs) {
-        await _db.into(_db.notebooks).insert(NotebooksCompanion.insert(
-              id: nbMap[nb.id]!,
-              owner: userId,
-              name: Value(nb.name),
-              deleted: Value(nb.deleted),
-              created: Value(nb.created),
-              updated: Value(now),
-              dirty: const Value(true),
-            ));
-      }
-      // Labels → fresh copies.
-      for (final l in foreignLabels) {
-        await _db.into(_db.labels).insert(LabelsCompanion.insert(
-              id: labelMap[l.id]!,
-              owner: userId,
-              name: Value(l.name),
-              color: Value(l.color),
-              deleted: Value(l.deleted),
-              created: Value(l.created),
-              updated: Value(now),
-              dirty: const Value(true),
-            ));
-      }
-      // Notes → fresh copies, with notebook + label relations remapped.
-      for (final n in foreignNotes) {
-        final newLabels = labelIdsOfRaw(n.labels)
-            .map((id) => labelMap[id] ?? id)
-            .toList();
-        await _db.into(_db.notes).insert(NotesCompanion.insert(
-              id: noteMap[n.id]!,
-              owner: userId,
-              type: Value(n.type),
-              title: Value(n.title),
-              body: Value(n.body),
-              pinned: Value(n.pinned),
-              archived: Value(n.archived),
-              color: Value(n.color),
-              labels: Value(encodeLabelIds(newLabels)),
-              notebook: Value(nbMap[n.notebook] ?? n.notebook),
-              deleted: Value(n.deleted),
-              created: Value(n.created),
-              updated: Value(now),
-              dirty: const Value(true),
-              position: Value(n.position),
-            ));
-      }
-
-      // Children of the re-id'd notes (checklist items + attachments) carry the
-      // notes' ids on the server too, so they collide identically — re-id them
-      // and point them at the new note ids.
-      final items = await (_db.select(_db.checklistItems)
-            ..where((t) => t.note.isIn(oldNoteIds)))
-          .get();
-      for (final it in items) {
-        await _db.into(_db.checklistItems).insert(ChecklistItemsCompanion.insert(
-              id: newPbId(),
-              note: noteMap[it.note]!,
-              content: Value(it.content),
-              checked: Value(it.checked),
-              position: Value(it.position),
-              deleted: Value(it.deleted),
-              created: Value(it.created),
-              updated: Value(now),
-              dirty: const Value(true),
-            ));
-      }
-      final atts = await (_db.select(_db.attachments)
-            ..where((t) => t.note.isIn(oldNoteIds)))
-          .get();
-      for (final a in atts) {
-        // We can only re-upload an attachment whose bytes are held locally (the
-        // server file is protected and belongs to the other account). Drop ones
-        // whose bytes never downloaded — there's nothing to copy.
-        if (a.deleted || a.data == null) continue;
-        await _db.into(_db.attachments).insert(AttachmentsCompanion.insert(
-              id: newPbId(),
-              note: noteMap[a.note]!,
-              file: const Value(''), // empty → push re-uploads the bytes
-              data: Value(a.data),
-              deleted: Value(a.deleted),
-              created: Value(a.created),
-              updated: Value(now),
-              dirty: const Value(true),
-            ));
-      }
-
-      // Remove the originals (now superseded by the re-id'd copies).
-      await (_db.delete(_db.checklistItems)..where((t) => t.note.isIn(oldNoteIds)))
-          .go();
-      await (_db.delete(_db.attachments)..where((t) => t.note.isIn(oldNoteIds)))
-          .go();
-      await (_db.delete(_db.notes)..where((t) => t.id.isIn(oldNoteIds))).go();
-      await (_db.delete(_db.notebooks)
-            ..where((t) => t.id.isIn(nbMap.keys.toList())))
-          .go();
-      await (_db.delete(_db.labels)
-            ..where((t) => t.id.isIn(labelMap.keys.toList())))
-          .go();
-    });
-  }
-
-  @override
-  Future<void> combineNotebooksByName() async {
-    await _db.transaction(() async {
-      final nbs = await (_db.select(_db.notebooks)
-            ..where((t) => t.owner.equals(_ownerId) & t.deleted.equals(false))
-            ..orderBy([
-              (t) => OrderingTerm(expression: t.created),
-              (t) => OrderingTerm(expression: t.id),
-            ]))
-          .get();
-
-      final byName = <String, List<NotebookRow>>{};
-      for (final nb in nbs) {
-        byName.putIfAbsent(nb.name.trim().toLowerCase(), () => []).add(nb);
-      }
-
-      final now = pbNow();
-      for (final group in byName.values) {
-        if (group.length < 2) continue;
-        // Keep the earliest-created; fold the rest into it.
-        final keeper = group.first;
-        for (final dup in group.skip(1)) {
-          await (_db.update(_db.notes)..where((t) => t.notebook.equals(dup.id)))
-              .write(NotesCompanion(
-                  notebook: Value(keeper.id),
-                  updated: Value(now),
-                  dirty: const Value(true)));
-          await (_db.update(_db.notebooks)..where((t) => t.id.equals(dup.id)))
-              .write(NotebooksCompanion(
-                  deleted: const Value(true),
-                  updated: Value(now),
-                  dirty: const Value(true)));
-        }
-      }
-    });
-  }
-
-  @override
-  Future<bool> hasForeignLocalData(String userId) async {
+  Future<bool> hasForeignAccountData(String userId) async {
+    // True when the device holds non-deleted notes/notebooks owned by *another
+    // account* (i.e. not this user and not the offline `local` sentinel). Used
+    // at sign-in to decide whether to force the "wipe & load from server" flow
+    // instead of the simple local-claim. Offline `local` data alone never
+    // triggers it — it's just claimed into the account.
+    final local = AppConfig.localOwner;
     final note = await (_db.select(_db.notes)
-          ..where((t) => t.owner.isNotValue(userId) & t.deleted.equals(false))
+          ..where((t) =>
+              t.owner.isNotValue(userId) &
+              t.owner.isNotValue(local) &
+              t.deleted.equals(false))
           ..limit(1))
         .get();
     if (note.isNotEmpty) return true;
     final nb = await (_db.select(_db.notebooks)
           ..where((t) =>
-              t.owner.isNotValue(userId) & t.deleted.equals(false))
+              t.owner.isNotValue(userId) &
+              t.owner.isNotValue(local) &
+              t.deleted.equals(false))
           ..limit(1))
         .get();
     return nb.isNotEmpty;

@@ -1,199 +1,74 @@
 # Sign-in reconciliation (design)
 
-**Status:** ✅ implemented (all 4 phases). **Platform:** mobile only (web has no
-local DB — sign-in there is just auth). Captured 2026-06-09.
+**Status:** ✅ implemented. **Platform:** mobile only (web has no local DB —
+sign-in there is just auth). Captured 2026-06-09; simplified 2026-06-11.
 
 Code: `features/auth/reconciliation_screen.dart`,
-`sync/reconciliation_service.dart`, repo primitives `reownAll` /
-`hasForeignLocalData` / `combineNotebooksByName`, `SyncEngine.syncOnce(pushOnly:)`,
-wired in `login_screen.dart`. Tests: `test/sync_notebooks_repro_test.dart`
+`sync/reconciliation_service.dart`, repo primitives `claimLocalNotes` /
+`hasForeignAccountData`, wired in `login_screen.dart`. Tests:
+`test/sync_notebooks_repro_test.dart` + `test/reconcile_cross_account_repro_test.dart`
 (integration) + `test/notes_repository_test.dart` (unit).
 
-When a user signs into an account on a phone that already holds local data that
-diverges from that account's server data, prompt them to choose how to reconcile
-the two, instead of silently unioning. Destructive choices are guarded so data
-isn't removed by accident.
+## The model (deliberately simple)
 
-## Decisions (locked)
+A note's `owner` records who created it: the offline `local` sentinel before any
+server is connected, otherwise a user id. The backend is a single PocketBase
+where **record ids are globally unique across all users** (one shared table per
+collection, scoped by `owner`). That fact drives the whole design: an id that
+belongs to account A **cannot** be taken over by account B (B's update is hidden
+→ 404, and a create collides → 400). So we do **not** try to move/merge data
+between two accounts on the same server.
 
-1. **Keep local only = mirror.** Make the server exactly match the device: upload
-   local data *and* delete server records that aren't local. Destructive to the
-   server.
-2. **Reconcile all local data, any owner.** Local rows owned by the offline
-   `local` sentinel *or by a different account* are all in scope; Keep-local and
-   Merge **re-own** them into the account being signed in (so you can move
-   account A's notes into account B — with a clear warning). Offline `local`
-   rows keep their ids (never been on the server); rows owned by a *different
-   account* are **re-id'd into fresh copies** — on a shared server their ids
-   already belong to that account, so they can't be re-owned in place (a push
-   would 404 on update and 400 on a duplicate-id create, stranding them dirty
-   forever). Re-id remaps relations (note→notebook/labels, item/attachment→note)
-   and the source account keeps its originals (merge is non-destructive), so
-   moving data into another account is a **copy**.
-3. **Same-name notebook combining: notebooks only, default OFF.** Merge offers a
-   "Combine notebooks with the same name" toggle, default off (keep both). Notes
-   are never name/title-merged (titles collide too easily).
-4. **Guard = impact summary + type-to-confirm.** Destructive options show exact
-   counts of what will be deleted and require typing a confirm word; the safe
-   **Merge** option is preselected.
+There are exactly two cases at sign-in:
 
-## When the prompt appears
+1. **Offline / same-account data only** — the device holds only `local`-owned
+   rows (made offline) and/or rows already owned by the account signing in. This
+   is the normal path: [`claimLocalNotes`](../app/lib/data/local_notes_repository.dart)
+   re-owns the `local` rows to the account (in place — their ids were never on
+   the server) and a normal sync pushes them up. **No prompt.**
 
-Only on **sign-in**, and only when there is *foreign* local data to reconcile —
-i.e. the local DB contains at least one note or notebook whose `owner` is **not**
-the account being signed in (the `local` sentinel, or a different account). This
-is a cheap local query, so the decision to prompt needs no server round-trip.
+2. **Another account's data is present** — the device holds non-deleted
+   notes/notebooks owned by a *different* account (e.g. you used account A, signed
+   out, and are now signing into account B). Detected by
+   [`hasForeignAccountData`](../app/lib/data/local_notes_repository.dart) (owner
+   ≠ this user **and** ≠ `local`). We can't merge across accounts, so the
+   `ReconciliationScreen` offers a single guarded action:
 
-- Local DB empty, or all local data already owned by this account (a returning
-  user reconnecting) → **no prompt**; proceed with the normal claim + sync
-  (today's behaviour). Returning users are never nagged.
-- Foreign local data present → fetch a server summary (counts + ids) and show the
-  reconciliation screen before the first sync.
+   **Replace this device with the server** — [`keepServerReplace`](../app/lib/sync/reconciliation_service.dart):
+   `wipeAllLocal()` (clears every table + sync cursors) then a full pull of the
+   signed-in account. Everything on the device — including any never-synced
+   offline notes — is discarded; the device ends up mirroring the account.
 
-## The three strategies
+   The screen shows a before/after summary (what's discarded vs. loaded) and a
+   type-`REPLACE`-to-confirm gate. **Cancel** undoes the sign-in (clears auth,
+   resets the active owner to `local`) and leaves the device untouched.
 
-Let **B** = the account signing in. "Local data" = every local row across notes,
-checklist_items, attachments, labels, notebooks, regardless of owner.
+## Moving notes between accounts
 
-| Option | Local result | Server result | Destructive? |
-|--------|--------------|---------------|--------------|
-| **Merge** (default) | union of both | union of both | no |
-| **Keep local only** | unchanged (re-owned to B) | mirrors local | yes — server |
-| **Keep server only** | replaced by server | unchanged | yes — local |
+There is no in-app merge for this. The supported path is **export then import**:
+the importer (`features/import/`, and JSON backup restore) creates fresh ids and
+stamps the importing account as owner, so it never collides. Export from account
+A, sign into B, import — you get independent copies under B while A keeps its
+originals.
 
-### Merge (keep all)
-1. Re-own all local rows to B (`owner = B`, `dirty = true`) — offline rows in
-   place, other-account rows re-id'd into fresh copies (see decision 2).
-2. Normal sync (push local up, pull server down) → union on both sides.
-3. *If* "combine same-name notebooks" is on: build a name→notebook map across the
-   unioned set; for each duplicate name keep the earliest-created (tie-break by
-   id), reassign the others' notes to it, soft-delete the duplicates, then sync
-   again. Default off → pure union (two same-named notebooks coexist). There is
-   no default-notebook reconciliation (the default notebook concept was removed).
+## Why the old multi-strategy design was removed
 
-### Keep local only (mirror local → server)
-1. Re-own all local rows to B (`owner = B`, dirty).
-2. Push all local up (server `owner` forced to B by `owner.pb.js`).
-3. **Mirror:** for each collection, soft-delete the server records whose ids are
-   not present locally (`serverIds − localIds`). Tombstones propagate.
-4. Settle with a normal sync.
-   Result: server == local; the device's data is unchanged.
+The earlier version offered Merge / Keep-local-mirror / Keep-server-replace and
+tried to reconcile another account's data by re-owning (then, after a bug fix,
+re-id-copying) it. That was error-prone precisely because of the shared-table /
+global-id reality above: re-owning stranded rows as permanently-dirty, and the
+re-id workaround silently duplicated data on round-trips. Collapsing to
+"claim-local, else wipe-and-pull" removes the cross-account conflict surface
+entirely; cross-account moves are handed off to export/import, which is
+collision-free by construction.
 
-### Keep server only (replace local)
-1. Wipe the local DB and reset all sync cursors (`wipeAllLocal`).
-2. Full pull from the server (cursor empty).
-   Result: local == server; local-only data is discarded.
+## Edge cases
 
-## Impact summary (shown on the screen)
-
-After auth, query the server for per-collection counts + ids and compare to local
-(all owners):
-
-- **Keep local only** → "Deletes **N** records from the server" where
-  `N = |serverIds − localIds|`. (When the device holds a *different* account's
-  data, this is typically *all* of B's current server data — surface that
-  prominently.)
-- **Keep server only** → "Deletes **M** records from this device, including
-  **X** that aren't on the server" where `M = |localIds|`, `X = |localIds −
-  serverIds|` (X = what's permanently lost).
-- **Merge** → "Combines **A** local + **S** server records" (nothing deleted).
-
-## UI & flow
-
-A dedicated **`ReconciliationScreen`** (full screen, not a dialog — too much
-content), pushed from the login flow after `authWithPassword` succeeds and before
-any sync, when the trigger fires:
-
-```
-You have data on this device to reconcile.
-  This device:   A notebooks · B notes   (C from another account / offline)
-  This account:  D notebooks · E notes   (on the server)
-
-( ) Merge — keep everything from both            [recommended, preselected]
-       [ ] Combine notebooks with the same name
-( ) Keep this device only — make the server match this device
-       ⚠ Deletes N records from the server.   [type REPLACE to enable]
-( ) Keep the server only — replace this device's data
-       ⚠ Deletes M records here (X not on the server).  [type REPLACE to enable]
-
-                                   [ Cancel ]   [ Continue ]
-```
-
-- **Merge** is preselected; **Continue** is enabled for it immediately.
-- Selecting a destructive option reveals a type-to-confirm field; **Continue**
-  stays disabled until the confirm word matches.
-- **Cancel** signs back out (no data touched) — sign-in is not completed until a
-  choice is made, so the user can never half-apply a strategy by backing out.
-- A progress state while the chosen strategy runs (mirror/replace can take a few
-  seconds), then drop into the notes screen.
-
-### Login-flow integration (`login_screen.dart`)
-After `authWithPassword`:
-1. `activeOwner = B`.
-2. If **no** foreign local data → `claimLocalNotes(B)` + normal sync (unchanged).
-3. Else → fetch server summary → push `ReconciliationScreen` → run the chosen
-   strategy → then proceed to the notes screen.
-
-Gate the whole feature on `!kIsWeb`.
-
-## Implementation surface
-
-- `features/auth/reconciliation_screen.dart` — the chooser UI + type-to-confirm
-  guard + progress.
-- `sync/reconciliation_service.dart` — the three strategies + the server summary
-  fetch. Holds a `NotesRepository`/`AppDatabase` + `PocketBase` + `SyncEngine`.
-  - `Future<ReconcileSummary> inspect()` — local vs server counts/ids.
-  - `Future<void> merge({bool combineSameName})`
-  - `Future<void> keepLocalMirror()`
-  - `Future<void> keepServerReplace()`
-- `local_notes_repository.dart` — a `reownAll(String userId)` (generalises
-  `claimLocalNotes` to *all* local rows: offline `local` rows re-owned in place,
-  other-account rows re-id'd into fresh copies with their relations remapped) and
-  a `combineNotebooksByName()` helper.
-- `sync_engine.dart` — a server-summary/ids fetch + a "soft-delete server ids"
-  helper for the mirror path (reuses the existing resilient push/pull).
-- `login_screen.dart` — the branch above.
-
-## Edge cases & risks
-
-- **Re-owning another account's data is a copy**, not a move: on a shared server
-  account A's records can't be re-owned in place (ids are taken), so they're
-  re-id'd into fresh copies under B while A keeps its originals. The warning copy
-  should say "copy into this account". (Offline `local` data is moved in place.)
-  Note: round-tripping the same data A→B→A duplicates it, since the copies lose
-  their original-id identity link to A's records.
-- **Keep-local when the device holds a different account** deletes *all* of B's
-  current server data (none of it is local). The impact count makes this explicit;
-  the type-to-confirm is the backstop.
-- **Interrupted runs** (network drop mid-mirror): each strategy must be safe to
-  re-run. Re-own is idempotent; push/pull are idempotent (per the sync
-  invariants); server-extra soft-deletes are idempotent. A retry resumes cleanly.
-- **Notebooks**: there is no default notebook. After a union, same-named
-  notebooks coexist unless "combine same-name notebooks" is on, which folds each
-  duplicate name into its earliest-created notebook.
-- **Large datasets**: summary id-fetch and mirror deletes must paginate.
-- **`watchHasPending`** isn't owner-scoped; after re-own everything is B's, so the
-  indicator is correct. (Pre-existing other-account dirty rows are re-owned too.)
-
-## Testing (integration, against the live backend)
-
-- Merge → union; combine-same-name on → one notebook per duplicate name, notes
-  preserved; combine off → both kept.
-- Keep-local mirror → server == local; server-only records soft-deleted; local
-  intact and re-owned.
-- Keep-server replace → local == server; local-only records gone.
-- Trigger logic: prompt only when foreign local data exists; skipped for a
-  returning same-account user.
-- Guard widget test: destructive Continue disabled until the confirm word matches.
-
-## Phasing (this is the largest roadmap item)
-
-1. ✅ Detection + `ReconciliationScreen` shell + **Merge** path (re-own + union),
-   wired into login.
-2. ✅ **Keep server only** (replace) + impact count + type-to-confirm guard.
-3. ✅ **Keep local only** (mirror, push-only + server-side soft-deletes) + guard.
-4. ✅ **Combine same-name notebooks** toggle (default off).
-5. ✅ Integration tests for each strategy + unit tests for the primitives.
-
-Not done: a widget test for the guard (the type-to-confirm gating) — covered by
-manual/analyzer for now.
+- **Returning user, clean device** (all rows already this account, or empty) →
+  case 1, no prompt, normal sync.
+- **Local + foreign-account data mixed** → case 2; the wipe discards the
+  local-only notes too. Users are told to export first if they want to keep them.
+- **Interrupted wipe/pull** → safe to re-run: `wipeAllLocal` is idempotent and a
+  fresh pull (empty cursors) re-fetches everything.
+- **Web** → never reaches reconciliation; `hasForeignAccountData` is always false
+  (no local DB) and sign-in is pure auth.

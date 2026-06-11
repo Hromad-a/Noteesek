@@ -93,35 +93,23 @@ void main() {
     expect(text.body, contains('2024-01-02'));
   });
 
-  test('hasForeignLocalData: ignores own data, flags another owner\'s',
-      () async {
-    // Only this account's data → no foreign data.
+  test('hasForeignAccountData: own + offline-local are fine, another account '
+      'flags', () async {
+    // Only this account's data → not foreign.
     await repo.createNote(type: 'text');
     await repo.createNotebook('Mine');
-    expect(await repo.hasForeignLocalData('owner1'), isFalse);
+    expect(await repo.hasForeignAccountData('owner1'), isFalse);
 
-    // A note owned by someone else counts as foreign.
+    // Offline `local` data is NOT foreign — it's just claimed on sign-in.
     final repoLocal = LocalNotesRepository(db, 'local');
     await repoLocal.createNote(type: 'text');
-    expect(await repo.hasForeignLocalData('owner1'), isTrue);
-  });
-
-  test('reownAll re-owns every local row (any owner) to the user', () async {
-    final repoLocal = LocalNotesRepository(db, 'local');
-    await repoLocal.createNote(type: 'text'); // owner='local'
     await repoLocal.createNotebook('Offline');
+    expect(await repo.hasForeignAccountData('owner1'), isFalse);
+
+    // A note owned by a *different account* is foreign.
     final repoOther = LocalNotesRepository(db, 'accountX');
-    await repoOther.createNote(type: 'text'); // owner='accountX'
-
-    expect(await repo.hasForeignLocalData('owner1'), isTrue);
-    await repo.reownAll('owner1');
-    expect(await repo.hasForeignLocalData('owner1'), isFalse);
-
-    final notes = await db.select(db.notes).get();
-    expect(notes, isNotEmpty);
-    expect(notes.every((n) => n.owner == 'owner1' && n.dirty), isTrue);
-    final nbs = await db.select(db.notebooks).get();
-    expect(nbs.every((n) => n.owner == 'owner1' && n.dirty), isTrue);
+    await repoOther.createNote(type: 'text');
+    expect(await repo.hasForeignAccountData('owner1'), isTrue);
   });
 
   test('local views show notes/notebooks/labels regardless of owner', () async {
@@ -170,27 +158,6 @@ void main() {
         contains('travel'));
     expect((await repo.watchItems(cl).first).single.content, 'passport');
     expect((await repo.watchAttachments(n).first).single.data, bytes);
-  });
-
-  test('combineNotebooksByName merges same-name notebooks + moves notes',
-      () async {
-    final a = await repo.createNotebook('Work'); // earliest → keeper
-    final b = await repo.createNotebook('Work');
-    final keep = await repo.createNotebook('Personal'); // unique → untouched
-    final na = await repo.createNote(type: 'text', notebook: a);
-    final nb = await repo.createNote(type: 'text', notebook: b);
-
-    await repo.combineNotebooksByName();
-
-    final nbs = await repo.watchNotebooks().first;
-    expect(nbs.where((n) => n.name == 'Work').map((n) => n.id), [a],
-        reason: 'the two Work notebooks collapse to the earliest');
-    expect(nbs.where((n) => n.name == 'Personal').map((n) => n.id), [keep]);
-
-    final notes = await db.select(db.notes).get();
-    expect(notes.firstWhere((n) => n.id == na).notebook, a);
-    expect(notes.firstWhere((n) => n.id == nb).notebook, a,
-        reason: "the duplicate's note is moved to the keeper");
   });
 
   test('setLabelColor persists the color and dirties the label', () async {

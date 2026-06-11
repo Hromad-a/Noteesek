@@ -102,7 +102,7 @@ responding" indicator + snackbar.
   stamp the active owner. So **signing out doesn't touch or hide any note/
   notebook** — it just clears the session and resets the new-note owner to
   `'local'`; existing rows keep their account ownership and stay visible.
-  (`hasForeignLocalData` still drives sign-in reconciliation by owner.)
+  (`hasForeignAccountData` drives sign-in reconciliation by owner.)
 
 ## Features (current)
 Multi-user auth · offline-first mobile + optional sync · web online/realtime ·
@@ -127,8 +127,10 @@ colors** · **app lock** (biometric + PIN, mobile) · **full JSON backup/restore
 (mobile, lossless) · optional **Markdown** rendering + editor toolbar · **quick
 capture** (Android share-to-Noteesek) · **first-run onboarding** + connect-server
 nudge · **pull-to-refresh** sync (mobile) ·
-**sign-in reconciliation** (merge / keep-local / keep-server; see
-docs/sign-in-reconciliation.md) · **wipe data** (this device and/or server;
+**sign-in reconciliation** (claim local data into the account; if the device
+holds another account's data, only "wipe device + load from server" — no
+cross-account merge; see docs/sign-in-reconciliation.md) · **wipe data** (this
+device and/or server;
 purges all collections incl. notebooks) · empty notes auto-move to Trash on
 close.
 

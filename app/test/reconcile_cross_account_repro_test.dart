@@ -32,77 +32,69 @@ Future<int> _dirtyCount(AppDatabase db) async {
   final nb = (await (db.select(db.notebooks)..where((t) => t.dirty.equals(true)))
           .get())
       .length;
-  final l =
-      (await (db.select(db.labels)..where((t) => t.dirty.equals(true))).get())
-          .length;
-  final ci = (await (db.select(db.checklistItems)
-              ..where((t) => t.dirty.equals(true)))
-          .get())
-      .length;
-  return n + nb + l + ci;
+  return n + nb;
 }
 
 void main() {
-  // The regression: on a shared server another account's notes can't be
-  // re-owned in place (their ids are taken), so the old reconciliation left
-  // them permanently dirty. reownAll now re-ids them into fresh copies.
-  test('merging another account\'s notes into a new account is not stranded',
+  // Cross-account merge is intentionally NOT supported on a shared server. When
+  // the device holds another account's notes and you sign into a different
+  // account, the only path is "wipe this device + load the account fresh".
+  test('signing into account B with account A data wipes local and loads B',
       () async {
     final (pbA, userA) = await _newAccount('xacctA');
     final (pbB, userB) = await _newAccount('xacctB');
 
     final db = AppDatabase(NativeDatabase.memory());
 
-    // Account A: a notebook + 3 notes (one in the notebook), synced up.
+    // Device is synced with account A: 3 notes.
     final repoA = LocalNotesRepository(db, userA);
     final engineA = SyncEngine(db, pbA);
-    final nbA = await repoA.createNotebook('Work');
-    final inNb = await repoA.createNote(type: 'text', notebook: nbA);
-    await repoA.updateNoteFields(inNb, title: 'A note in notebook');
-    for (var i = 0; i < 2; i++) {
+    for (var i = 0; i < 3; i++) {
       final id = await repoA.createNote(type: 'text');
       await repoA.updateNoteFields(id, title: 'A note $i');
     }
     await engineA.syncOnce();
-    expect(await _dirtyCount(db), 0, reason: 'A synced clean');
 
-    // Sign out, add a local (offline) note.
+    // Then signed out and made an offline note (owner = local sentinel).
     final repoLocal = LocalNotesRepository(db, AppConfig.localOwner);
-    final localNoteId = await repoLocal.createNote(type: 'text');
-    await repoLocal.updateNoteFields(localNoteId, title: 'offline note');
+    final off = await repoLocal.createNote(type: 'text');
+    await repoLocal.updateNoteFields(off, title: 'offline note');
 
-    // Sign into the empty account B → merge.
+    // Account B already has 2 notes of its own (made on another device).
+    final dbSeed = AppDatabase(NativeDatabase.memory());
+    final repoSeed = LocalNotesRepository(dbSeed, userB);
+    final engineSeed = SyncEngine(dbSeed, pbB);
+    for (var i = 0; i < 2; i++) {
+      final id = await repoSeed.createNote(type: 'text');
+      await repoSeed.updateNoteFields(id, title: 'B note $i');
+    }
+    await engineSeed.syncOnce();
+    await dbSeed.close();
+
+    // Sign into B on the device → it holds account A's data, which is foreign.
     final repoB = LocalNotesRepository(db, userB);
     final engineB = SyncEngine(db, pbB);
-    final svcB = ReconciliationService(db, repoB, pbB, engineB);
-    await svcB.merge(userId: userB, combineSameName: true);
+    expect(await repoB.hasForeignAccountData(userB), isTrue,
+        reason: "account A's notes are foreign to B");
 
-    // Nothing stranded, and B now holds copies of all four notes + the notebook.
-    expect(await _dirtyCount(db), 0,
-        reason: 'no row should stay dirty after the merge');
+    // The only offered action: wipe local + pull B.
+    final service = ReconciliationService(db, pbB, engineB);
+    await service.keepServerReplace();
 
-    final bNotes =
-        await pbB.collection('notes').getFullList(filter: 'deleted = false');
-    expect(bNotes.length, 4, reason: 'B gets the 3 A-notes + the offline note');
-    expect(bNotes.map((r) => r.getStringValue('title')),
-        containsAll(['A note in notebook', 'A note 0', 'A note 1', 'offline note']));
+    // Device now mirrors account B exactly — A's notes and the offline note are
+    // gone, B's 2 notes are present, nothing left dirty.
+    final titles = (await repoB.watchActive().first).map((n) => n.title).toSet();
+    expect(titles, {'B note 0', 'B note 1'});
+    expect(await _dirtyCount(db), 0);
+    expect(await repoB.hasForeignAccountData(userB), isFalse);
 
-    final bNbs =
-        await pbB.collection('notebooks').getFullList(filter: 'deleted = false');
-    expect(bNbs.map((r) => r.getStringValue('name')), contains('Work'));
-
-    // The copied note still resolves its notebook relation (remapped id).
-    final copiedInNb = bNotes
-        .firstWhere((r) => r.getStringValue('title') == 'A note in notebook');
-    expect(copiedInNb.getStringValue('notebook'), isNotEmpty,
-        reason: 'notebook relation should be remapped to the new notebook id');
-    expect(copiedInNb.getStringValue('notebook'),
-        bNbs.firstWhere((r) => r.getStringValue('name') == 'Work').id);
-
-    // Account A is untouched — its originals stay (merge is non-destructive).
-    final aNotes =
+    // Both servers are untouched by the wipe.
+    final aServer =
         await pbA.collection('notes').getFullList(filter: 'deleted = false');
-    expect(aNotes.length, 3, reason: "A's originals are not moved or deleted");
+    expect(aServer.length, 3, reason: "A's server is not modified");
+    final bServer =
+        await pbB.collection('notes').getFullList(filter: 'deleted = false');
+    expect(bServer.length, 2, reason: "B's server is not modified");
 
     await db.close();
   });

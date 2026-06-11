@@ -151,45 +151,6 @@ void main() {
     await db.close();
   });
 
-  test('ReconciliationService.merge unions offline-local with server data',
-      () async {
-    // Server: a notebook + note on the account.
-    final dbS = AppDatabase(NativeDatabase.memory());
-    final repoS = LocalNotesRepository(dbS, userId);
-    final engineS = SyncEngine(dbS, pb);
-    await repoS.createNotebook('SvcServerNb');
-    final sNote = await repoS.createNote(type: 'text');
-    await repoS.updateNoteFields(sNote, title: 'svc from server');
-    await engineS.syncOnce();
-
-    // Device used offline: foreign ('local') notebook + note.
-    final db = AppDatabase(NativeDatabase.memory());
-    final repoLocal = LocalNotesRepository(db, AppConfig.localOwner);
-    await repoLocal.createNotebook('SvcLocalNb');
-    final lNote = await repoLocal.createNote(type: 'text');
-    await repoLocal.updateNoteFields(lNote, title: 'svc from phone');
-
-    // Sign in as the account → inspect + merge.
-    final repoB = LocalNotesRepository(db, userId);
-    final engineB = SyncEngine(db, pb);
-    final service = ReconciliationService(db, repoB, pb, engineB);
-
-    final summary = await service.inspect(userId);
-    expect(summary.foreignItems, greaterThan(0),
-        reason: 'offline notebook + note are foreign to the account');
-    expect(summary.serverNotes, greaterThanOrEqualTo(1));
-
-    await service.merge(userId: userId);
-
-    final nbNames = (await repoB.watchNotebooks().first).map((n) => n.name);
-    expect(nbNames, containsAll(['SvcServerNb', 'SvcLocalNb']));
-    final titles = (await repoB.watchActive().first).map((n) => n.title);
-    expect(titles, containsAll(['svc from server', 'svc from phone']));
-
-    await dbS.close();
-    await db.close();
-  });
-
   test('ReconciliationService.keepServerReplace discards local, pulls server',
       () async {
     // Server: a notebook + note on the account.
@@ -210,7 +171,7 @@ void main() {
 
     final repoB = LocalNotesRepository(db, userId);
     final engineB = SyncEngine(db, pb);
-    final service = ReconciliationService(db, repoB, pb, engineB);
+    final service = ReconciliationService(db, pb, engineB);
 
     final summary = await service.inspect(userId);
     expect(summary.localOnly, greaterThanOrEqualTo(2),
@@ -230,65 +191,6 @@ void main() {
     await db.close();
   });
 
-  test('ReconciliationService.keepLocalMirror makes the server match the device',
-      () async {
-    // Dedicated account so the mirror's server-side deletes don't disturb the
-    // shared suite user's data.
-    final pbM = PocketBase(baseUrl);
-    final emailM = 'mirror_${DateTime.now().microsecondsSinceEpoch}@example.com';
-    await pbM.collection('users').create(body: {
-      'email': emailM,
-      'password': 'password123',
-      'passwordConfirm': 'password123',
-    });
-    await pbM.collection('users').authWithPassword(emailM, 'password123');
-    final userM = pbM.authStore.record!.id;
-
-    // Server starts with a notebook + note that are NOT on the device.
-    final dbS = AppDatabase(NativeDatabase.memory());
-    final repoS = LocalNotesRepository(dbS, userM);
-    final engineS = SyncEngine(dbS, pbM);
-    await repoS.createNotebook('OnlyOnServer');
-    final sNote = await repoS.createNote(type: 'text');
-    await repoS.updateNoteFields(sNote, title: 'server-only note');
-    await engineS.syncOnce();
-
-    // Device has its own offline data.
-    final db = AppDatabase(NativeDatabase.memory());
-    final repoLocal = LocalNotesRepository(db, AppConfig.localOwner);
-    await repoLocal.createNotebook('OnDevice');
-    final lNote = await repoLocal.createNote(type: 'text');
-    await repoLocal.updateNoteFields(lNote, title: 'device note');
-
-    final repoB = LocalNotesRepository(db, userM);
-    final engineB = SyncEngine(db, pbM);
-    final service = ReconciliationService(db, repoB, pbM, engineB);
-
-    final summary = await service.inspect(userM);
-    expect(summary.serverOnly, greaterThanOrEqualTo(2),
-        reason: 'server notebook + note are not on the device');
-
-    await service.keepLocalMirror(userId: userM);
-
-    // The server now reflects the device: its extra records are gone.
-    final serverNotes = await pbM
-        .collection('notes')
-        .getFullList(filter: 'deleted = false');
-    expect(serverNotes.map((r) => r.getStringValue('title')),
-        contains('device note'));
-    expect(serverNotes.map((r) => r.getStringValue('title')),
-        isNot(contains('server-only note')));
-    final serverNbs = await pbM
-        .collection('notebooks')
-        .getFullList(filter: 'deleted = false');
-    expect(serverNbs.map((r) => r.getStringValue('name')), contains('OnDevice'));
-    expect(serverNbs.map((r) => r.getStringValue('name')),
-        isNot(contains('OnlyOnServer')));
-
-    await dbS.close();
-    await db.close();
-  });
-
   test('server stamps owner on create regardless of client value (owner.pb.js)',
       () async {
     // A blank/wrong client owner must NOT fail the create: the server forces
@@ -301,54 +203,5 @@ void main() {
       'deleted': false,
     });
     expect(rec.getStringValue('owner'), userId);
-  });
-
-  test('merge with combineSameName combines a notebook present on both sides',
-      () async {
-    final pbC = PocketBase(baseUrl);
-    final emailC = 'combine_${DateTime.now().microsecondsSinceEpoch}@example.com';
-    await pbC.collection('users').create(body: {
-      'email': emailC,
-      'password': 'password123',
-      'passwordConfirm': 'password123',
-    });
-    await pbC.collection('users').authWithPassword(emailC, 'password123');
-    final userC = pbC.authStore.record!.id;
-
-    // Server: a 'Shared' notebook with a note.
-    final dbS = AppDatabase(NativeDatabase.memory());
-    final repoS = LocalNotesRepository(dbS, userC);
-    final engineS = SyncEngine(dbS, pbC);
-    final sNb = await repoS.createNotebook('Shared');
-    final sNote = await repoS.createNote(type: 'text', notebook: sNb);
-    await repoS.updateNoteFields(sNote, title: 'shared server note');
-    await engineS.syncOnce();
-
-    // Device: its own 'Shared' notebook (different id) with a note.
-    final db = AppDatabase(NativeDatabase.memory());
-    final repoLocal = LocalNotesRepository(db, AppConfig.localOwner);
-    final lNb = await repoLocal.createNotebook('Shared');
-    final lNote = await repoLocal.createNote(type: 'text', notebook: lNb);
-    await repoLocal.updateNoteFields(lNote, title: 'shared device note');
-
-    final repoB = LocalNotesRepository(db, userC);
-    final engineB = SyncEngine(db, pbC);
-    final service = ReconciliationService(db, repoB, pbC, engineB);
-
-    await service.merge(userId: userC, combineSameName: true);
-
-    final shared =
-        (await repoB.watchNotebooks().first).where((n) => n.name == 'Shared');
-    expect(shared.length, 1, reason: 'the two Shared notebooks combine into one');
-    final keeperId = shared.single.id;
-    // Both notes survive and live in the single combined notebook.
-    final notes = await repoB.watchActive().first;
-    final sharedNotes = notes.where((n) =>
-        n.title == 'shared server note' || n.title == 'shared device note');
-    expect(sharedNotes.length, 2);
-    expect(sharedNotes.every((n) => n.notebook == keeperId), isTrue);
-
-    await dbS.close();
-    await db.close();
   });
 }

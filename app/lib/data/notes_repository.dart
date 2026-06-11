@@ -129,17 +129,12 @@ abstract interface class NotesRepository {
   /// No-op for the remote (web) implementation.
   Future<void> claimLocalNotes(String userId);
 
-  /// Re-own EVERY local note/notebook/label (any owner — the `local` sentinel
-  /// *or* a different account) to [userId], marking them dirty so the next sync
-  /// pushes them. Used by sign-in reconciliation (Merge / Keep-local). No-op on
-  /// web.
-  Future<void> reownAll(String userId);
-
-  /// True if the local DB holds meaningful data NOT owned by [userId] — a
-  /// foreign note, or a foreign non-default notebook (a lone offline default
-  /// doesn't count). Drives whether the reconciliation prompt is shown. Always
-  /// false on web (no local DB).
-  Future<bool> hasForeignLocalData(String userId);
+  /// True if the local DB holds non-deleted notes/notebooks owned by *another
+  /// account* — i.e. not [userId] and not the offline `local` sentinel. Drives
+  /// the sign-in flow: offline `local` data alone is just claimed, but another
+  /// account's data forces the "wipe & load from server" choice. Always false
+  /// on web (no local DB).
+  Future<bool> hasForeignAccountData(String userId);
 
   // Labels
   Stream<List<LabelRow>> watchLabels();
@@ -167,12 +162,6 @@ abstract interface class NotesRepository {
 
   /// Move a note into [notebookId] (empty string = no notebook).
   Future<void> setNoteNotebook(String noteId, String notebookId);
-
-  /// Combine notebooks that share a name (trimmed, case-insensitive) into one:
-  /// keep the earliest-created per name, reassign the others' notes to it, and
-  /// soft-delete the duplicates. Used by the Merge reconciliation when "combine
-  /// same-name notebooks" is on. No-op on web.
-  Future<void> combineNotebooksByName();
 
   // Checklist items
   Stream<List<ChecklistItemRow>> watchItems(String noteId);

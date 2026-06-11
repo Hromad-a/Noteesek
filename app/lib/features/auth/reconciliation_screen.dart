@@ -1,18 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../data/notes_repository.dart';
 import '../../providers.dart';
 import '../../sync/reconciliation_service.dart';
 import '../../sync/sync_controller.dart';
 
-/// Shown on mobile sign-in when the device holds data that diverges from the
-/// account's server data (see docs/sign-in-reconciliation.md). Lets the user
-/// choose how to reconcile. Pops `true` once a strategy has run, `false` if the
-/// user cancels (the caller then undoes the sign-in).
+/// Shown on mobile sign-in when the device holds data from *another account*
+/// (see docs/sign-in-reconciliation.md). We don't merge across accounts on a
+/// shared server, so the only safe choice is to wipe this device and load the
+/// signed-in account fresh from the server. Pops `true` once the wipe+pull has
+/// run, `false` if the user cancels (the caller then undoes the sign-in).
 ///
-/// Phase 1: **Merge** is functional; the destructive options are shown but
-/// disabled until their phases land.
+/// Offline `local` data never lands here — it's claimed into the account by the
+/// normal sign-in path. To move notes between accounts, export and re-import.
 class ReconciliationScreen extends ConsumerStatefulWidget {
   const ReconciliationScreen({super.key, required this.userId});
 
@@ -23,31 +23,22 @@ class ReconciliationScreen extends ConsumerStatefulWidget {
       _ReconciliationScreenState();
 }
 
-enum _Strategy { merge, keepLocal, keepServer }
-
 class _ReconciliationScreenState extends ConsumerState<ReconciliationScreen> {
   ReconciliationService get _service => ReconciliationService(
         ref.read(databaseProvider),
-        ref.read(notesRepositoryProvider),
         ref.read(pocketBaseProvider),
         ref.read(syncEngineProvider),
       );
 
   ReconcileSummary? _summary;
   Object? _inspectError;
-  _Strategy _selected = _Strategy.merge;
-  bool _combineSameName = false;
   bool _running = false;
 
-  /// Word the user must type to enable a destructive choice.
+  /// Word the user must type to confirm the wipe.
   static const _confirmWord = 'REPLACE';
   final _confirmCtrl = TextEditingController();
 
-  bool get _isDestructive =>
-      _selected == _Strategy.keepLocal || _selected == _Strategy.keepServer;
-
   bool get _canContinue =>
-      !_isDestructive ||
       _confirmCtrl.text.trim().toUpperCase() == _confirmWord;
 
   @override
@@ -75,32 +66,17 @@ class _ReconciliationScreenState extends ConsumerState<ReconciliationScreen> {
     }
   }
 
-  void _select(_Strategy s) {
-    setState(() {
-      _selected = s;
-      _confirmCtrl.clear();
-    });
-  }
-
   Future<void> _run() async {
     setState(() => _running = true);
     try {
-      switch (_selected) {
-        case _Strategy.merge:
-          await _service.merge(
-              userId: widget.userId, combineSameName: _combineSameName);
-        case _Strategy.keepServer:
-          await _service.keepServerReplace();
-        case _Strategy.keepLocal:
-          await _service.keepLocalMirror(userId: widget.userId);
-      }
+      await _service.keepServerReplace();
       if (mounted) Navigator.of(context).pop(true);
     } catch (e) {
       if (!mounted) return;
       setState(() => _running = false);
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(content: Text('Reconcile failed: $e')));
+        ..showSnackBar(SnackBar(content: Text('Failed: $e')));
     }
   }
 
@@ -110,19 +86,19 @@ class _ReconciliationScreenState extends ConsumerState<ReconciliationScreen> {
       canPop: false, // a choice (or Cancel) must be made; no silent back-out
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Reconcile your data'),
+          title: const Text('Switch account'),
           automaticallyImplyLeading: false,
         ),
         body: _inspectError != null
             ? _ErrorBody(error: _inspectError!, onRetry: _inspect)
             : _summary == null
                 ? const Center(child: CircularProgressIndicator())
-                : _buildChooser(context, _summary!),
+                : _buildBody(context, _summary!),
       ),
     );
   }
 
-  Widget _buildChooser(BuildContext context, ReconcileSummary s) {
+  Widget _buildBody(BuildContext context, ReconcileSummary s) {
     final theme = Theme.of(context);
     return Stack(
       children: [
@@ -130,63 +106,30 @@ class _ReconciliationScreenState extends ConsumerState<ReconciliationScreen> {
           padding: const EdgeInsets.all(16),
           children: [
             Text(
-              'You have data on this device to reconcile with this account.',
-              style: theme.textTheme.bodyLarge,
+              'This device holds notes from another account.',
+              style: theme.textTheme.titleMedium,
             ),
+            const SizedBox(height: 8),
+            Text(
+              "Notes can't be merged across accounts. To continue, this "
+              "device's data will be replaced with the data from the account "
+              'you just signed into.',
+              style: theme.textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 16),
+            _BackupWarning(),
             const SizedBox(height: 16),
             _SummaryCard(summary: s),
             const SizedBox(height: 24),
-            _OptionTile(
-              title: 'Merge — keep everything',
-              subtitle:
-                  "Combine this device's data with the account's. Nothing is "
-                  'deleted.',
-              icon: Icons.merge_outlined,
-              recommended: true,
-              selected: _selected == _Strategy.merge,
-              onTap: () => _select(_Strategy.merge),
-            ),
-            if (_selected == _Strategy.merge)
-              Padding(
-                padding: const EdgeInsets.only(left: 16, right: 8, bottom: 4),
-                child: CheckboxListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  controlAffinity: ListTileControlAffinity.leading,
-                  value: _combineSameName,
-                  onChanged: _running
-                      ? null
-                      : (v) => setState(() => _combineSameName = v ?? false),
-                  title: const Text('Combine notebooks with the same name'),
-                  subtitle: const Text(
-                      'Otherwise same-named notebooks are kept separate.'),
-                ),
-              ),
-            _OptionTile(
-              title: 'Keep this device only',
-              subtitle: 'Make the server match this device. '
-                  '${s.serverOnly} item${s.serverOnly == 1 ? '' : 's'} on the '
-                  'server ${s.serverOnly == 1 ? "isn't" : "aren't"} here and '
-                  'will be deleted.',
-              icon: Icons.smartphone_outlined,
-              selected: _selected == _Strategy.keepLocal,
-              onTap: () => _select(_Strategy.keepLocal),
-            ),
-            _OptionTile(
-              title: 'Keep the server only',
-              subtitle: 'Replace this device with the server. '
-                  '${s.localOnly} item${s.localOnly == 1 ? '' : 's'} here '
-                  '${s.localOnly == 1 ? "isn't" : "aren't"} on the server and '
-                  'will be lost.',
-              icon: Icons.cloud_download_outlined,
-              selected: _selected == _Strategy.keepServer,
-              onTap: () => _select(_Strategy.keepServer),
-            ),
-            if (_isDestructive) _confirmGuard(context),
+            _confirmGuard(context, s),
             const SizedBox(height: 24),
             FilledButton(
               onPressed: (_running || !_canContinue) ? null : _run,
-              child: const Text('Continue'),
+              style: FilledButton.styleFrom(
+                backgroundColor: theme.colorScheme.error,
+                foregroundColor: theme.colorScheme.onError,
+              ),
+              child: const Text('Replace this device with the server'),
             ),
             const SizedBox(height: 8),
             TextButton(
@@ -202,17 +145,10 @@ class _ReconciliationScreenState extends ConsumerState<ReconciliationScreen> {
             child: Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
-                children: [
-                  const CircularProgressIndicator(),
-                  const SizedBox(height: 12),
-                  Text(
-                    switch (_selected) {
-                      _Strategy.keepServer => 'Replacing…',
-                      _Strategy.keepLocal => 'Updating the server…',
-                      _Strategy.merge => 'Merging…',
-                    },
-                    style: const TextStyle(color: Colors.white),
-                  ),
+                children: const [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 12),
+                  Text('Replacing…', style: TextStyle(color: Colors.white)),
                 ],
               ),
             ),
@@ -221,39 +157,83 @@ class _ReconciliationScreenState extends ConsumerState<ReconciliationScreen> {
     );
   }
 
-  /// Type-to-confirm gate shown for the destructive options.
-  Widget _confirmGuard(BuildContext context) {
+  /// Type-to-confirm gate for the wipe.
+  Widget _confirmGuard(BuildContext context, ReconcileSummary s) {
     final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.only(top: 8),
-      child: Column(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.warning_amber_rounded,
+                size: 20, color: theme.colorScheme.error),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Deletes ${s.localNotes} note${s.localNotes == 1 ? '' : 's'} '
+                'from this device and cannot be undone.',
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: theme.colorScheme.error),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          controller: _confirmCtrl,
+          autocorrect: false,
+          enableSuggestions: false,
+          textCapitalization: TextCapitalization.characters,
+          decoration: const InputDecoration(
+            border: OutlineInputBorder(),
+            labelText: 'Type $_confirmWord to confirm',
+          ),
+          onChanged: (_) => setState(() {}),
+        ),
+      ],
+    );
+  }
+}
+
+/// Prominent "back up first" callout shown above the wipe action.
+class _BackupWarning extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: scheme.errorContainer,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Icon(Icons.warning_amber_rounded,
-                  size: 20, color: theme.colorScheme.error),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'This permanently deletes data and cannot be undone.',
-                  style: theme.textTheme.bodySmall
-                      ?.copyWith(color: theme.colorScheme.error),
+          Icon(Icons.warning_amber_rounded, color: scheme.onErrorContainer),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Save anything you want to keep first',
+                  style: theme.textTheme.titleSmall
+                      ?.copyWith(color: scheme.onErrorContainer),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _confirmCtrl,
-            autocorrect: false,
-            enableSuggestions: false,
-            textCapitalization: TextCapitalization.characters,
-            decoration: const InputDecoration(
-              border: OutlineInputBorder(),
-              labelText: 'Type $_confirmWord to confirm',
+                const SizedBox(height: 4),
+                Text(
+                  'Replacing is permanent — notes on this device that aren\'t '
+                  'on a server will be lost. Before continuing, either:\n'
+                  '• Cancel and sign back into the original account to sync '
+                  'these notes, or\n'
+                  '• Cancel and use Settings → “Back up to file”, then '
+                  're-import after switching.',
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: scheme.onErrorContainer),
+                ),
+              ],
             ),
-            onChanged: (_) => setState(() {}),
           ),
         ],
       ),
@@ -281,82 +261,20 @@ class _SummaryCard extends StatelessWidget {
               dense: true,
               contentPadding: EdgeInsets.zero,
               leading: const Icon(Icons.smartphone_outlined),
-              title: const Text('This device'),
-              subtitle: Text(
-                line(summary.localNotebooks, summary.localNotes) +
-                    (summary.foreignItems > 0
-                        ? '  ·  ${summary.foreignItems} from another account or offline'
-                        : ''),
-              ),
+              title: const Text('This device (will be discarded)'),
+              subtitle: Text(line(summary.localNotebooks, summary.localNotes)),
             ),
             const Divider(height: 1),
             ListTile(
               dense: true,
               contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.cloud_outlined),
-              title: const Text('This account (server)'),
+              leading: const Icon(Icons.cloud_download_outlined),
+              title: const Text('This account (will be loaded)'),
               subtitle:
                   Text(line(summary.serverNotebooks, summary.serverNotes)),
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _OptionTile extends StatelessWidget {
-  const _OptionTile({
-    required this.title,
-    required this.subtitle,
-    required this.icon,
-    this.recommended = false,
-    this.selected = false,
-    this.onTap,
-  });
-
-  final String title;
-  final String subtitle;
-  final IconData icon;
-  final bool recommended;
-  final bool selected;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 4),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(
-          color: selected
-              ? theme.colorScheme.primary
-              : theme.colorScheme.outlineVariant,
-          width: selected ? 2 : 1,
-        ),
-      ),
-      child: ListTile(
-        leading: Icon(icon),
-        title: Row(
-          children: [
-            Flexible(child: Text(title)),
-            if (recommended) ...[
-              const SizedBox(width: 8),
-              Chip(
-                label: const Text('Recommended'),
-                visualDensity: VisualDensity.compact,
-                padding: EdgeInsets.zero,
-                labelStyle: theme.textTheme.labelSmall,
-              ),
-            ],
-          ],
-        ),
-        subtitle: Text(subtitle),
-        trailing: selected
-            ? Icon(Icons.check_circle, color: theme.colorScheme.primary)
-            : const Icon(Icons.radio_button_unchecked),
-        onTap: onTap,
       ),
     );
   }

@@ -2,7 +2,6 @@ import 'package:drift/drift.dart';
 import 'package:pocketbase/pocketbase.dart';
 
 import '../data/local/database.dart';
-import '../data/notes_repository.dart';
 import 'sync_engine.dart';
 
 /// A snapshot comparing the device's local data with the account's server data,
@@ -39,14 +38,16 @@ class ReconcileSummary {
   final int serverOnly;
 }
 
-/// Runs the sign-in reconciliation strategies (mobile only). Phase 1 implements
-/// [inspect] + [merge]; [keepLocalMirror] / [keepServerReplace] arrive in later
-/// phases (see docs/sign-in-reconciliation.md).
+/// Runs the sign-in reconciliation flow (mobile only). The device's offline
+/// `local` data is claimed into the account by the normal sign-in path; this
+/// service handles the one case that needs a choice: when the device holds
+/// *another account's* data, [inspect] summarises it and [keepServerReplace]
+/// wipes the device and loads the account fresh (see
+/// docs/sign-in-reconciliation.md).
 class ReconciliationService {
-  ReconciliationService(this._db, this._repo, this._pb, this._engine);
+  ReconciliationService(this._db, this._pb, this._engine);
 
   final AppDatabase _db;
-  final NotesRepository _repo;
   final PocketBase _pb;
   final SyncEngine _engine;
 
@@ -74,67 +75,13 @@ class ReconciliationService {
     );
   }
 
-  /// Merge: re-own all local data into [userId], then sync (push local up, pull
-  /// server down) for a union on both sides. When [combineSameName] is set,
-  /// notebooks that share a name are combined into one after the union.
-  Future<void> merge({
-    required String userId,
-    bool combineSameName = false,
-  }) async {
-    await _repo.reownAll(userId);
-    await _engine.syncOnce(); // union: both sides' notebooks/notes are now local
-    if (combineSameName) {
-      await _repo.combineNotebooksByName();
-      await _engine.syncOnce();
-    }
-  }
-
-  /// Keep server only: discard ALL local data (wipe + reset cursors), then pull
-  /// the account fresh. Local-only records are lost (the guarded choice).
+  /// Replace this device with the account: discard ALL local data (wipe + reset
+  /// cursors), then pull the account fresh. Any local-only/foreign data on the
+  /// device is lost — this is the guarded choice shown when the device holds
+  /// another account's data.
   Future<void> keepServerReplace() async {
     await _db.wipeAllLocal();
     await _engine.syncOnce(); // cursors cleared → full pull
-  }
-
-  /// Keep local only: make the server exactly match this device. Re-own + push
-  /// local up (push-only so server data isn't pulled back), then soft-delete the
-  /// server records that aren't local (the guarded choice), then settle.
-  Future<void> keepLocalMirror({required String userId}) async {
-    await _repo.reownAll(userId);
-    // Snapshot what's on the server but not local, BEFORE pushing (the push adds
-    // local ids to the server, which must not be deleted).
-    final serverOnly = await _serverOnlyByCollection();
-    await _engine.syncOnce(pushOnly: true);
-    for (final entry in serverOnly.entries) {
-      for (final id in entry.value) {
-        try {
-          await _pb.collection(entry.key).update(id, body: {'deleted': true});
-        } on ClientException catch (e) {
-          if (e.statusCode != 404) rethrow; // already gone → fine
-        }
-      }
-    }
-    await _engine.syncOnce(); // pull the tombstones + our pushes, settle
-  }
-
-  /// Per collection, the ids of live server records not present locally — what
-  /// the mirror deletes.
-  Future<Map<String, Set<String>>> _serverOnlyByCollection() async {
-    final tables = <String, (TableInfo, GeneratedColumn<bool>)>{
-      'notes': (_db.notes, _db.notes.deleted),
-      'notebooks': (_db.notebooks, _db.notebooks.deleted),
-      'labels': (_db.labels, _db.labels.deleted),
-      'checklist_items': (_db.checklistItems, _db.checklistItems.deleted),
-      'attachments': (_db.attachments, _db.attachments.deleted),
-    };
-    final result = <String, Set<String>>{};
-    for (final entry in tables.entries) {
-      final (table, deletedCol) = entry.value;
-      final local = await _localIds(table, deletedCol);
-      final server = await _serverIds(entry.key);
-      result[entry.key] = server.difference(local);
-    }
-    return result;
   }
 
   // ---- helpers ----

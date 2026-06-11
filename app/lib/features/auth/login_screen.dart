@@ -78,10 +78,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       await ref.read(activeOwnerProvider.notifier).set(userId);
       final repo = ref.read(notesRepositoryProvider);
 
-      // If the device holds data that diverges from this account (offline notes
-      // or a different account's leftover data), let the user choose how to
-      // reconcile before the first sync. Otherwise just claim + sync as before.
-      if (!kIsWeb && await repo.hasForeignLocalData(userId)) {
+      // If the device holds *another account's* data, we can't merge across
+      // accounts on a shared server — make the user wipe this device and load
+      // the account fresh before the first sync. Offline `local` data isn't
+      // foreign: it's simply claimed into the account below.
+      if (!kIsWeb && await repo.hasForeignAccountData(userId)) {
         if (!mounted) return;
         final proceeded = await Navigator.of(context).push<bool>(
           MaterialPageRoute(
@@ -96,7 +97,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               .set(AppConfig.localOwner);
           return;
         }
-        // The reconciliation screen already ran the chosen strategy (incl. sync).
+        // The screen already wiped + pulled the account.
       } else {
         await repo.claimLocalNotes(userId);
         if (!kIsWeb) {
