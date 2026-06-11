@@ -27,6 +27,9 @@ void showUndoSnackBar({required String message, required VoidCallback onUndo}) {
     ..showSnackBar(SnackBar(
       content: Text(message),
       duration: const Duration(seconds: 5),
+      // A SnackBar with an action defaults to persist=true (Flutter 3.44+), so
+      // without this it never times out and only a manual swipe dismisses it.
+      persist: false,
       action: SnackBarAction(label: 'Undo', onPressed: onUndo),
     ));
 }
