@@ -116,6 +116,17 @@ final isAuthenticatedProvider = Provider<bool>((ref) {
   return pb.authStore.isValid;
 });
 
+/// The signed-in user's id (empty when signed out), recomputed on every auth
+/// change. Because a `Provider` only notifies dependents when its value
+/// actually changes, this stays stable across token refreshes but flips when
+/// the *account* changes — which the web repository keys on so it never shows a
+/// previous session's cached notes.
+final authUserIdProvider = Provider<String>((ref) {
+  ref.watch(authChangesProvider);
+  final pb = ref.watch(pocketBaseProvider);
+  return pb.authStore.record?.id ?? '';
+});
+
 /// On web, a password-reset token captured from the launch URL (`?reset=…`),
 /// set when the user opens the link from a reset email. Routes the app to the
 /// reset-confirm screen ahead of the login gate. Null on mobile or when absent;

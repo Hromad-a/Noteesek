@@ -188,6 +188,10 @@ abstract interface class NotesRepository {
 final notesRepositoryProvider = Provider<NotesRepository>((ref) {
   if (kIsWeb) {
     final pb = ref.watch(pocketBaseProvider);
+    // Rebuild (fresh, empty cache) whenever the signed-in account changes — the
+    // PocketBase client is stable across logins, so without this the repo would
+    // keep serving the previous session's notes until a hard refresh.
+    ref.watch(authUserIdProvider);
     final repo = RemoteNotesRepository(pb);
     ref.onDispose(repo.dispose);
     return repo;
