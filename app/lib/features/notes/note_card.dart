@@ -259,7 +259,16 @@ class _ChecklistPreview extends ConsumerWidget {
                   .bodyMedium
                   ?.copyWith(color: Theme.of(context).disabledColor));
         }
-        final preview = items.take(8).toList();
+        // When "sort checked to bottom" is on, mirror the editor: unchecked
+        // items on top, checked below (each group keeps its stored order).
+        // Otherwise keep the stored order as-is. Then cap the preview length.
+        final ordered = ref.watch(checklistAutoSortProvider)
+            ? [
+                ...items.where((it) => !it.checked),
+                ...items.where((it) => it.checked),
+              ]
+            : items;
+        final preview = ordered.take(8).toList();
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
