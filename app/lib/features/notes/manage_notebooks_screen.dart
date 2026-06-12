@@ -139,6 +139,18 @@ class _ManageNotebooksScreenState extends ConsumerState<ManageNotebooksScreen> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             IconButton(
+                              tooltip: nb.hiddenFromAll
+                                  ? 'Hidden from All notes'
+                                  : 'Shown in All notes',
+                              icon: Icon(nb.hiddenFromAll
+                                  ? Icons.visibility_off_outlined
+                                  : Icons.visibility_outlined),
+                              onPressed: () => ref
+                                  .read(notesRepositoryProvider)
+                                  .setNotebookVisibility(
+                                      nb.id, !nb.hiddenFromAll),
+                            ),
+                            IconButton(
                               tooltip: 'Rename',
                               icon: const Icon(Icons.edit_outlined),
                               onPressed: () => _rename(nb),

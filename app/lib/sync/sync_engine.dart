@@ -167,6 +167,7 @@ class SyncEngine {
       final body = {
         'owner': nb.owner,
         'name': nb.name,
+        'hidden_from_all': nb.hiddenFromAll,
         'deleted': nb.deleted,
       };
       final saved = await _upsert(_notebooks, nb.id, body);
@@ -320,6 +321,7 @@ class SyncEngine {
             id: Value(rec.id),
             owner: Value(rec.getStringValue('owner')),
             name: Value(rec.getStringValue('name')),
+            hiddenFromAll: Value(rec.getBoolValue('hidden_from_all')),
             deleted: Value(rec.getBoolValue('deleted')),
             created: Value(rec.getStringValue('created')),
             updated: Value(rec.getStringValue('updated')),

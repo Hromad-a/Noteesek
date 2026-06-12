@@ -39,8 +39,14 @@ const String kNoNotebook = '__no_notebook__';
 /// Whether [note] belongs to the given selector [scope]. A note counts as "in a
 /// notebook" only when its [NoteRow.notebook] is non-empty and present in
 /// [knownNotebookIds]; otherwise it is uncategorized ("no notebook").
-bool noteInScope(NoteRow note, String scope, Set<String> knownNotebookIds) {
-  if (scope == kAllNotes) return true;
+bool noteInScope(NoteRow note, String scope, Set<String> knownNotebookIds,
+    {Set<String> hiddenNotebookIds = const {}}) {
+  if (scope == kAllNotes) {
+    // Uncategorized notes (and notes in a deleted/unknown notebook) always show;
+    // notes in a notebook flagged "hidden from All notes" are excluded.
+    return note.notebook.isEmpty ||
+        !hiddenNotebookIds.contains(note.notebook);
+  }
   final inNotebook =
       note.notebook.isNotEmpty && knownNotebookIds.contains(note.notebook);
   if (scope == kNoNotebook) return !inNotebook;
@@ -155,6 +161,9 @@ abstract interface class NotesRepository {
 
   Future<String> createNotebook(String name);
   Future<void> renameNotebook(String id, String name);
+
+  /// Set whether this notebook's notes are hidden from the "All notes" view.
+  Future<void> setNotebookVisibility(String id, bool hidden);
 
   /// Soft-delete a notebook. Its notes are either reassigned to "no notebook"
   /// ([moveNotesToDefault] = true) or soft-deleted to Trash.
@@ -504,13 +513,16 @@ final activeNotebookIdProvider = Provider<String>((ref) {
 /// A snapshot of the notebook filtering inputs, resolved synchronously during a
 /// provider build so the (later-running) stream `.map` closure stays pure.
 class _NotebookFilter {
-  const _NotebookFilter(this.scope, this.known);
+  const _NotebookFilter(this.scope, this.known, this.hidden);
 
   final String scope;
   final Set<String> known;
+  final Set<String> hidden;
 
-  List<NoteRow> apply(List<NoteRow> notes) =>
-      notes.where((n) => noteInScope(n, scope, known)).toList();
+  List<NoteRow> apply(List<NoteRow> notes) => notes
+      .where((n) =>
+          noteInScope(n, scope, known, hiddenNotebookIds: hidden))
+      .toList();
 }
 
 /// Resolves the current notebook filter. Watches its dependencies during build,
@@ -519,7 +531,8 @@ _NotebookFilter _notebookFilter(Ref ref) {
   final scope = ref.watch(activeNotebookIdProvider);
   final notebooks = ref.watch(notebooksProvider).asData?.value ?? const [];
   final known = {for (final n in notebooks) n.id};
-  return _NotebookFilter(scope, known);
+  final hidden = {for (final n in notebooks) if (n.hiddenFromAll) n.id};
+  return _NotebookFilter(scope, known, hidden);
 }
 
 /// Active notes for the grid: filtered by the current search query, the

@@ -304,6 +304,48 @@ void main() {
       expect(noteInScope(orphan, work, known), isFalse);
     });
 
+    test('noteInScope: a hidden notebook is excluded from All notes only',
+        () async {
+      final work = await repo.createNotebook('Work');
+      final inWork = await noteRow(
+          await repo.createNote(type: 'text', notebook: work));
+      final loose = await noteRow(await repo.createNote(type: 'text'));
+      final known = {work};
+      final hidden = {work};
+
+      // All notes: the hidden notebook's note drops out; uncategorized stays.
+      expect(noteInScope(inWork, kAllNotes, known, hiddenNotebookIds: hidden),
+          isFalse);
+      expect(noteInScope(loose, kAllNotes, known, hiddenNotebookIds: hidden),
+          isTrue);
+      // Selecting the hidden notebook explicitly still shows its notes.
+      expect(noteInScope(inWork, work, known, hiddenNotebookIds: hidden),
+          isTrue);
+    });
+
+    test('setNotebookVisibility flips the hiddenFromAll flag', () async {
+      final work = await repo.createNotebook('Work');
+      expect(
+          (await repo.watchNotebooks().first)
+              .firstWhere((n) => n.id == work)
+              .hiddenFromAll,
+          isFalse);
+
+      await repo.setNotebookVisibility(work, true);
+      expect(
+          (await repo.watchNotebooks().first)
+              .firstWhere((n) => n.id == work)
+              .hiddenFromAll,
+          isTrue);
+
+      await repo.setNotebookVisibility(work, false);
+      expect(
+          (await repo.watchNotebooks().first)
+              .firstWhere((n) => n.id == work)
+              .hiddenFromAll,
+          isFalse);
+    });
+
     test('setNoteNotebook to "" clears the relation', () async {
       final nb = await repo.createNotebook('Work');
       final id = await repo.createNote(type: 'text', notebook: nb);

@@ -480,6 +480,17 @@ class LocalNotesRepository implements NotesRepository {
   }
 
   @override
+  Future<void> setNotebookVisibility(String id, bool hidden) async {
+    await (_db.update(_db.notebooks)..where((t) => t.id.equals(id))).write(
+      NotebooksCompanion(
+        hiddenFromAll: Value(hidden),
+        updated: Value(pbNow()),
+        dirty: const Value(true),
+      ),
+    );
+  }
+
+  @override
   Future<void> deleteNotebook(String id,
       {required bool moveNotesToDefault}) async {
     final nb = await (_db.select(_db.notebooks)..where((t) => t.id.equals(id)))

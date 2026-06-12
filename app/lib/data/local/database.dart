@@ -131,6 +131,12 @@ class Notebooks extends Table {
   TextColumn get owner => text()();
   TextColumn get name => text().withDefault(const Constant(''))();
 
+  /// When true, this notebook's notes are excluded from the "All notes" view
+  /// (they still show when the notebook is selected as the scope). Stored
+  /// inverted (hidden, default false) so new/legacy rows default to visible.
+  BoolColumn get hiddenFromAll =>
+      boolean().withDefault(const Constant(false))();
+
   /// Soft delete tombstone so removals propagate before being purged.
   BoolColumn get deleted => boolean().withDefault(const Constant(false))();
   TextColumn get created => text().nullable()();
@@ -166,7 +172,7 @@ class AppDatabase extends _$AppDatabase {
             ));
 
   @override
-  int get schemaVersion => 8;
+  int get schemaVersion => 9;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -210,6 +216,9 @@ class AppDatabase extends _$AppDatabase {
             );
             await customStatement(
                 'ALTER TABLE notebooks DROP COLUMN is_default');
+          }
+          if (from < 9) {
+            await m.addColumn(notebooks, notebooks.hiddenFromAll);
           }
         },
       );

@@ -469,6 +469,7 @@ class RemoteNotesRepository implements NotesRepository {
         final r = await _pb.collection('notebooks').create(body: {
           'owner': _ownerId,
           'name': name.trim(),
+          'hidden_from_all': false,
           'deleted': false,
         });
         _notebooks[r.id] = _notebookFrom(r);
@@ -481,6 +482,16 @@ class RemoteNotesRepository implements NotesRepository {
         final r = await _pb
             .collection('notebooks')
             .update(id, body: {'name': name.trim()});
+        _notebooks[id] = _notebookFrom(r);
+        _events.add(null);
+      });
+
+  @override
+  Future<void> setNotebookVisibility(String id, bool hidden) =>
+      _guardVoid(() async {
+        final r = await _pb
+            .collection('notebooks')
+            .update(id, body: {'hidden_from_all': hidden});
         _notebooks[id] = _notebookFrom(r);
         _events.add(null);
       });
@@ -654,6 +665,7 @@ class RemoteNotesRepository implements NotesRepository {
         id: r.id,
         owner: r.getStringValue('owner'),
         name: r.getStringValue('name'),
+        hiddenFromAll: r.getBoolValue('hidden_from_all'),
         deleted: r.getBoolValue('deleted'),
         created: r.getStringValue('created'),
         updated: r.getStringValue('updated'),
