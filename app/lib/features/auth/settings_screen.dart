@@ -19,6 +19,7 @@ import '../../providers.dart';
 import '../../sync/sync_controller.dart';
 import '../export/export_delivery.dart';
 import '../export/export_service.dart';
+import '../export/save_delivery.dart';
 import '../import/import_models.dart';
 import '../import/import_service.dart';
 import '../import/keep_import.dart';
@@ -388,7 +389,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       final bytes = await _exportBackup();
       if (!mounted) return;
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
-      await deliverBytes(bytes, _backupFileName(), 'application/json');
+      // Save straight to the device (Downloads) rather than the share sheet.
+      final where =
+          await saveToDownloads(bytes, _backupFileName(), 'application/json');
+      if (mounted) _snack('Backup saved to $where');
     } catch (e) {
       if (mounted) _snack('Backup failed: $e');
     }

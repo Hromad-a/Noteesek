@@ -41,13 +41,18 @@ void main() {
     final db = AppDatabase(NativeDatabase.opened(raw));
     await db.customSelect('SELECT 1').get(); // force migration to run
 
-    expect(raw.select('PRAGMA user_version').first.values.first, 8);
+    expect(raw.select('PRAGMA user_version').first.values.first, 9);
 
-    // The is_default column is gone.
+    // The is_default column is gone; the v9 hidden_from_all column is present
+    // and defaults to 0 (visible) for the migrated rows.
     final cols = raw
         .select('PRAGMA table_info(notebooks)')
         .map((r) => r['name'] as String);
     expect(cols, isNot(contains('is_default')));
+    expect(cols, contains('hidden_from_all'));
+    final work =
+        raw.select("SELECT hidden_from_all FROM notebooks WHERE id = 'work'").first;
+    expect(work['hidden_from_all'], 0);
 
     // The default notebook's note is now uncategorized; the other is untouched.
     final n1 = raw.select("SELECT notebook FROM notes WHERE id = 'n1'").first;
