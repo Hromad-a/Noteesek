@@ -1,5 +1,12 @@
 # Noteesek
 
+> ⚠️ **Heads up — this is a "vibecoded" project.** It was built largely through
+> AI-assisted, exploratory coding rather than rigorous engineering. It works for
+> my own use, but expect rough edges, untested paths, and bugs. There are **no
+> guarantees** — use it at your own risk, keep backups of your data, and review
+> the code before trusting it with anything important. Issues/PRs welcome, but
+> support is best-effort.
+
 A self-hosted, Google Keep–style notes app. One Flutter codebase, two clients,
 backed by a self-hosted [PocketBase](https://pocketbase.io) server. Multi-user.
 
