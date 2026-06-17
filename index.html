@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Noteesek — Privacy Policy</title>
+  <meta name="robots" content="index, follow">
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1.65;
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 2.5rem 1.25rem 4rem;
+      color: #1c1b1f;
+      background: #fbfaff;
+    }
+    @media (prefers-color-scheme: dark) {
+      body { color: #e6e1e9; background: #141318; }
+      a { color: #cbbfff; }
+      hr { border-color: #333; }
+      code { background: #2a2830; }
+    }
+    h1 { font-size: 1.9rem; line-height: 1.2; margin-bottom: .25rem; }
+    h2 { font-size: 1.3rem; margin-top: 2.2rem; }
+    h3 { font-size: 1.05rem; margin-top: 1.5rem; }
+    .updated { color: #6b6873; font-size: .9rem; margin-top: 0; }
+    a { color: #5b4ec2; }
+    code { background: #ece8f3; padding: .1em .35em; border-radius: 4px; font-size: .9em; }
+    hr { border: none; border-top: 1px solid #ddd; margin: 2.5rem 0; }
+    ul { padding-left: 1.3rem; }
+    li { margin: .35rem 0; }
+    footer { margin-top: 3rem; color: #6b6873; font-size: .85rem; }
+  </style>
+</head>
+<body>
+  <h1>Privacy Policy for Noteesek</h1>
+  <p class="updated">Last updated: 17 June 2026</p>
+
+  <p>Noteesek (“the app”) is a notes application developed by Martin Hromádka
+  (“we”, “us”). This policy explains what happens to your data when you use the
+  app.</p>
+
+  <h2>The short version</h2>
+  <p>Noteesek is <strong>self-hosted and privacy-first</strong>. We do
+  <strong>not</strong> run any central server, and we do <strong>not</strong>
+  collect, receive, store, or have access to any of your data. The app contains
+  <strong>no analytics, no advertising, and no third-party tracking</strong>.</p>
+  <p>Your notes stay either on your device or on a server <strong>you</strong>
+  choose and control.</p>
+
+  <h2>How the app stores your data</h2>
+  <p>Noteesek behaves differently on each platform:</p>
+  <ul>
+    <li><strong>Android (mobile): local-first.</strong> The app works fully
+    offline with <strong>no account required</strong>. Your notes, checklists,
+    labels, notebooks, note colours, and image attachments are stored
+    <strong>only in a local database on your device</strong>. Nothing leaves your
+    device unless you choose to connect a server (see below).</li>
+    <li><strong>Web:</strong> the web version is served by, and talks to, a
+    self-hosted server. Using it requires signing in to that server, and your
+    data lives on that server.</li>
+  </ul>
+
+  <h3>Connecting a server (optional sync)</h3>
+  <p>On mobile you may optionally connect the app to a <strong>PocketBase server
+  that you or a third party you trust operates</strong>. When you do:</p>
+  <ul>
+    <li>The app sends your notes and related data to <strong>that server
+    only</strong>, to keep your devices in sync.</li>
+    <li>To sign in, the app sends an <strong>email address and password</strong>
+    to that server for authentication.</li>
+    <li>The server address is one <strong>you enter yourself</strong>. The app
+    never sends your data to any address you did not configure.</li>
+  </ul>
+  <p>We (the app’s developer) are not a party to this connection and never receive
+  your data. The operator of the server you connect to is responsible for how that
+  server handles your data.</p>
+
+  <h2>What data the app handles</h2>
+  <p>Depending on how you use it, the app handles:</p>
+  <ul>
+    <li><strong>Note content</strong> you create: titles, text, checklist items,
+    note colours, labels, and notebook names.</li>
+    <li><strong>Image attachments</strong> you add to notes.</li>
+    <li><strong>Account credentials</strong> (email and password) — only when you
+    choose to use an account/sync, and only sent to the server you configured.</li>
+  </ul>
+  <p>The app does <strong>not</strong> collect your contacts, location, device
+  identifiers, advertising IDs, or usage analytics.</p>
+
+  <h2>Device permissions</h2>
+  <p>The app requests only the permissions it needs to function:</p>
+  <ul>
+    <li><strong>Internet access</strong> — to reach the server you configure (sync
+    on mobile, or the web app’s own server). If you never connect a server on
+    mobile, the app still works fully offline.</li>
+    <li><strong>Photos / media access</strong> — only when you add an image
+    attachment to a note, so you can pick an image.</li>
+    <li><strong>Sharing (receive shared content)</strong> — so you can share text
+    or images from other apps into Noteesek to create a note (“quick capture”).</li>
+    <li><strong>Biometric / device unlock</strong> — only if you enable the
+    optional app lock. This is handled by your device’s operating system; the app
+    never receives or stores your biometric data.</li>
+  </ul>
+
+  <h2>Network and security notes</h2>
+  <ul>
+    <li>The app can connect to servers over plain <strong>HTTP</strong> as well as
+    HTTPS, because self-hosted servers are often reached over a local network or
+    without a certificate. You choose the server and connection; we recommend an
+    HTTPS address where possible.</li>
+    <li>Image attachments on a server are stored as protected files that require a
+    short-lived access token to download.</li>
+    <li>The security of any server you connect to — including encryption, backups,
+    and access control — is the responsibility of whoever operates that server.</li>
+  </ul>
+
+  <h2>Data sharing with third parties</h2>
+  <p>We do not share your data with anyone, because we never receive it. The app
+  contains no third-party SDKs that collect data. The only place your data is sent
+  is the server <strong>you</strong> explicitly configure.</p>
+
+  <h2>Data retention and deletion</h2>
+  <ul>
+    <li><strong>On-device data</strong> can be removed by deleting notes, emptying
+    the Trash, using the in-app “Wipe data” option, or uninstalling the app.</li>
+    <li><strong>Server data</strong> can be removed from within the app (delete
+    notes / “Wipe data”) or by the server operator directly.</li>
+    <li>You can also export your notes (Markdown or JSON backup) at any time.</li>
+  </ul>
+  <p>Because we do not hold your data, requests to access or delete data must be
+  directed to the operator of the server you use.</p>
+
+  <h2>Children’s privacy</h2>
+  <p>Noteesek is not directed to children under 13 and does not knowingly collect
+  any personal information from anyone, including children.</p>
+
+  <h2>Changes to this policy</h2>
+  <p>We may update this policy from time to time. Material changes will be
+  reflected by updating the “Last updated” date above and publishing the new
+  version at this location.</p>
+
+  <h2>Contact</h2>
+  <p>If you have questions about this privacy policy, contact:<br>
+  <strong>Martin Hromádka</strong> — <a href="mailto:martin.hromadka@outlook.com">martin.hromadka@outlook.com</a></p>
+
+  <footer>Noteesek — self-hosted notes.</footer>
+</body>
+</html>
