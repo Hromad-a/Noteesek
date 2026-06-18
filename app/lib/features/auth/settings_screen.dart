@@ -14,6 +14,7 @@ import '../../config/app_config.dart';
 import '../../data/notes_repository.dart';
 import '../backup/backup_service.dart' as backup;
 import '../backup/remote_backup_service.dart';
+import '../backup/snapshots_screen.dart';
 import '../lock/app_lock.dart';
 import '../../providers.dart';
 import '../../sync/sync_controller.dart';
@@ -844,6 +845,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ? 'Merge a backup file into your account'
                 : 'Merge a backup file into this device'),
             onTap: _restore,
+          ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.history),
+            title: const Text('Version history'),
+            subtitle:
+                const Text('Scheduled server backups: browse & restore'),
+            onTap: () => Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => const SnapshotsScreen(),
+            )),
           ),
           ListTile(
             contentPadding: EdgeInsets.zero,
