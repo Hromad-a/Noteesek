@@ -230,6 +230,38 @@ function latestSnapshot(app, ownerId) {
   return r.length ? r[0] : null;
 }
 
+// ---- scheduled tick ----
+
+// One pass of the hourly cron: for every account with snapshots enabled, take a
+// snapshot when it's *due* (per its frequency) AND something *changed* since the
+// last one, then prune past its retention. Each account is isolated so one
+// failure can't strand the rest. Extracted here so it's unit-testable.
+function runDueSnapshots(app) {
+  const settings = app.findRecordsByFilter("snapshot_settings", "enabled = true", "", 0, 0);
+  for (const s of settings) {
+    if (!s) continue;
+    const ownerId = s.getString("owner");
+    try {
+      const last = latestSnapshot(app, ownerId);
+      if (last) {
+        const elapsed =
+          (Date.now() - fromPbTime(last.getString("created")).getTime()) / 1000;
+        if (elapsed < intervalSeconds(s.getString("frequency"))) continue; // not due
+      }
+      const stats = currentStats(app, ownerId);
+      if (!last && stats.count === 0 && stats.high === "") continue; // empty account
+      if (last && stats.high <= last.getString("highWater") &&
+          stats.count === last.getInt("recordCount")) {
+        continue; // nothing changed since the last snapshot
+      }
+      buildSnapshot(app, ownerId, "auto");
+      pruneAndSweep(app, ownerId, s.getInt("retentionDays"));
+    } catch (err) {
+      app.logger().error("snapshot cron failed", "owner", ownerId, "error", String(err));
+    }
+  }
+}
+
 // ---- pruning + blob GC ----
 
 function pruneAndSweep(app, ownerId, retentionDays) {
@@ -460,6 +492,7 @@ module.exports = {
   buildSnapshot,
   currentStats,
   latestSnapshot,
+  runDueSnapshots,
   pruneAndSweep,
   sweepBlobs,
   restoreSnapshot,

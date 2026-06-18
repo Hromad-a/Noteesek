@@ -15,30 +15,7 @@
 // because PocketBase runs handlers in isolated runtimes (no shared outer scope).
 
 cronAdd("noteesek_snapshots", "0 * * * *", () => {
-  const lib = require(`${__hooks}/snapshots_lib.js`);
-  const settings = $app.findRecordsByFilter("snapshot_settings", "enabled = true", "", 0, 0);
-  for (const s of settings) {
-    if (!s) continue;
-    const ownerId = s.getString("owner");
-    try {
-      const last = lib.latestSnapshot($app, ownerId);
-      if (last) {
-        const elapsed =
-          (Date.now() - lib.fromPbTime(last.getString("created")).getTime()) / 1000;
-        if (elapsed < lib.intervalSeconds(s.getString("frequency"))) continue; // not due
-      }
-      const stats = lib.currentStats($app, ownerId);
-      if (!last && stats.count === 0 && stats.high === "") continue; // empty account
-      if (last && stats.high <= last.getString("highWater") &&
-          stats.count === last.getInt("recordCount")) {
-        continue; // nothing changed since the last snapshot
-      }
-      lib.buildSnapshot($app, ownerId, "auto");
-      lib.pruneAndSweep($app, ownerId, s.getInt("retentionDays"));
-    } catch (err) {
-      $app.logger().error("snapshot cron failed", "owner", ownerId, "error", String(err));
-    }
-  }
+  require(`${__hooks}/snapshots_lib.js`).runDueSnapshots($app);
 });
 
 routerAdd(
