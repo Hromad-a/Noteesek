@@ -422,41 +422,57 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
                         )
                       : (markdownOn && _previewMarkdown)
                           ? _MarkdownPreview(text: note.body)
-                          : GestureDetector(
-                              behavior: HitTestBehavior.opaque,
-                              onTap: () => _bodyFocus.requestFocus(),
-                              child: Padding(
-                                padding:
-                                    const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                                child: TextField(
-                                  controller: _bodyCtrl,
-                                  focusNode: _bodyFocus,
-                                  undoController: _undoController,
-                                  decoration: const InputDecoration(
-                                    hintText: 'Note',
-                                    border: InputBorder.none,
+                          : Column(
+                              children: [
+                                Expanded(
+                                  child: GestureDetector(
+                                    behavior: HitTestBehavior.opaque,
+                                    onTap: () => _bodyFocus.requestFocus(),
+                                    child: Padding(
+                                      padding: const EdgeInsets.fromLTRB(
+                                          16, 8, 16, 16),
+                                      child: TextField(
+                                        controller: _bodyCtrl,
+                                        focusNode: _bodyFocus,
+                                        undoController: _undoController,
+                                        decoration: const InputDecoration(
+                                          hintText: 'Note',
+                                          border: InputBorder.none,
+                                        ),
+                                        expands: true,
+                                        maxLines: null,
+                                        minLines: null,
+                                        textAlignVertical:
+                                            TextAlignVertical.top,
+                                        keyboardType: TextInputType.multiline,
+                                        onChanged: (v) => _repo
+                                            .updateNoteFields(note.id, body: v),
+                                      ),
+                                    ),
                                   ),
-                                  expands: true,
-                                  maxLines: null,
-                                  minLines: null,
-                                  textAlignVertical: TextAlignVertical.top,
-                                  keyboardType: TextInputType.multiline,
-                                  onChanged: (v) => _repo
-                                      .updateNoteFields(note.id, body: v),
                                 ),
-                              ),
+                                // The formatting + undo/redo pill lives at the
+                                // bottom of the *body* so it floats directly
+                                // above the keyboard. (In a bottomNavigationBar
+                                // it would be hidden *behind* the keyboard —
+                                // exactly when it's meant to show.)
+                                if (showEditingBar)
+                                  _MarkdownToolbar(
+                                    controller: _bodyCtrl,
+                                    undoController: _undoController,
+                                    showFormatting: markdownOn,
+                                    onChanged: (v) => _repo
+                                        .updateNoteFields(note.id, body: v),
+                                  ),
+                              ],
                             ),
                 ),
               ],
             ),
+            // While editing, the toolbar (in the body) replaces this; when not
+            // editing, show the timestamps.
             bottomNavigationBar: showEditingBar
-                ? _MarkdownToolbar(
-                    controller: _bodyCtrl,
-                    undoController: _undoController,
-                    showFormatting: markdownOn,
-                    onChanged: (v) =>
-                        _repo.updateNoteFields(note.id, body: v),
-                  )
+                ? null
                 : _TimestampBar(
                     created: note.created,
                     updated: note.updated,
