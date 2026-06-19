@@ -6,6 +6,7 @@ import 'package:markdown_widget/markdown_widget.dart';
 import '../../data/local/database.dart';
 import '../../data/notes_repository.dart';
 import 'note_colors.dart';
+import 'note_markdown_config.dart';
 import 'note_selection.dart';
 
 /// A single Keep-style note card shown in the grid.
@@ -110,9 +111,7 @@ class _NoteCardState extends ConsumerState<NoteCard> {
                               child: IgnorePointer(
                                 child: MarkdownBlock(
                                   data: note.body,
-                                  config: theme.brightness == Brightness.dark
-                                      ? MarkdownConfig.darkConfig
-                                      : MarkdownConfig.defaultConfig,
+                                  config: noteMarkdownConfig(context),
                                 ),
                               ),
                             ),

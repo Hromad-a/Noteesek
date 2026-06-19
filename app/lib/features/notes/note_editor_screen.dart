@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
@@ -10,6 +11,7 @@ import '../../data/notes_repository.dart';
 import '../../ui/app_messenger.dart';
 import '../export/share_note_sheet.dart';
 import 'note_colors.dart';
+import 'note_markdown_config.dart';
 
 enum _OverflowAction {
   convert,
@@ -253,11 +255,13 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
         _seed(note);
         final bg = noteColorFor(context, note.color);
         final markdownOn = ref.watch(markdownEnabledProvider);
-        // The editing toolbar floats above the keyboard: it replaces the
-        // timestamp bar whenever the keyboard is up while editing a text note.
+        // The editing toolbar floats above the keyboard on mobile, so it only
+        // shows while the keyboard is up. Web has no soft keyboard, so keep it
+        // present the whole time a text note is open.
         final keyboardOpen = MediaQuery.of(context).viewInsets.bottom > 0;
-        final showEditingBar =
-            note.type == 'text' && !_previewMarkdown && keyboardOpen;
+        final showEditingBar = note.type == 'text' &&
+            !_previewMarkdown &&
+            (kIsWeb || keyboardOpen);
 
         return PopScope(
           canPop: true,
@@ -1059,9 +1063,7 @@ class _MarkdownPreview extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
       child: MarkdownBlock(
         data: text,
-        config: Theme.of(context).brightness == Brightness.dark
-            ? MarkdownConfig.darkConfig
-            : MarkdownConfig.defaultConfig,
+        config: noteMarkdownConfig(context),
       ),
     );
   }
