@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
@@ -10,6 +11,7 @@ import '../../data/notes_repository.dart';
 import '../../ui/app_messenger.dart';
 import '../export/share_note_sheet.dart';
 import 'note_colors.dart';
+import 'note_markdown_config.dart';
 
 enum _OverflowAction {
   convert,
@@ -52,6 +54,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
   final _titleCtrl = TextEditingController();
   final _bodyCtrl = TextEditingController();
   final _bodyFocus = FocusNode();
+  final _undoController = UndoHistoryController();
   bool _seeded = false;
   String? _seededType;
 
@@ -69,6 +72,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     _titleCtrl.dispose();
     _bodyCtrl.dispose();
     _bodyFocus.dispose();
+    _undoController.dispose();
     for (final c in _itemCtrls.values) {
       c.dispose();
     }
@@ -251,6 +255,13 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
         _seed(note);
         final bg = noteColorFor(context, note.color);
         final markdownOn = ref.watch(markdownEnabledProvider);
+        // The editing toolbar floats above the keyboard on mobile, so it only
+        // shows while the keyboard is up. Web has no soft keyboard, so keep it
+        // present the whole time a text note is open.
+        final keyboardOpen = MediaQuery.of(context).viewInsets.bottom > 0;
+        final showEditingBar = note.type == 'text' &&
+            !_previewMarkdown &&
+            (kIsWeb || keyboardOpen);
 
         return PopScope(
           canPop: true,
@@ -417,12 +428,6 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
                           ? _MarkdownPreview(text: note.body)
                           : Column(
                               children: [
-                                if (markdownOn)
-                                  _MarkdownToolbar(
-                                    controller: _bodyCtrl,
-                                    onChanged: (v) => _repo
-                                        .updateNoteFields(note.id, body: v),
-                                  ),
                                 Expanded(
                                   child: GestureDetector(
                                     behavior: HitTestBehavior.opaque,
@@ -433,6 +438,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
                                       child: TextField(
                                         controller: _bodyCtrl,
                                         focusNode: _bodyFocus,
+                                        undoController: _undoController,
                                         decoration: const InputDecoration(
                                           hintText: 'Note',
                                           border: InputBorder.none,
@@ -442,30 +448,49 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
                                         minLines: null,
                                         textAlignVertical:
                                             TextAlignVertical.top,
-                                        keyboardType:
-                                            TextInputType.multiline,
+                                        keyboardType: TextInputType.multiline,
                                         onChanged: (v) => _repo
-                                            .updateNoteFields(note.id,
-                                                body: v),
+                                            .updateNoteFields(note.id, body: v),
                                       ),
                                     ),
                                   ),
                                 ),
+                                // The formatting + undo/redo pill lives at the
+                                // bottom of the *body* so it floats directly
+                                // above the keyboard. (In a bottomNavigationBar
+                                // it would be hidden *behind* the keyboard —
+                                // exactly when it's meant to show.)
+                                if (showEditingBar)
+                                  _MarkdownToolbar(
+                                    controller: _bodyCtrl,
+                                    undoController: _undoController,
+                                    showFormatting: markdownOn,
+                                    onChanged: (v) => _repo
+                                        .updateNoteFields(note.id, body: v),
+                                  ),
                               ],
                             ),
                 ),
               ],
             ),
-            bottomNavigationBar: _TimestampBar(
-              created: note.created,
-              updated: note.updated,
-              color: bg,
-            ),
-            floatingActionButton: FloatingActionButton(
-              tooltip: 'Save & close',
-              onPressed: () => Navigator.of(context).maybePop(),
-              child: const Icon(Icons.check),
-            ),
+            // While editing, the toolbar (in the body) replaces this; when not
+            // editing, show the timestamps.
+            bottomNavigationBar: showEditingBar
+                ? null
+                : _TimestampBar(
+                    created: note.created,
+                    updated: note.updated,
+                    color: bg,
+                  ),
+            // Hide the check button while the toolbar is up so it doesn't
+            // cover the bar (back still saves; it returns when typing stops).
+            floatingActionButton: showEditingBar
+                ? null
+                : FloatingActionButton(
+                    tooltip: 'Save & close',
+                    onPressed: () => Navigator.of(context).maybePop(),
+                    child: const Icon(Icons.check),
+                  ),
           ),
         );
       },
@@ -1038,9 +1063,7 @@ class _MarkdownPreview extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
       child: MarkdownBlock(
         data: text,
-        config: Theme.of(context).brightness == Brightness.dark
-            ? MarkdownConfig.darkConfig
-            : MarkdownConfig.defaultConfig,
+        config: noteMarkdownConfig(context),
       ),
     );
   }
@@ -1050,10 +1073,19 @@ class _MarkdownPreview extends StatelessWidget {
 /// (wrapping the selection or prefixing the current line) and reports the new
 /// text via [onChanged] so the editor persists it.
 class _MarkdownToolbar extends StatelessWidget {
-  const _MarkdownToolbar({required this.controller, required this.onChanged});
+  const _MarkdownToolbar({
+    required this.controller,
+    required this.undoController,
+    required this.onChanged,
+    required this.showFormatting,
+  });
 
   final TextEditingController controller;
+  final UndoHistoryController undoController;
   final ValueChanged<String> onChanged;
+
+  /// When false (Markdown off) only undo/redo show — no formatting buttons.
+  final bool showFormatting;
 
   /// Selection clamped to a valid range (cursor at end when unfocused).
   (int, int) get _range {
@@ -1090,28 +1122,77 @@ class _MarkdownToolbar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    Widget btn(IconData icon, String tip, VoidCallback onTap) => IconButton(
+    // [onTap] may be null to render the button disabled (greyed out).
+    Widget btn(IconData icon, String tip, VoidCallback? onTap) => IconButton(
           icon: Icon(icon, size: 20),
           tooltip: tip,
           visualDensity: VisualDensity.compact,
           onPressed: onTap,
         );
-    return Material(
-      color: Theme.of(context).colorScheme.surfaceContainerHighest,
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: [
-            btn(Icons.format_bold, 'Bold', () => _wrap('**', '**')),
-            btn(Icons.format_italic, 'Italic', () => _wrap('*', '*')),
-            btn(Icons.title, 'Heading', () => _linePrefix('# ')),
-            btn(Icons.format_list_bulleted, 'Bullet list',
-                () => _linePrefix('- ')),
-            btn(Icons.checklist, 'Checkbox', () => _linePrefix('- [ ] ')),
-            btn(Icons.format_quote, 'Quote', () => _linePrefix('> ')),
-            btn(Icons.code, 'Code', () => _wrap('`', '`')),
-            btn(Icons.link, 'Link', () => _wrap('[', '](url)')),
-          ],
+
+    // Undo/redo reflect the live history; they pin to the left of the bar.
+    final history = ValueListenableBuilder<UndoHistoryValue>(
+      valueListenable: undoController,
+      builder: (context, value, _) => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          btn(Icons.undo, 'Undo',
+              value.canUndo ? undoController.undo : null),
+          btn(Icons.redo, 'Redo',
+              value.canRedo ? undoController.redo : null),
+        ],
+      ),
+    );
+
+    final formatting = showFormatting
+        ? Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  btn(Icons.format_bold, 'Bold', () => _wrap('**', '**')),
+                  btn(Icons.format_italic, 'Italic', () => _wrap('*', '*')),
+                  btn(Icons.title, 'Heading', () => _linePrefix('# ')),
+                  btn(Icons.format_list_bulleted, 'Bullet list',
+                      () => _linePrefix('- ')),
+                  btn(Icons.checklist, 'Checkbox',
+                      () => _linePrefix('- [ ] ')),
+                  btn(Icons.format_quote, 'Quote', () => _linePrefix('> ')),
+                  btn(Icons.code, 'Code', () => _wrap('`', '`')),
+                  btn(Icons.link, 'Link', () => _wrap('[', '](url)')),
+                ],
+              ),
+            ),
+          )
+        : const Spacer();
+
+    // [ExcludeFocus] keeps taps from stealing focus off the body field, so the
+    // keyboard stays up and undo/redo/formatting apply to the live editor.
+    return ExcludeFocus(
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
+          child: Material(
+            color: Theme.of(context).colorScheme.surfaceContainerHigh,
+            elevation: 3,
+            borderRadius: BorderRadius.circular(28),
+            clipBehavior: Clip.antiAlias,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Row(
+                children: [
+                  history,
+                  if (showFormatting)
+                    const SizedBox(
+                      height: 24,
+                      child: VerticalDivider(width: 8, thickness: 1),
+                    ),
+                  formatting,
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );
