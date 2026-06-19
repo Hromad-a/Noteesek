@@ -1,0 +1,114 @@
+name: Deploy to Google Play
+
+# On a semver tag push, builds the Android App Bundle (.aab) and uploads it to
+# the Google Play Console, e.g.:
+#
+#   git tag v0.2.0 && git push origin v0.2.0
+#   -> Play "internal testing" release, fully rolled out
+#
+# This is the Play-Store sibling of release-apk.yml: same trigger, same release
+# keystore, but it builds an .aab (Play's required format) and ships it through
+# the Play Developer API instead of attaching an .apk to a GitHub Release.
+#
+# `workflow_dispatch` lets you re-run against an existing tag from the Actions
+# tab and pick a different track (e.g. promote a build to beta/production).
+#
+# ── Prerequisites (one-time) ──────────────────────────────────────────────────
+#  1. The app must already exist in the Play Console and have had its FIRST
+#     release uploaded manually — the API can't create the listing or the very
+#     first version.
+#  2. A Google Cloud service account with the "Release apps to testing tracks"
+#     (and "Release to production" if you deploy there) permission, granted
+#     access in Play Console → Users and permissions. Download its JSON key.
+#  3. Every release needs a higher versionCode than the last. That comes from the
+#     build number in app/pubspec.yaml (`version: x.y.z+N` → versionCode N), so
+#     bump N for each upload.
+#
+# ── Required repo secrets ─────────────────────────────────────────────────────
+#  Signing (shared with release-apk.yml — same keystore so app updates install
+#  over each other):
+#    ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_PASSWORD,
+#    ANDROID_KEY_ALIAS
+#  Play API:
+#    PLAY_SERVICE_ACCOUNT_JSON  — the full service-account JSON key (paste as-is)
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      track:
+        description: "Play track to release to"
+        type: choice
+        default: internal
+        options:
+          - internal
+          - alpha
+          - beta
+          - production
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      # Decode the release keystore from secrets so the bundle is signed with the
+      # SAME upload key as every other release. Unlike the APK workflow this is
+      # mandatory: Play rejects debug-signed uploads, so fail fast if it's unset.
+      # Required repo secrets: ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD,
+      # ANDROID_KEY_PASSWORD, ANDROID_KEY_ALIAS.
+      - name: Configure release signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::error::ANDROID_KEYSTORE_BASE64 not set — Play requires a release-signed bundle. Add the keystore secrets and re-run."
+            exit 1
+          fi
+          echo "$KEYSTORE_BASE64" | base64 --decode > app/android/app/release.jks
+          cat > app/android/key.properties <<EOF
+          storeFile=release.jks
+          storePassword=$STORE_PASSWORD
+          keyPassword=$KEY_PASSWORD
+          keyAlias=$KEY_ALIAS
+          EOF
+
+      - name: Build release App Bundle
+        working-directory: app
+        run: |
+          flutter pub get
+          dart run build_runner build --delete-conflicting-outputs
+          flutter build appbundle --release
+
+      # On a tag push the track is fixed to internal (safe default); a manual
+      # workflow_dispatch run can target a different track via the input.
+      - name: Resolve track
+        id: track
+        run: echo "track=${{ github.event.inputs.track || 'internal' }}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload to Google Play
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: com.noteesek.app
+          releaseFiles: app/build/app/outputs/bundle/release/app-release.aab
+          track: ${{ steps.track.outputs.track }}
+          status: completed
