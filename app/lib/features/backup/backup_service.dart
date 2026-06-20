@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:drift/drift.dart';
 
 import '../../data/local/database.dart';
+import '../../data/local/ids.dart';
 import 'v2/backup_v2.dart';
 import 'v2/thumbnailer.dart';
 
@@ -166,10 +167,13 @@ class BackupService {
   /// Exports the whole local DB as a v2 backup zip.
   Future<Uint8List> exportV2() async => writeBackupV2(await _gatherV2(), thumbnailer: makeThumbnail);
 
-  /// Restores a v2 zip losslessly (upsert by id), stamping [owner] (v2 files are
-  /// account-portable and carry no owner). Damaged entries are skipped; returns
-  /// the number of notes restored.
-  Future<int> importV2(Uint8List bytes, String owner) async {
+  /// Restores a v2 zip in place (upsert **by id**), stamping [owner]. With
+  /// [selectedNoteIds] only those notes are restored (the rest of the account is
+  /// left alone) — no duplicates, since matching is by id. With [mirror] the
+  /// account is made to match the backup exactly: notes absent from it are moved
+  /// to Trash. Damaged entries are skipped. Returns the number of notes restored.
+  Future<int> importV2(Uint8List bytes, String owner,
+      {Set<String>? selectedNoteIds, bool mirror = false}) async {
     final r = BackupV2Reader.read(bytes);
     var count = 0;
     await _db.transaction(() async {
@@ -195,8 +199,12 @@ class BackupService {
             updated: Value(l['updated'] as String? ?? ''),
             dirty: const Value(true)));
       }
+      final backupNoteIds = <String>{};
       for (final idx in r.notes) {
-        final rec = r.noteRecord(idx['id'] as String);
+        final id = idx['id'] as String;
+        backupNoteIds.add(id);
+        if (selectedNoteIds != null && !selectedNoteIds.contains(id)) continue;
+        final rec = r.noteRecord(id);
         if (rec == null) continue; // damaged → skip, keep the rest
         await _db.into(_db.notes).insertOnConflictUpdate(NotesCompanion.insert(
             id: rec['id'] as String,
@@ -247,6 +255,18 @@ class BackupService {
                   dirty: const Value(true)));
         }
         count++;
+      }
+      if (mirror) {
+        // Make the account match the backup exactly: Trash notes not in it.
+        for (final n in await _db.select(_db.notes).get()) {
+          if (!backupNoteIds.contains(n.id) && !n.deleted) {
+            await (_db.update(_db.notes)..where((t) => t.id.equals(n.id)))
+                .write(NotesCompanion(
+                    deleted: const Value(true),
+                    updated: Value(pbNow()),
+                    dirty: const Value(true)));
+          }
+        }
       }
     });
     return count;

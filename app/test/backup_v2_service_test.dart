@@ -64,4 +64,46 @@ void main() {
 
     await db.close();
   });
+
+  test('importV2 selectedNoteIds restores in place by id — no duplicates',
+      () async {
+    final db = AppDatabase(NativeDatabase.memory());
+    final repo = LocalNotesRepository(db, 'u');
+    final n1 = await repo.createNote(type: 'text');
+    await repo.updateNoteFields(n1, title: 'A');
+    final n2 = await repo.createNote(type: 'text');
+    await repo.updateNoteFields(n2, title: 'B');
+    final backup = await BackupService(db).exportV2();
+
+    await repo.updateNoteFields(n1, title: 'A-edited'); // diverge locally
+    final restored =
+        await BackupService(db).importV2(backup, 'u', selectedNoteIds: {n1});
+
+    expect(restored, 1);
+    final notes = await db.select(db.notes).get();
+    expect(notes.length, 2, reason: 'restored in place — no new note');
+    expect(notes.firstWhere((n) => n.id == n1).title, 'A',
+        reason: 'A reverted to the backup version');
+    expect(notes.firstWhere((n) => n.id == n2).title, 'B',
+        reason: 'unselected note untouched');
+    await db.close();
+  });
+
+  test('importV2 mirror trashes notes absent from the backup', () async {
+    final db = AppDatabase(NativeDatabase.memory());
+    final repo = LocalNotesRepository(db, 'u');
+    final keep = await repo.createNote(type: 'text');
+    await repo.updateNoteFields(keep, title: 'keep');
+    final backup = await BackupService(db).exportV2(); // contains only `keep`
+    final extra = await repo.createNote(type: 'text'); // added after the backup
+    await repo.updateNoteFields(extra, title: 'extra');
+
+    await BackupService(db).importV2(backup, 'u', mirror: true);
+
+    final notes = await db.select(db.notes).get();
+    expect(notes.firstWhere((n) => n.id == keep).deleted, isFalse);
+    expect(notes.firstWhere((n) => n.id == extra).deleted, isTrue,
+        reason: 'absent from the backup → moved to Trash');
+    await db.close();
+  });
 }

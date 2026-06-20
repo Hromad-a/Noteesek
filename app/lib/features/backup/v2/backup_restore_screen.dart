@@ -24,7 +24,7 @@ class BackupRestoreScreen extends ConsumerStatefulWidget {
     required this.bytes,
     required this.sourceLabel,
     this.title = 'Restore a backup',
-    this.allowReplace = true,
+    this.copiesOnly = false,
   });
 
   final Uint8List bytes;
@@ -33,9 +33,11 @@ class BackupRestoreScreen extends ConsumerStatefulWidget {
   /// App-bar title (e.g. "Import notes" when the source is a Markdown import).
   final String title;
 
-  /// When false, only "Add" is offered (copy-only sources like Markdown import,
-  /// where replacing the whole account from a partial export makes no sense).
-  final bool allowReplace;
+  /// When true the source is a copy-only import (e.g. Markdown): notes come in
+  /// as new copies into a chosen notebook. When false (a backup file) restore is
+  /// **by id** — "Restore selected" + "Replace everything" — so it never
+  /// duplicates an existing note.
+  final bool copiesOnly;
 
   @override
   ConsumerState<BackupRestoreScreen> createState() =>
@@ -101,17 +103,31 @@ class _BackupRestoreScreenState extends ConsumerState<BackupRestoreScreen> {
         selectedNoteIds: _selected,
         targetNotebookName: _targetNotebook,
       );
-      if (!mounted) return;
-      Navigator.of(context).pop(true);
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(content: Text('Added $n note${n == 1 ? '' : 's'}')));
+      _done(n, 'Added');
     } catch (e) {
       if (mounted) setState(() => _busy = false);
       _snack('Import failed: $e');
     }
   }
 
+  /// Restore only the selected notes, by id (no duplicates).
+  Future<void> _restoreSelected() async {
+    setState(() => _busy = true);
+    try {
+      final n = kIsWeb
+          ? await RemoteBackupService(ref.read(pocketBaseProvider))
+              .importV2(widget.bytes, selectedNoteIds: _selected)
+          : await backup.BackupService(ref.read(databaseProvider)).importV2(
+              widget.bytes, ref.read(activeOwnerProvider),
+              selectedNoteIds: _selected);
+      _done(n, 'Restored');
+    } catch (e) {
+      if (mounted) setState(() => _busy = false);
+      _snack('Restore failed: $e');
+    }
+  }
+
+  /// Make the account match the whole backup (by id; absent notes → Trash).
   Future<void> _replace() async {
     final ok = await _confirmReplace();
     if (ok != true) return;
@@ -119,18 +135,24 @@ class _BackupRestoreScreenState extends ConsumerState<BackupRestoreScreen> {
     try {
       final n = kIsWeb
           ? await RemoteBackupService(ref.read(pocketBaseProvider))
-              .importV2(widget.bytes)
-          : await backup.BackupService(ref.read(databaseProvider))
-              .importV2(widget.bytes, ref.read(activeOwnerProvider));
-      if (!mounted) return;
-      Navigator.of(context).pop(true);
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(content: Text('Restored $n note${n == 1 ? '' : 's'}')));
+              .importV2(widget.bytes, mirror: true)
+          : await backup.BackupService(ref.read(databaseProvider)).importV2(
+              widget.bytes, ref.read(activeOwnerProvider),
+              mirror: true);
+      _done(n, 'Restored');
     } catch (e) {
       if (mounted) setState(() => _busy = false);
       _snack('Restore failed: $e');
     }
+  }
+
+  void _done(int n, String verb) {
+    if (!mounted) return;
+    Navigator.of(context).pop(true);
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+          SnackBar(content: Text('$verb $n note${n == 1 ? '' : 's'}')));
   }
 
   void _snack(String m) {
@@ -254,12 +276,14 @@ class _BackupRestoreScreenState extends ConsumerState<BackupRestoreScreen> {
           _Footer(
             selectedCount: _selected.length,
             busy: _busy,
-            allowReplace: widget.allowReplace,
+            copiesOnly: widget.copiesOnly,
             notebookNames: _notebookNames,
             target: _targetNotebook,
             onTarget: (v) => setState(() => _targetNotebook = v),
             onAdd: _selected.isEmpty || _busy ? null : _add,
-            onReplace: (_busy || !widget.allowReplace) ? null : _replace,
+            onRestoreSelected:
+                _selected.isEmpty || _busy ? null : _restoreSelected,
+            onReplace: _busy ? null : _replace,
           ),
         ],
       )),
@@ -429,20 +453,22 @@ class _Footer extends StatelessWidget {
   const _Footer({
     required this.selectedCount,
     required this.busy,
-    required this.allowReplace,
+    required this.copiesOnly,
     required this.notebookNames,
     required this.target,
     required this.onTarget,
     required this.onAdd,
+    required this.onRestoreSelected,
     required this.onReplace,
   });
   final int selectedCount;
   final bool busy;
-  final bool allowReplace;
+  final bool copiesOnly;
   final List<String> notebookNames;
   final String? target;
   final ValueChanged<String?> onTarget;
   final VoidCallback? onAdd;
+  final VoidCallback? onRestoreSelected;
   final VoidCallback? onReplace;
 
   @override
@@ -454,54 +480,63 @@ class _Footer extends StatelessWidget {
         top: false,
         child: Padding(
           padding: const EdgeInsets.all(12),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                children: [
-                  const Text('Add into', style: TextStyle(fontSize: 13)),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: DropdownButton<String?>(
-                      isExpanded: true,
-                      value: target,
-                      items: [
-                        const DropdownMenuItem(
-                            value: null, child: Text('Keep original notebook')),
-                        const DropdownMenuItem(
-                            value: '', child: Text('No notebook')),
-                        for (final n in notebookNames)
-                          DropdownMenuItem(value: n, child: Text(n)),
-                      ],
-                      onChanged: busy ? null : onTarget,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Row(
-                children: [
-                  Expanded(
-                    child: FilledButton.tonal(
-                      onPressed: onAdd,
-                      child: Text(busy ? '…' : 'Add $selectedCount to my notes'),
-                    ),
-                  ),
-                  if (allowReplace) ...[
-                    const SizedBox(width: 8),
-                    OutlinedButton(
-                      onPressed: onReplace,
-                      style:
-                          OutlinedButton.styleFrom(foregroundColor: scheme.error),
-                      child: const Text('Replace all…'),
-                    ),
-                  ],
-                ],
-              ),
-            ],
-          ),
+          child: copiesOnly ? _copies(context) : _restore(scheme),
         ),
       ),
     );
   }
+
+  // Copy-only import (Markdown/Keep): new notes into a chosen notebook.
+  Widget _copies(BuildContext context) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              const Text('Add into', style: TextStyle(fontSize: 13)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: DropdownButton<String?>(
+                  isExpanded: true,
+                  value: target,
+                  items: [
+                    const DropdownMenuItem(
+                        value: null, child: Text('Keep original notebook')),
+                    const DropdownMenuItem(
+                        value: '', child: Text('No notebook')),
+                    for (final n in notebookNames)
+                      DropdownMenuItem(value: n, child: Text(n)),
+                  ],
+                  onChanged: busy ? null : onTarget,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.tonal(
+              onPressed: onAdd,
+              child: Text(busy ? '…' : 'Add $selectedCount to my notes'),
+            ),
+          ),
+        ],
+      );
+
+  // Backup-file restore: by id (no duplicates) — selected, or the whole thing.
+  Widget _restore(ColorScheme scheme) => Row(
+        children: [
+          Expanded(
+            child: FilledButton.tonal(
+              onPressed: onRestoreSelected,
+              child: Text(busy ? '…' : 'Restore $selectedCount selected'),
+            ),
+          ),
+          const SizedBox(width: 8),
+          OutlinedButton(
+            onPressed: onReplace,
+            style: OutlinedButton.styleFrom(foregroundColor: scheme.error),
+            child: const Text('Replace all…'),
+          ),
+        ],
+      );
 }

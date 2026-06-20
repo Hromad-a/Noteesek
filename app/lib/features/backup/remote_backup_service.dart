@@ -192,9 +192,11 @@ class RemoteBackupService {
   /// Exports the signed-in account as a v2 backup zip.
   Future<Uint8List> exportV2() async => writeBackupV2(await _gatherV2(), thumbnailer: makeThumbnail);
 
-  /// Restores a v2 zip into the signed-in account (upsert by id; the owner-create
-  /// hook stamps the account). Damaged entries are skipped; returns notes count.
-  Future<int> importV2(Uint8List bytes) async {
+  /// Restores a v2 zip into the signed-in account, upsert **by id**. With
+  /// [selectedNoteIds] only those notes are restored; with [mirror] notes absent
+  /// from the backup are moved to Trash. Damaged entries are skipped.
+  Future<int> importV2(Uint8List bytes,
+      {Set<String>? selectedNoteIds, bool mirror = false}) async {
     final r = BackupV2Reader.read(bytes);
     for (final nb in r.notebooks) {
       await _upsert('notebooks', nb['id'] as String,
@@ -208,8 +210,12 @@ class RemoteBackupService {
       });
     }
     var count = 0;
+    final backupNoteIds = <String>{};
     for (final idx in r.notes) {
-      final rec = r.noteRecord(idx['id'] as String);
+      final id = idx['id'] as String;
+      backupNoteIds.add(id);
+      if (selectedNoteIds != null && !selectedNoteIds.contains(id)) continue;
+      final rec = r.noteRecord(id);
       if (rec == null) continue; // damaged → skip
       await _upsert('notes', rec['id'] as String, {
         'type': rec['type'] ?? 'text',
@@ -242,6 +248,16 @@ class RemoteBackupService {
             sha == null ? null : r.attachmentBytes(sha, ext));
       }
       count++;
+    }
+    if (mirror) {
+      // Make the account match the backup exactly: Trash notes not in it.
+      final existing = await _pb.collection('notes').getFullList(
+          batch: 500, fields: 'id', filter: 'deleted = false');
+      for (final e in existing) {
+        if (!backupNoteIds.contains(e.id)) {
+          await _upsert('notes', e.id, {'deleted': true});
+        }
+      }
     }
     return count;
   }

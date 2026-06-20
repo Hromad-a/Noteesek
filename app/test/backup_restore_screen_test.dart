@@ -52,7 +52,8 @@ void main() {
     expect(find.text('Trips'), findsOneWidget);
     expect(find.text('No notebook'), findsOneWidget);
     expect(find.text('verified'), findsOneWidget);
-    expect(find.text('Add 3 to my notes'), findsOneWidget);
+    // Backup file (default) → by-id restore actions, not copy actions.
+    expect(find.text('Restore 3 selected'), findsOneWidget);
     expect(find.text('Replace all…'), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox());

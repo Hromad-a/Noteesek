@@ -288,7 +288,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         bytes: pkg,
         sourceLabel: file.name,
         title: 'Import notes',
-        allowReplace: false,
+        copiesOnly: true,
       ),
     ));
   }
