@@ -795,19 +795,24 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
           const SizedBox(height: 16),
 
-          if (signedIn) ...[
-            const _SectionHeader('On the server'),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.history),
-              title: const Text('Version history'),
-              subtitle: const Text('Automatic restore points'),
-              onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) => const SnapshotsScreen(),
-              )),
-            ),
-            const SizedBox(height: 16),
-          ],
+          const _SectionHeader('On the server'),
+          // Shown even when not connected (greyed out) so the feature is
+          // discoverable — it lights up once you sign in to a server.
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            enabled: signedIn,
+            leading: const Icon(Icons.history),
+            title: const Text('Version history'),
+            subtitle: Text(signedIn
+                ? 'Automatic restore points'
+                : 'Sign in to a server to use'),
+            onTap: signedIn
+                ? () => Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => const SnapshotsScreen(),
+                    ))
+                : null,
+          ),
+          const SizedBox(height: 16),
 
           const _SectionHeader('Danger zone'),
           ListTile(
