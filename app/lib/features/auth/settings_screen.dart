@@ -794,7 +794,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           const SizedBox(height: 16),
 
           if (signedIn) ...[
-            const _SectionHeader('Server'),
+            const _SectionHeader('On the server'),
             ListTile(
               contentPadding: EdgeInsets.zero,
               leading: const Icon(Icons.history),
