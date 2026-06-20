@@ -600,6 +600,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final pb = ref.watch(pocketBaseProvider);
+    // Rebuild on every auth change so signing in via the connect shortcuts (a
+    // pushed LoginScreen) reflects immediately on return, without navigating
+    // away and back.
+    ref.watch(authChangesProvider);
     final email = pb.authStore.record?.data['email'] as String? ?? '';
     // While signed in, the server is fixed to the one we authenticated against.
     // Repointing it would leave a stale session against a different server, so
