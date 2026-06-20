@@ -507,6 +507,16 @@ class RemoteNotesRepository implements NotesRepository {
       });
 
   @override
+  Future<void> setNoteLock(String id, String lockedBy, String lockedAt) =>
+      _guardVoid(() async {
+        final r = await _pb
+            .collection('notes')
+            .update(id, body: {'lockedBy': lockedBy, 'lockedAt': lockedAt});
+        _notes[id] = _noteFrom(r);
+        _events.add(null);
+      });
+
+  @override
   Future<void> deleteNotebook(String id, {required bool moveNotesToDefault}) =>
       _guardVoid(() async {
         final nb = _notebooks[id];

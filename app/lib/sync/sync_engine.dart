@@ -4,6 +4,7 @@ import 'package:drift/drift.dart';
 import 'package:http/http.dart' as http;
 import 'package:pocketbase/pocketbase.dart';
 
+import '../config/app_config.dart';
 import '../data/local/database.dart';
 
 /// Implements the last-write-wins sync described in docs/sync-protocol.md.
@@ -61,6 +62,8 @@ class SyncEngine {
           // Retry any attachment whose bytes haven't downloaded yet (independent
           // of the pull cursor).
           ('bytes', _attachments),
+          // Drop shared notebooks (+ their notes) that were unshared from me.
+          ('reconcile', _notebooks),
         ],
       ];
       for (final (phase, collection) in steps) {
@@ -82,6 +85,7 @@ class SyncEngine {
 
   Future<void> _runStep(String phase, String collection) {
     if (phase == 'bytes') return _downloadPendingAttachmentBytes();
+    if (phase == 'reconcile') return _reconcileSharedNotebooks();
     final push = phase == 'push';
     return switch (collection) {
       _labels => push ? _pushLabels() : _pullLabels(),
@@ -332,6 +336,41 @@ class SyncEngine {
             dirty: const Value(false),
           ));
     }, _localNotebookUpdated);
+  }
+
+  /// Remove local copies of shared notebooks I've lost access to (the owner
+  /// unshared the notebook or removed me). Such notebooks were owned by *another*
+  /// account and stop being returned by the server once I'm no longer a member;
+  /// the pull can't detect that on its own, so reconcile against the full set of
+  /// notebook ids the server still lets me read. My own notebooks (and the
+  /// offline `local` sentinel) are never touched.
+  Future<void> _reconcileSharedNotebooks() async {
+    final myId = _pb.authStore.record?.id ?? '';
+    if (myId.isEmpty) return;
+    final accessible = <String>{
+      for (final r in await _pb
+          .collection(_notebooks)
+          .getFullList(batch: 500, fields: 'id'))
+        r.id,
+    };
+    final local = await _db.select(_db.notebooks).get();
+    for (final nb in local) {
+      final foreign = nb.owner != myId && nb.owner != AppConfig.localOwner;
+      if (!foreign || accessible.contains(nb.id)) continue;
+      // I was removed from this notebook — purge it and its notes locally.
+      final notes = await (_db.select(_db.notes)
+            ..where((t) => t.notebook.equals(nb.id)))
+          .get();
+      for (final n in notes) {
+        await (_db.delete(_db.checklistItems)
+              ..where((t) => t.note.equals(n.id)))
+            .go();
+        await (_db.delete(_db.attachments)..where((t) => t.note.equals(n.id)))
+            .go();
+        await (_db.delete(_db.notes)..where((t) => t.id.equals(n.id))).go();
+      }
+      await (_db.delete(_db.notebooks)..where((t) => t.id.equals(nb.id))).go();
+    }
   }
 
   Future<void> _pullNotes() async {

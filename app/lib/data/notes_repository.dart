@@ -170,6 +170,11 @@ abstract interface class NotesRepository {
   /// Server-connected only — no-op semantics offline are the caller's concern.
   Future<void> setNotebookSharedWith(String id, List<String> userIds);
 
+  /// Set the per-note edit lock (shared notebooks, pessimistic concurrency).
+  /// [lockedBy] = the holder's user id ('' to release); [lockedAt] = ISO
+  /// timestamp ('' to clear). Used for acquire / heartbeat / release.
+  Future<void> setNoteLock(String id, String lockedBy, String lockedAt);
+
   /// Soft-delete a notebook. Its notes are either reassigned to "no notebook"
   /// ([moveNotesToDefault] = true) or soft-deleted to Trash.
   Future<void> deleteNotebook(String id, {required bool moveNotesToDefault});

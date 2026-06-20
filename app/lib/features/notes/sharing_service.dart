@@ -45,3 +45,18 @@ final shareableUsersProvider =
 
 /// The member ids a notebook is shared with (decodes the JSON id array).
 List<String> sharedWithIds(String rawSharedWith) => labelIdsOfRaw(rawSharedWith);
+
+/// How long a note edit-lock stays valid without a heartbeat refresh. A lock
+/// older than this is "stale" and can be taken over (covers crashes/disconnects;
+/// see docs/shared-notebooks.md). The holder refreshes well within the window.
+const Duration kLockExpiry = Duration(minutes: 2);
+const Duration kLockHeartbeat = Duration(seconds: 25);
+
+/// Whether a lock with this `lockedAt` ISO timestamp is still held (not stale).
+/// Empty/unparseable ⇒ not held.
+bool lockIsFresh(String lockedAt) {
+  if (lockedAt.trim().isEmpty) return false;
+  final t = DateTime.tryParse(lockedAt);
+  if (t == null) return false;
+  return DateTime.now().toUtc().difference(t.toUtc()) < kLockExpiry;
+}
