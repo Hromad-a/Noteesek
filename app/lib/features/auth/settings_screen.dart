@@ -833,51 +833,55 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             const SizedBox(height: 24),
           ],
 
-          const _SectionHeader('Data & storage'),
+          const _SectionHeader('Export'),
           ListTile(
             contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.download_outlined),
-            title: const Text('Export notes'),
-            subtitle: const Text('Download all notes as Markdown'),
+            leading: const Icon(Icons.text_snippet_outlined),
+            title: const Text('Markdown'),
+            subtitle: const Text('Readable files for other apps'),
             onTap: _exportNotes,
           ),
           ListTile(
             contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.upload_outlined),
-            title: const Text('Import notes'),
-            subtitle: const Text('From a Markdown export or Google Keep'),
-            onTap: _importNotes,
+            leading: const Icon(Icons.archive_outlined),
+            title: const Text('Backup file'),
+            subtitle: const Text('An exact copy you can restore later'),
+            onTap: _backUp,
           ),
-          // Full backup/restore: the whole device (mobile) or account (web), as
-          // one lossless .zip file.
+          const SizedBox(height: 16),
+
+          const _SectionHeader('Import'),
           ListTile(
             contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.backup_outlined),
-            title: const Text('Back up to file'),
-            subtitle: Text(kIsWeb
-                ? 'Everything in your account, as one .zip file'
-                : 'Everything on this device, as one .zip file'),
-            onTap: _backUp,
+            leading: const Icon(Icons.note_add_outlined),
+            title: const Text('Notes'),
+            subtitle: const Text('Markdown or Google Keep · adds copies'),
+            onTap: _importNotes,
           ),
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.restore_outlined),
-            title: const Text('Restore from backup'),
-            subtitle: Text(kIsWeb
-                ? 'Merge a backup file into your account'
-                : 'Merge a backup file into this device'),
+            title: const Text('Backup file'),
+            subtitle: const Text('Restore everything, or merge selected'),
             onTap: _restore,
           ),
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.history),
-            title: const Text('Version history'),
-            subtitle:
-                const Text('Scheduled server backups: browse & restore'),
-            onTap: () => Navigator.of(context).push(MaterialPageRoute(
-              builder: (_) => const SnapshotsScreen(),
-            )),
-          ),
+          const SizedBox(height: 16),
+
+          if (signedIn) ...[
+            const _SectionHeader('Server'),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.history),
+              title: const Text('Version history'),
+              subtitle: const Text('Automatic restore points'),
+              onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => const SnapshotsScreen(),
+              )),
+            ),
+            const SizedBox(height: 16),
+          ],
+
+          const _SectionHeader('Danger zone'),
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: _wipeBusy
