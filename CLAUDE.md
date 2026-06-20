@@ -283,14 +283,16 @@ onboarding, sign-out-everywhere).
 Release-signed APK, iOS, FTS5 search, reminders, HTTPS (then tighten cleartext).
 
 ## CI/CD (`.github/workflows/`)
-All three fire on a semver tag push (`v*.*.*`) + manual `workflow_dispatch`:
+Both fire on a semver tag push (`v*.*.*`) + manual `workflow_dispatch`:
 - `docker-publish.yml` — multi-arch image to `ghcr.io/hromad-a/noteesek`.
 - `release-apk.yml` — release-signed `.apk` attached to the GitHub Release
   (debug-signed fallback if keystore secrets are unset).
-- `play-deploy.yml` — release-signed `.aab` uploaded to Google Play (internal
-  testing track, completed rollout; `workflow_dispatch` can pick another track).
-  Shares the keystore secrets with the APK workflow (`ANDROID_KEYSTORE_BASE64`,
-  `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_PASSWORD`, `ANDROID_KEY_ALIAS`) and
-  needs `PLAY_SERVICE_ACCOUNT_JSON`. Prereqs: the app + its first release must
-  exist in the Play Console, and the build number (`pubspec.yaml` `+N`) must
-  increase each release. Local sideload builds: `./scripts/release-apk.sh`.
+
+`play-deploy.yml` (Google Play `.aab` upload) is currently **disabled** — its
+`on:`/`jobs:` are commented out so it never runs. To re-enable, uncomment those
+blocks. It shares the keystore secrets with the APK workflow
+(`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_PASSWORD`,
+`ANDROID_KEY_ALIAS`) and needs `PLAY_SERVICE_ACCOUNT_JSON`. Prereqs: the app +
+its first release must exist in the Play Console, and the build number
+(`pubspec.yaml` `+N`) must increase each release. Local sideload builds:
+`./scripts/release-apk.sh`.

@@ -1,5 +1,11 @@
 name: Deploy to Google Play
 
+# ──────────────────────────────────────────────────────────────────────────────
+# DISABLED for now. This workflow no longer has an `on:` trigger or `jobs:`, so
+# GitHub Actions will not run it (tag pushes only fire docker-publish.yml +
+# release-apk.yml). To re-enable, uncomment the `on:` and `jobs:` blocks below.
+# ──────────────────────────────────────────────────────────────────────────────
+#
 # On a semver tag push, builds the Android App Bundle (.aab) and uploads it to
 # the Google Play Console, e.g.:
 #
@@ -31,84 +37,85 @@ name: Deploy to Google Play
 #    ANDROID_KEY_ALIAS
 #  Play API:
 #    PLAY_SERVICE_ACCOUNT_JSON  — the full service-account JSON key (paste as-is)
-on:
-  push:
-    tags:
-      - "v*.*.*"
-  workflow_dispatch:
-    inputs:
-      track:
-        description: "Play track to release to"
-        type: choice
-        default: internal
-        options:
-          - internal
-          - alpha
-          - beta
-          - production
-
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up JDK
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-          cache: true
-
-      # Decode the release keystore from secrets so the bundle is signed with the
-      # SAME upload key as every other release. Unlike the APK workflow this is
-      # mandatory: Play rejects debug-signed uploads, so fail fast if it's unset.
-      # Required repo secrets: ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD,
-      # ANDROID_KEY_PASSWORD, ANDROID_KEY_ALIAS.
-      - name: Configure release signing
-        env:
-          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-        run: |
-          if [ -z "$KEYSTORE_BASE64" ]; then
-            echo "::error::ANDROID_KEYSTORE_BASE64 not set — Play requires a release-signed bundle. Add the keystore secrets and re-run."
-            exit 1
-          fi
-          echo "$KEYSTORE_BASE64" | base64 --decode > app/android/app/release.jks
-          cat > app/android/key.properties <<EOF
-          storeFile=release.jks
-          storePassword=$STORE_PASSWORD
-          keyPassword=$KEY_PASSWORD
-          keyAlias=$KEY_ALIAS
-          EOF
-
-      - name: Build release App Bundle
-        working-directory: app
-        run: |
-          flutter pub get
-          dart run build_runner build --delete-conflicting-outputs
-          flutter build appbundle --release
-
-      # On a tag push the track is fixed to internal (safe default); a manual
-      # workflow_dispatch run can target a different track via the input.
-      - name: Resolve track
-        id: track
-        run: echo "track=${{ github.event.inputs.track || 'internal' }}" >> "$GITHUB_OUTPUT"
-
-      - name: Upload to Google Play
-        uses: r0adkll/upload-google-play@v1
-        with:
-          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
-          packageName: com.noteesek.app
-          releaseFiles: app/build/app/outputs/bundle/release/app-release.aab
-          track: ${{ steps.track.outputs.track }}
-          status: completed
+#
+# on:
+#   push:
+#     tags:
+#       - "v*.*.*"
+#   workflow_dispatch:
+#     inputs:
+#       track:
+#         description: "Play track to release to"
+#         type: choice
+#         default: internal
+#         options:
+#           - internal
+#           - alpha
+#           - beta
+#           - production
+#
+# jobs:
+#   deploy:
+#     runs-on: ubuntu-latest
+#
+#     steps:
+#       - name: Checkout
+#         uses: actions/checkout@v4
+#
+#       - name: Set up JDK
+#         uses: actions/setup-java@v4
+#         with:
+#           distribution: temurin
+#           java-version: "17"
+#
+#       - name: Set up Flutter
+#         uses: subosito/flutter-action@v2
+#         with:
+#           channel: stable
+#           cache: true
+#
+#       # Decode the release keystore from secrets so the bundle is signed with the
+#       # SAME upload key as every other release. Unlike the APK workflow this is
+#       # mandatory: Play rejects debug-signed uploads, so fail fast if it's unset.
+#       # Required repo secrets: ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD,
+#       # ANDROID_KEY_PASSWORD, ANDROID_KEY_ALIAS.
+#       - name: Configure release signing
+#         env:
+#           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+#           STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+#           KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+#           KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+#         run: |
+#           if [ -z "$KEYSTORE_BASE64" ]; then
+#             echo "::error::ANDROID_KEYSTORE_BASE64 not set — Play requires a release-signed bundle. Add the keystore secrets and re-run."
+#             exit 1
+#           fi
+#           echo "$KEYSTORE_BASE64" | base64 --decode > app/android/app/release.jks
+#           cat > app/android/key.properties <<EOF
+#           storeFile=release.jks
+#           storePassword=$STORE_PASSWORD
+#           keyPassword=$KEY_PASSWORD
+#           keyAlias=$KEY_ALIAS
+#           EOF
+#
+#       - name: Build release App Bundle
+#         working-directory: app
+#         run: |
+#           flutter pub get
+#           dart run build_runner build --delete-conflicting-outputs
+#           flutter build appbundle --release
+#
+#       # On a tag push the track is fixed to internal (safe default); a manual
+#       # workflow_dispatch run can target a different track via the input.
+#       - name: Resolve track
+#         id: track
+#         run: echo "track=${{ github.event.inputs.track || 'internal' }}" >> "$GITHUB_OUTPUT"
+#
+#       - name: Upload to Google Play
+#         uses: r0adkll/upload-google-play@v1
+#         with:
+#           serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+#           packageName: com.noteesek.app
+#           releaseFiles: app/build/app/outputs/bundle/release/app-release.aab
+#           track: ${{ steps.track.outputs.track }}
+#           status: completed
