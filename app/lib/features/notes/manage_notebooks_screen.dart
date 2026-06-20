@@ -156,6 +156,7 @@ class _ManageNotebooksScreenState extends ConsumerState<ManageNotebooksScreen> {
       String me, bool canShare) {
     final shared = sharedWithIds(nb.sharedWith).isNotEmpty;
     final ownedByMe = me.isEmpty || nb.owner == me;
+    final locallyHidden = ref.watch(locallyHiddenNotebooksProvider);
     return ListTile(
       leading: Icon(shared ? Icons.group_outlined : Icons.book_outlined),
       title: Text(nb.name),
@@ -168,6 +169,20 @@ class _ManageNotebooksScreenState extends ConsumerState<ManageNotebooksScreen> {
               tooltip: ownedByMe ? 'Share' : 'Members',
               icon: Icon(shared ? Icons.group : Icons.person_add_alt_outlined),
               onPressed: () => showNotebookShareSheet(context, nb.id),
+            ),
+          // Members (non-owners) can't write the owner's global visibility flag,
+          // so they hide a shared notebook from their own "All notes" locally.
+          if (!ownedByMe)
+            IconButton(
+              tooltip: locallyHidden.contains(nb.id)
+                  ? 'Hidden from your All notes'
+                  : 'Shown in your All notes',
+              icon: Icon(locallyHidden.contains(nb.id)
+                  ? Icons.visibility_off_outlined
+                  : Icons.visibility_outlined),
+              onPressed: () => ref
+                  .read(locallyHiddenNotebooksProvider.notifier)
+                  .toggle(nb.id),
             ),
           if (ownedByMe) ...[
             IconButton(

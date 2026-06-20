@@ -36,6 +36,11 @@ class AppConfig {
   /// "completed" section at the bottom (Google Keep-style).
   static const String kChecklistAutoSort = 'checklist_auto_sort';
 
+  /// Notebook ids the user has personally hidden from "All notes" (a local,
+  /// per-user preference — JSON id array). Used for shared notebooks a member
+  /// doesn't own (they can't write the owner's global `hidden_from_all`).
+  static const String kLocallyHiddenNotebooks = 'locally_hidden_notebooks';
+
   /// App lock (mobile): whether the lock is on, and whether biometric unlock is
   /// allowed. The PIN hash itself lives in secure storage, not here.
   static const String kAppLockEnabled = 'app_lock_enabled';

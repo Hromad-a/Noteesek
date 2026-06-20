@@ -377,6 +377,34 @@ final selectedNotebookIdProvider =
     NotifierProvider<SelectedNotebookNotifier, String>(
         SelectedNotebookNotifier.new);
 
+/// Notebook ids the user has personally hidden from "All notes" — a local,
+/// per-user preference (persisted). Distinct from a notebook's global
+/// `hiddenFromAll` (owner-only): a *member* of a shared notebook can't write the
+/// owner's flag, so they hide it locally with this instead. Both are merged in
+/// [_notebookFilter].
+class LocallyHiddenNotebooksNotifier extends Notifier<Set<String>> {
+  @override
+  Set<String> build() {
+    final prefs = ref.watch(sharedPreferencesProvider);
+    return labelIdsOfRaw(
+            prefs.getString(AppConfig.kLocallyHiddenNotebooks) ?? '[]')
+        .toSet();
+  }
+
+  Future<void> toggle(String id) async {
+    final next = {...state};
+    next.contains(id) ? next.remove(id) : next.add(id);
+    final prefs = ref.read(sharedPreferencesProvider);
+    await prefs.setString(
+        AppConfig.kLocallyHiddenNotebooks, encodeLabelIds(next.toList()));
+    state = next;
+  }
+}
+
+final locallyHiddenNotebooksProvider =
+    NotifierProvider<LocallyHiddenNotebooksNotifier, Set<String>>(
+        LocallyHiddenNotebooksNotifier.new);
+
 /// How the notes grid is laid out.
 enum NoteViewMode { grid, column }
 
@@ -541,7 +569,13 @@ _NotebookFilter _notebookFilter(Ref ref) {
   final scope = ref.watch(activeNotebookIdProvider);
   final notebooks = ref.watch(notebooksProvider).asData?.value ?? const [];
   final known = {for (final n in notebooks) n.id};
-  final hidden = {for (final n in notebooks) if (n.hiddenFromAll) n.id};
+  // A notebook is hidden from "All notes" by its owner's global flag OR by this
+  // user's local preference (the latter is how a shared-notebook member hides it).
+  final hidden = {
+    for (final n in notebooks)
+      if (n.hiddenFromAll) n.id,
+    ...ref.watch(locallyHiddenNotebooksProvider),
+  };
   return _NotebookFilter(scope, known, hidden);
 }
 
