@@ -134,6 +134,13 @@ consistent.
   thumbnailer (the v2 writer already accepts one).
 - **3b — Add-copies import mode** (`importV2Copy`) on both platforms.
 - **3c — settings reorg** into Export / Import / Server.
-- **3d — snapshot download-as-v2** + reuse the preview for snapshot restore;
-  `snapshot_blobs` → content-hash.
-- **3e — Markdown import** adopts the same selection + target-notebook flow.
+- **3d — snapshots — REVISED, mostly deferred.** On review, snapshots already
+  have a *server-side* restore (`replace` + selective `notes`) with a pre-restore
+  safety snapshot and server-side blob handling — strictly better than routing
+  them through the client `BackupRestoreScreen` (which would lose the safety
+  snapshot and has no image bytes client-side). So snapshots **keep their own
+  restore**; the format unity stays conceptual + realised for the file path.
+  Deferred (server-side, untestable while Docker is down, marginal): "download a
+  snapshot as a v2 file" and the `snapshot_blobs` id→content-hash migration.
+- **3e — Markdown/Keep import** ✅ flows through the shared preview
+  (`parsedNotesToBackupBytes` → `BackupRestoreScreen(allowReplace:false)`).
