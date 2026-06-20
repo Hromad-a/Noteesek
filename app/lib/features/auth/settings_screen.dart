@@ -755,13 +755,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 : 'Tap to connect to a server and sign in.'),
             // When signed out, the row is a shortcut into the connect flow.
             onTap: signedIn ? null : _connect,
-            trailing: IconButton(
-              tooltip: 'Test connection',
-              onPressed: _conn == _Conn.checking
-                  ? null
-                  : () => _testConnection(pb.baseURL, silent: false),
-              icon: _connIcon(context),
-            ),
+            // The live-availability check only makes sense for the server we're
+            // actually signed in to — otherwise its green tick reads as "already
+            // connected". Signed out, show the plain connect chevron instead.
+            trailing: signedIn
+                ? IconButton(
+                    tooltip: 'Test connection',
+                    onPressed: _conn == _Conn.checking
+                        ? null
+                        : () => _testConnection(pb.baseURL, silent: false),
+                    icon: _connIcon(context),
+                  )
+                : const Icon(Icons.chevron_right),
           ),
           // Version history lives with the server config; shown even when not
           // connected (greyed out) so it's discoverable — it lights up once you
