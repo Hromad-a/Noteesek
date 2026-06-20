@@ -768,15 +768,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     ))
                 : null,
           ),
+          // Sync status lives with the server too (mobile only — web is realtime).
+          if (!kIsWeb && signedIn) _SyncStatusTile(),
           const SizedBox(height: 24),
-
-          // Sync status: mobile only (web has no sync engine — it's online/
-          // realtime), and only meaningful once connected to a server.
-          if (!kIsWeb && signedIn) ...[
-            const _SectionHeader('Sync'),
-            _SyncStatusTile(),
-            const SizedBox(height: 24),
-          ],
 
           const _SectionHeader('Export'),
           ListTile(
