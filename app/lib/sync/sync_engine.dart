@@ -167,6 +167,7 @@ class SyncEngine {
       final body = {
         'owner': nb.owner,
         'name': nb.name,
+        'sharedWith': _decodeIds(nb.sharedWith),
         'hidden_from_all': nb.hiddenFromAll,
         'deleted': nb.deleted,
       };
@@ -196,6 +197,8 @@ class SyncEngine {
         'color': n.color,
         'labels': _decodeIds(n.labels),
         'notebook': n.notebook,
+        'lockedBy': n.lockedBy,
+        'lockedAt': n.lockedAt,
         'deleted': n.deleted,
       };
       final saved = await _upsert(_notes, n.id, body);
@@ -321,6 +324,7 @@ class SyncEngine {
             id: Value(rec.id),
             owner: Value(rec.getStringValue('owner')),
             name: Value(rec.getStringValue('name')),
+            sharedWith: Value(jsonEncode(rec.getListValue<String>('sharedWith'))),
             hiddenFromAll: Value(rec.getBoolValue('hidden_from_all')),
             deleted: Value(rec.getBoolValue('deleted')),
             created: Value(rec.getStringValue('created')),
@@ -343,6 +347,8 @@ class SyncEngine {
             color: Value(rec.getStringValue('color')),
             labels: Value(jsonEncode(rec.getListValue<String>('labels'))),
             notebook: Value(rec.getStringValue('notebook')),
+            lockedBy: Value(rec.getStringValue('lockedBy')),
+            lockedAt: Value(rec.getStringValue('lockedAt')),
             deleted: Value(rec.getBoolValue('deleted')),
             created: Value(rec.getStringValue('created')),
             updated: Value(rec.getStringValue('updated')),

@@ -40,6 +40,13 @@ class Notes extends Table {
   /// the default notebook. A note belongs to exactly one notebook.
   TextColumn get notebook => text().withDefault(const Constant(''))();
 
+  /// Pessimistic edit lock for notes in shared notebooks (one editor at a time).
+  /// [lockedBy] = the user id currently editing ('' = unlocked); [lockedAt] = ISO
+  /// timestamp refreshed by the holder's heartbeat (a stale lock can be taken
+  /// over). Empty for personal/private notes. Mirrors the server fields.
+  TextColumn get lockedBy => text().withDefault(const Constant(''))();
+  TextColumn get lockedAt => text().withDefault(const Constant(''))();
+
   /// Soft delete tombstone so removals propagate before being purged.
   BoolColumn get deleted => boolean().withDefault(const Constant(false))();
 
@@ -131,6 +138,11 @@ class Notebooks extends Table {
   TextColumn get owner => text()();
   TextColumn get name => text().withDefault(const Constant(''))();
 
+  /// Users this notebook is shared with — a JSON id-array string (like
+  /// `notes.labels`). Owner-managed; empty (`[]`) = private. Mirrors the server
+  /// `notebooks.sharedWith` and rides the notebook's last-write-wins sync.
+  TextColumn get sharedWith => text().withDefault(const Constant('[]'))();
+
   /// When true, this notebook's notes are excluded from the "All notes" view
   /// (they still show when the notebook is selected as the scope). Stored
   /// inverted (hidden, default false) so new/legacy rows default to visible.
@@ -172,7 +184,7 @@ class AppDatabase extends _$AppDatabase {
             ));
 
   @override
-  int get schemaVersion => 9;
+  int get schemaVersion => 10;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -219,6 +231,12 @@ class AppDatabase extends _$AppDatabase {
           }
           if (from < 9) {
             await m.addColumn(notebooks, notebooks.hiddenFromAll);
+          }
+          if (from < 10) {
+            // Shared notebooks: notebook membership + per-note edit lock.
+            await m.addColumn(notebooks, notebooks.sharedWith);
+            await m.addColumn(notes, notes.lockedBy);
+            await m.addColumn(notes, notes.lockedAt);
           }
         },
       );
