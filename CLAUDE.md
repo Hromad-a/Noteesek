@@ -126,7 +126,10 @@ note cards, `app.dart`) · **checklist** drag-reorder
 colors** · **app lock** (biometric + PIN, mobile) · **full JSON backup/restore**
 (lossless; mobile backs up the local DB via `backup_service.dart`, web backs up
 the account via the API in `remote_backup_service.dart` — same JSON layout,
-upsert-by-id) · optional **Markdown** rendering + editor toolbar · **quick
+upsert-by-id) · **server-side version history** (scheduled per-account snapshots:
+hourly/daily, only-when-changed, configurable retention; whole-account-replace or
+per-note restore; lossless image bytes via a dedup blob store; server only — see
+below) · optional **Markdown** rendering + editor toolbar · **quick
 capture** (Android share-to-Noteesek) · **first-run onboarding** + connect-server
 nudge · **pull-to-refresh** sync (mobile) ·
 **sign-in reconciliation** (claim local data into the account; if the device
@@ -199,6 +202,36 @@ close.
 - Password change is **gated on reachability**: the button is disabled (with an
   inline "server not responding" notice) unless the active server is reachable.
   Probed on open and re-probed after saving a new URL.
+
+### Version history / server-side snapshots (server only)
+Scheduled, per-account point-in-time backups, **entirely server-side** (so they
+run regardless of any client). Available on web and on mobile-with-a-server;
+gated on auth (no offline/local equivalent). Settings → **Version history**.
+- **Server** (`server/`): collections `snapshots`, `snapshot_blobs`,
+  `snapshot_settings` (migrations `15–17`, owner-scoped; snapshots/blobs are
+  server-written only). `pb_hooks/snapshots.pb.js` registers an **hourly cron**
+  (per enabled account: snapshot when *due* per its hourly/daily frequency **and**
+  changed since the last `highWater`/`recordCount`, then prune past
+  `retentionDays`), `POST /api/noteesek/snapshots` (back up now), and
+  `POST /api/noteesek/snapshots/{id}/restore` (`mode: replace | notes`). Heavy
+  logic is in `snapshots_lib.js`, **`require()`d** inside each handler (PocketBase
+  runs handlers in isolated runtimes — no shared outer scope).
+- A snapshot's `file` is the **same JSON layout as the manual backup** (format
+  v1), attachments by reference. Image **bytes are deduplicated** into
+  `snapshot_blobs` (one copy per attachment id; `blobRefs` on each snapshot drive
+  mark-and-sweep GC on prune/delete) so frequent snapshots only cost changed text,
+  yet restores are lossless (a hard-deleted image is recreated from its blob).
+- **Restore** always takes a `pre-restore` safety snapshot first, then upserts
+  with refreshed `updated` so LWW propagates to every device. `replace` = make the
+  account match the snapshot exactly (notes absent from it → Trash); `notes` =
+  overwrite only the chosen note ids, others untouched.
+- **Client**: `features/backup/snapshot_service.dart` (PocketBase API; parses a
+  snapshot for read-only preview) + `snapshots_screen.dart` (config card, snapshot
+  list, preview with per-note selection, restore). After a mobile restore it
+  triggers a sync so the local DB converges.
+- JSVM gotchas baked in: record getters are `getString/getBool/getInt` (not
+  `…Value`); set a custom id with `record.set("id", …)` (no `setId`); a `json`
+  field reads back as a Go byte-slice — decode with `toString()` before parsing.
 
 ## Build / run / test
 ```bash
