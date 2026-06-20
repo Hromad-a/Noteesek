@@ -4,6 +4,7 @@ import 'package:drift/drift.dart';
 
 import '../../data/local/database.dart';
 import 'v2/backup_v2.dart';
+import 'v2/thumbnailer.dart';
 
 /// Full local-database backup/restore (mobile). Serializes every row of every
 /// table — including attachment bytes (base64) and the original ids/timestamps —
@@ -163,7 +164,7 @@ class BackupService {
   }
 
   /// Exports the whole local DB as a v2 backup zip.
-  Future<Uint8List> exportV2() async => writeBackupV2(await _gatherV2());
+  Future<Uint8List> exportV2() async => writeBackupV2(await _gatherV2(), thumbnailer: makeThumbnail);
 
   /// Restores a v2 zip losslessly (upsert by id), stamping [owner] (v2 files are
   /// account-portable and carry no owner). Damaged entries are skipped; returns

@@ -7,6 +7,7 @@ import 'package:pocketbase/pocketbase.dart' hide BackupService;
 import '../../data/notes_repository.dart' show labelIdsOfRaw;
 import 'backup_service.dart' show BackupService;
 import 'v2/backup_v2.dart';
+import 'v2/thumbnailer.dart';
 
 /// Web counterpart to [BackupService]: a full backup/restore that talks to the
 /// PocketBase API instead of a local drift DB (web has no local store). It
@@ -189,7 +190,7 @@ class RemoteBackupService {
   }
 
   /// Exports the signed-in account as a v2 backup zip.
-  Future<Uint8List> exportV2() async => writeBackupV2(await _gatherV2());
+  Future<Uint8List> exportV2() async => writeBackupV2(await _gatherV2(), thumbnailer: makeThumbnail);
 
   /// Restores a v2 zip into the signed-in account (upsert by id; the owner-create
   /// hook stamps the account). Damaged entries are skipped; returns notes count.
