@@ -31,4 +31,23 @@ void main() {
     expect(groups.last.notes.single.id, 'n3');
     expect(groups.first.notebookId, 'nbTrip00000000');
   });
+
+  test('toPreviewGroups shows an empty notebook (no notes assigned)', () {
+    final json = utf8.encode(jsonEncode({
+      'notebooks': [
+        {'id': 'nbEmpty0000000', 'name': 'Empty'},
+        {'id': 'nbFull00000000', 'name': 'Full'},
+      ],
+      'notes': [
+        {'id': 'n1', 'title': 'Has home', 'notebook': 'nbFull00000000'},
+      ],
+      'checklistItems': [],
+      'attachments': [],
+    }));
+
+    final groups = SnapshotContents.parse(json).toPreviewGroups();
+    final empty = groups.firstWhere((g) => g.name == 'Empty');
+    expect(empty.notes, isEmpty, reason: 'shown even with no notes');
+    expect(groups.map((g) => g.name), ['Empty', 'Full']);
+  });
 }

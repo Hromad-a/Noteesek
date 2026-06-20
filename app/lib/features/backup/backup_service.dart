@@ -176,8 +176,11 @@ class BackupService {
       {Set<String>? selectedNoteIds, bool mirror = false}) async {
     final r = BackupV2Reader.read(bytes);
     var count = 0;
+    final backupNotebookIds = <String>{};
+    final backupLabelIds = <String>{};
     await _db.transaction(() async {
       for (final nb in r.notebooks) {
+        backupNotebookIds.add(nb['id'] as String);
         await _db.into(_db.notebooks).insertOnConflictUpdate(
             NotebooksCompanion.insert(
                 id: nb['id'] as String,
@@ -189,6 +192,7 @@ class BackupService {
                 dirty: const Value(true)));
       }
       for (final l in r.labels) {
+        backupLabelIds.add(l['id'] as String);
         await _db.into(_db.labels).insertOnConflictUpdate(LabelsCompanion.insert(
             id: l['id'] as String,
             owner: owner,
@@ -257,11 +261,30 @@ class BackupService {
         count++;
       }
       if (mirror) {
-        // Make the account match the backup exactly: Trash notes not in it.
+        // Make the account match the backup exactly: Trash notes, notebooks and
+        // labels that aren't in it.
         for (final n in await _db.select(_db.notes).get()) {
           if (!backupNoteIds.contains(n.id) && !n.deleted) {
             await (_db.update(_db.notes)..where((t) => t.id.equals(n.id)))
                 .write(NotesCompanion(
+                    deleted: const Value(true),
+                    updated: Value(pbNow()),
+                    dirty: const Value(true)));
+          }
+        }
+        for (final nb in await _db.select(_db.notebooks).get()) {
+          if (!backupNotebookIds.contains(nb.id) && !nb.deleted) {
+            await (_db.update(_db.notebooks)..where((t) => t.id.equals(nb.id)))
+                .write(NotebooksCompanion(
+                    deleted: const Value(true),
+                    updated: Value(pbNow()),
+                    dirty: const Value(true)));
+          }
+        }
+        for (final l in await _db.select(_db.labels).get()) {
+          if (!backupLabelIds.contains(l.id) && !l.deleted) {
+            await (_db.update(_db.labels)..where((t) => t.id.equals(l.id)))
+                .write(LabelsCompanion(
                     deleted: const Value(true),
                     updated: Value(pbNow()),
                     dirty: const Value(true)));

@@ -45,32 +45,45 @@ class BackupPreviewList extends StatelessWidget {
 
   List<Widget> _groupTiles(BuildContext context, BackupNotebookGroup g) {
     final scheme = Theme.of(context).colorScheme;
+    final empty = g.notes.isEmpty;
     final state = groupState(g, selected);
     final open = expanded.contains(g.notebookId);
     return [
       Material(
         color: scheme.surfaceContainerHighest,
         child: InkWell(
-          onTap: () => onToggleExpand(g.notebookId),
+          // Nothing to expand/select in an empty notebook — it's shown for
+          // visibility (it's restored regardless).
+          onTap: empty ? null : () => onToggleExpand(g.notebookId),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             child: Row(
               children: [
-                BackupTriBox(state: state, onTap: () => onToggleGroup(g)),
+                if (empty)
+                  const SizedBox(width: 22)
+                else
+                  BackupTriBox(state: state, onTap: () => onToggleGroup(g)),
                 const SizedBox(width: 10),
                 Icon(
                     g.notebookId.isEmpty
                         ? Icons.folder_off_outlined
                         : Icons.folder_outlined,
-                    size: 20),
+                    size: 20,
+                    color: empty ? scheme.outline : null),
                 const SizedBox(width: 8),
                 Expanded(
                     child: Text(g.name,
-                        style: const TextStyle(fontWeight: FontWeight.w500))),
-                Text('${g.notes.length}',
-                    style: Theme.of(context).textTheme.bodySmall),
-                Icon(open ? Icons.expand_less : Icons.expand_more,
-                    color: scheme.outline),
+                        style: TextStyle(
+                            fontWeight: FontWeight.w500,
+                            color: empty ? scheme.outline : null))),
+                if (empty)
+                  Text('empty', style: Theme.of(context).textTheme.bodySmall)
+                else ...[
+                  Text('${g.notes.length}',
+                      style: Theme.of(context).textTheme.bodySmall),
+                  Icon(open ? Icons.expand_less : Icons.expand_more,
+                      color: scheme.outline),
+                ],
               ],
             ),
           ),

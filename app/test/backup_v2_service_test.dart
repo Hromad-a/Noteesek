@@ -5,6 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:noteesek/data/local/database.dart';
 import 'package:noteesek/data/local_notes_repository.dart';
 import 'package:noteesek/features/backup/backup_service.dart';
+import 'package:noteesek/features/backup/v2/backup_preview.dart';
+import 'package:noteesek/features/backup/v2/backup_v2.dart';
 
 void main() {
   test('v2 BackupService: export → wipe → import round-trips everything',
@@ -89,21 +91,49 @@ void main() {
     await db.close();
   });
 
-  test('importV2 mirror trashes notes absent from the backup', () async {
+  test('importV2 mirror trashes notes, notebooks and labels absent from backup',
+      () async {
     final db = AppDatabase(NativeDatabase.memory());
     final repo = LocalNotesRepository(db, 'u');
     final keep = await repo.createNote(type: 'text');
     await repo.updateNoteFields(keep, title: 'keep');
-    final backup = await BackupService(db).exportV2(); // contains only `keep`
-    final extra = await repo.createNote(type: 'text'); // added after the backup
+    final keepNb = await repo.createNotebook('KeepBook');
+    final keepLabel = await repo.createLabel('keepLabel');
+    final backup = await BackupService(db).exportV2(); // the above only
+
+    final extra = await repo.createNote(type: 'text'); // added after backup
     await repo.updateNoteFields(extra, title: 'extra');
+    final extraNb = await repo.createNotebook('ExtraBook');
+    final extraLabel = await repo.createLabel('extraLabel');
 
     await BackupService(db).importV2(backup, 'u', mirror: true);
 
     final notes = await db.select(db.notes).get();
     expect(notes.firstWhere((n) => n.id == keep).deleted, isFalse);
-    expect(notes.firstWhere((n) => n.id == extra).deleted, isTrue,
-        reason: 'absent from the backup → moved to Trash');
+    expect(notes.firstWhere((n) => n.id == extra).deleted, isTrue);
+
+    final nbs = await db.select(db.notebooks).get();
+    expect(nbs.firstWhere((n) => n.id == keepNb).deleted, isFalse);
+    expect(nbs.firstWhere((n) => n.id == extraNb).deleted, isTrue,
+        reason: 'notebook absent from the backup → trashed');
+
+    final labels = await db.select(db.labels).get();
+    expect(labels.firstWhere((l) => l.id == keepLabel).deleted, isFalse);
+    expect(labels.firstWhere((l) => l.id == extraLabel).deleted, isTrue,
+        reason: 'label absent from the backup → trashed');
     await db.close();
+  });
+
+  test('exported empty notebook still appears in the restore preview',
+      () async {
+    final db = AppDatabase(NativeDatabase.memory());
+    final repo = LocalNotesRepository(db, 'u');
+    await repo.createNotebook('Empty'); // no notes assigned
+    final backup = await BackupService(db).exportV2();
+    await db.close();
+
+    final groups = buildBackupPreview(BackupV2Reader.read(backup)).groups;
+    final empty = groups.firstWhere((g) => g.name == 'Empty');
+    expect(empty.notes, isEmpty, reason: 'visible despite holding no notes');
   });
 }

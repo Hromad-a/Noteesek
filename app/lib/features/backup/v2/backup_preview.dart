@@ -59,6 +59,13 @@ BackupPreviewData buildBackupPreview(BackupV2Reader r) {
     for (final nb in r.notebooks)
       nb['id'] as String: (nb['name'] as String? ?? '').trim()
   };
+  // Non-deleted, named notebooks — shown even when they hold no notes, so an
+  // empty notebook in the backup is still visible (and clearly restored).
+  final activeNbIds = {
+    for (final nb in r.notebooks)
+      if (nb['deleted'] != true && (nb['name'] as String? ?? '').trim().isNotEmpty)
+        nb['id'] as String
+  };
   final damagedPaths = r.damagedEntries().toSet();
 
   final byNotebook = <String, List<BackupNoteSummary>>{};
@@ -82,13 +89,17 @@ BackupPreviewData buildBackupPreview(BackupV2Reader r) {
     ));
   }
 
-  // Named notebooks first (alphabetical), "No notebook" last.
+  // Named notebooks first (alphabetical), "No notebook" last. Includes empty
+  // notebooks (active notebooks with no notes assigned to them).
   final groups = <BackupNotebookGroup>[];
-  final namedKeys = byNotebook.keys.where((k) => k.isNotEmpty).toList()
+  final namedKeys = <String>{
+    ...byNotebook.keys.where((k) => k.isNotEmpty),
+    ...activeNbIds,
+  }.toList()
     ..sort((a, b) => nbNameById[a]!.toLowerCase().compareTo(nbNameById[b]!.toLowerCase()));
   for (final k in namedKeys) {
     groups.add(BackupNotebookGroup(
-        notebookId: k, name: nbNameById[k]!, notes: byNotebook[k]!));
+        notebookId: k, name: nbNameById[k]!, notes: byNotebook[k] ?? const []));
   }
   if (byNotebook.containsKey('')) {
     groups.add(BackupNotebookGroup(

@@ -198,11 +198,15 @@ class RemoteBackupService {
   Future<int> importV2(Uint8List bytes,
       {Set<String>? selectedNoteIds, bool mirror = false}) async {
     final r = BackupV2Reader.read(bytes);
+    final backupNotebookIds = <String>{};
+    final backupLabelIds = <String>{};
     for (final nb in r.notebooks) {
+      backupNotebookIds.add(nb['id'] as String);
       await _upsert('notebooks', nb['id'] as String,
           {'name': nb['name'] ?? '', 'deleted': nb['deleted'] ?? false});
     }
     for (final l in r.labels) {
+      backupLabelIds.add(l['id'] as String);
       await _upsert('labels', l['id'] as String, {
         'name': l['name'] ?? '',
         'color': l['color'] ?? '',
@@ -250,12 +254,27 @@ class RemoteBackupService {
       count++;
     }
     if (mirror) {
-      // Make the account match the backup exactly: Trash notes not in it.
-      final existing = await _pb.collection('notes').getFullList(
+      // Make the account match the backup exactly: Trash notes, notebooks and
+      // labels that aren't in it.
+      final existingNotes = await _pb.collection('notes').getFullList(
           batch: 500, fields: 'id', filter: 'deleted = false');
-      for (final e in existing) {
+      for (final e in existingNotes) {
         if (!backupNoteIds.contains(e.id)) {
           await _upsert('notes', e.id, {'deleted': true});
+        }
+      }
+      final existingNotebooks = await _pb.collection('notebooks').getFullList(
+          batch: 500, fields: 'id', filter: 'deleted = false');
+      for (final e in existingNotebooks) {
+        if (!backupNotebookIds.contains(e.id)) {
+          await _upsert('notebooks', e.id, {'deleted': true});
+        }
+      }
+      final existingLabels = await _pb.collection('labels').getFullList(
+          batch: 500, fields: 'id', filter: 'deleted = false');
+      for (final e in existingLabels) {
+        if (!backupLabelIds.contains(e.id)) {
+          await _upsert('labels', e.id, {'deleted': true});
         }
       }
     }

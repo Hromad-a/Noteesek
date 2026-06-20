@@ -217,14 +217,19 @@ class SnapshotContents {
         damaged: false,
       ));
     }
+    // Includes empty notebooks (notebookNames already holds only non-deleted
+    // ones) so a notebook with no notes is still visible in the tree.
     final groups = <BackupNotebookGroup>[];
-    final namedKeys = byNotebook.keys.where((k) => k.isNotEmpty).toList()
+    final namedKeys = <String>{
+      ...byNotebook.keys.where((k) => k.isNotEmpty),
+      ...notebookNames.keys.where((k) => (notebookNames[k] ?? '').isNotEmpty),
+    }.toList()
       ..sort((a, b) => notebookNames[a]!
           .toLowerCase()
           .compareTo(notebookNames[b]!.toLowerCase()));
     for (final k in namedKeys) {
       groups.add(BackupNotebookGroup(
-          notebookId: k, name: notebookNames[k]!, notes: byNotebook[k]!));
+          notebookId: k, name: notebookNames[k]!, notes: byNotebook[k] ?? const []));
     }
     if (byNotebook.containsKey('')) {
       groups.add(BackupNotebookGroup(
