@@ -14,14 +14,18 @@ import '../../config/app_config.dart';
 import '../../data/notes_repository.dart';
 import '../backup/backup_service.dart' as backup;
 import '../backup/remote_backup_service.dart';
+import '../backup/v2/backup_restore_screen.dart';
+import '../backup/v2/backup_v2_import.dart';
+import '../../ui/web_centered.dart';
+import '../backup/snapshots_screen.dart';
 import '../lock/app_lock.dart';
+import 'login_screen.dart';
 import '../../providers.dart';
 import '../../sync/sync_controller.dart';
 import '../export/export_delivery.dart';
 import '../export/export_service.dart';
 import '../export/save_delivery.dart';
 import '../import/import_models.dart';
-import '../import/import_service.dart';
 import '../import/keep_import.dart';
 import '../import/markdown_import.dart';
 
@@ -62,6 +66,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  /// Opens the connect / sign-in flow (the "Account" and "Server" rows act as
+  /// shortcuts into it when signed out).
+  void _connect() {
+    Navigator.of(context)
+        .push(MaterialPageRoute(builder: (_) => const LoginScreen()));
   }
 
   /// Pings `<url>/api/health`. Updates [_conn]; when not [silent], also reports
@@ -275,95 +286,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
     if (!mounted) return;
 
-    // Preview + confirm before anything is written.
-    final confirmed = await _confirmImport(notes);
-    if (confirmed != true || !mounted) return;
-
-    _snack('Importing…');
-    try {
-      final ImportResult result =
-          await NoteImportService(ref.read(notesRepositoryProvider))
-              .import(notes);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).hideCurrentSnackBar();
-      _snack(result.imported == 0
-          ? 'Nothing to import'
-          : 'Imported ${result.imported} '
-              'note${result.imported == 1 ? '' : 's'}');
-    } catch (e) {
-      if (mounted) _snack('Import failed: $e');
-    }
-  }
-
-  /// Shows a summary of what would be imported and asks the user to confirm.
-  Future<bool?> _confirmImport(List<ParsedNote> notes) {
-    final checklists = notes.where((n) => n.type == 'checklist').length;
-    final texts = notes.length - checklists;
-    final withImages = notes.where((n) => n.images.isNotEmpty).length;
-    final archived = notes.where((n) => n.archived).length;
-    final labelNames = <String>{
-      for (final n in notes)
-        for (final l in n.labelNames)
-          if (l.trim().isNotEmpty) l.trim()
-    };
-    final notebookNames = <String>{
-      for (final n in notes)
-        if (n.notebookName != null && n.notebookName!.trim().isNotEmpty)
-          n.notebookName!.trim()
-    };
-
-    final lines = <String>[
-      '$texts text · $checklists checklist',
-      if (withImages > 0) '$withImages with images',
-      if (archived > 0) '$archived archived',
-      if (labelNames.isNotEmpty)
-        '${labelNames.length} label${labelNames.length == 1 ? '' : 's'} '
-            '(created if missing)',
-      if (notebookNames.isNotEmpty)
-        '${notebookNames.length} notebook${notebookNames.length == 1 ? '' : 's'} '
-            '(created if missing)',
-    ];
-
-    return showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text('Import ${notes.length} '
-            'note${notes.length == 1 ? '' : 's'}?'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            for (final line in lines)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 2),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('•  '),
-                    Expanded(child: Text(line)),
-                  ],
-                ),
-              ),
-            const SizedBox(height: 12),
-            Text(
-              'Re-importing the same file creates duplicates.',
-              style: Theme.of(dialogContext).textTheme.bodySmall,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('Import'),
-          ),
-        ],
+    // Pack the parsed notes into an in-memory v2 package and open the shared
+    // preview, so importing uses the same grouped/searchable picker as a backup
+    // restore — into a chosen notebook, as copies (no Replace for an import).
+    final pkg = await parsedNotesToBackupBytes(notes);
+    if (!mounted) return;
+    await Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => BackupRestoreScreen(
+        bytes: pkg,
+        sourceLabel: file.name,
+        title: 'Import notes',
+        copiesOnly: true,
       ),
-    );
+    ));
   }
+
 
   // ---------------- Backup / restore ----------------
   // Mobile backs up the local drift DB; web backs up the account via the
@@ -372,16 +309,25 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   String _backupFileName() {
     final d = DateTime.now();
     String two(int v) => v.toString().padLeft(2, '0');
-    return 'noteesek-backup-${d.year}${two(d.month)}${two(d.day)}.json';
+    return 'noteesek-backup-${d.year}${two(d.month)}${two(d.day)}.zip';
   }
 
   Future<Uint8List> _exportBackup() => kIsWeb
-      ? RemoteBackupService(ref.read(pocketBaseProvider)).export()
-      : backup.BackupService(ref.read(databaseProvider)).export();
+      ? RemoteBackupService(ref.read(pocketBaseProvider)).exportV2()
+      : backup.BackupService(ref.read(databaseProvider)).exportV2();
 
-  Future<int> _importBackup(Uint8List bytes) => kIsWeb
-      ? RemoteBackupService(ref.read(pocketBaseProvider)).import(bytes)
-      : backup.BackupService(ref.read(databaseProvider)).import(bytes);
+  /// Auto-detect format: a zip (PK header) is v2; otherwise the legacy v1 JSON.
+  Future<int> _importBackup(Uint8List bytes) {
+    final isZip = bytes.length >= 2 && bytes[0] == 0x50 && bytes[1] == 0x4B;
+    if (kIsWeb) {
+      final svc = RemoteBackupService(ref.read(pocketBaseProvider));
+      return isZip ? svc.importV2(bytes) : svc.import(bytes);
+    }
+    final svc = backup.BackupService(ref.read(databaseProvider));
+    return isZip
+        ? svc.importV2(bytes, ref.read(activeOwnerProvider))
+        : svc.import(bytes);
+  }
 
   Future<void> _backUp() async {
     _snack('Preparing backup…');
@@ -391,7 +337,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
       // Save straight to the device (Downloads) rather than the share sheet.
       final where =
-          await saveToDownloads(bytes, _backupFileName(), 'application/json');
+          await saveToDownloads(bytes, _backupFileName(), 'application/zip');
       if (mounted) _snack('Backup saved to $where');
     } catch (e) {
       if (mounted) _snack('Backup failed: $e');
@@ -402,11 +348,24 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final file = await openFile(acceptedTypeGroups: [
       const XTypeGroup(
         label: 'Noteesek backup',
-        extensions: ['json'],
-        mimeTypes: ['application/json'],
+        extensions: ['zip', 'json'],
+        mimeTypes: ['application/zip', 'application/json'],
       ),
     ]);
     if (file == null || !mounted) return;
+    final bytes = await file.readAsBytes();
+    if (!mounted) return;
+
+    // v2 (a zip) → open the preview/restore screen so the user can add selected
+    // notes or replace everything. Legacy v1 (JSON) → direct restore.
+    final isZip = bytes.length >= 2 && bytes[0] == 0x50 && bytes[1] == 0x4B;
+    if (isZip) {
+      await Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => BackupRestoreScreen(bytes: bytes, sourceLabel: file.name),
+      ));
+      return;
+    }
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -430,7 +389,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
     _snack('Restoring…');
     try {
-      final bytes = await file.readAsBytes();
       final n = await _importBackup(bytes);
       if (!mounted) return;
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
@@ -642,6 +600,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final pb = ref.watch(pocketBaseProvider);
+    // Rebuild on every auth change so signing in via the connect shortcuts (a
+    // pushed LoginScreen) reflects immediately on return, without navigating
+    // away and back.
+    ref.watch(authChangesProvider);
     final email = pb.authStore.record?.data['email'] as String? ?? '';
     // While signed in, the server is fixed to the one we authenticated against.
     // Repointing it would leave a stale session against a different server, so
@@ -651,7 +613,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
-      body: ListView(
+      body: WebCentered(
+        child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           const _SectionHeader('Account'),
@@ -663,12 +626,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               subtitle: const Text('Signed in'),
             )
           else
-            const ListTile(
+            ListTile(
               contentPadding: EdgeInsets.zero,
-              leading: Icon(Icons.cloud_off_outlined),
-              title: Text('Not connected'),
-              subtitle:
-                  Text('Connect a server to sync your notes across devices.'),
+              leading: const Icon(Icons.cloud_off_outlined),
+              title: const Text('Not connected'),
+              subtitle: const Text(
+                  'Connect a server to sync your notes across devices.'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: _connect,
             ),
           const SizedBox(height: 24),
 
@@ -791,60 +756,78 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             title: Text(pb.baseURL),
             subtitle: Text(signedIn
                 ? 'Sign out to connect to a different server.'
-                : 'Use "Connect to server" to change this and sign in.'),
-            trailing: IconButton(
-              tooltip: 'Test connection',
-              onPressed: _conn == _Conn.checking
-                  ? null
-                  : () => _testConnection(pb.baseURL, silent: false),
-              icon: _connIcon(context),
-            ),
+                : 'Tap to connect to a server and sign in.'),
+            // When signed out, the row is a shortcut into the connect flow.
+            onTap: signedIn ? null : _connect,
+            // The live-availability check only makes sense for the server we're
+            // actually signed in to — otherwise its green tick reads as "already
+            // connected". Signed out, show the plain connect chevron instead.
+            trailing: signedIn
+                ? IconButton(
+                    tooltip: 'Test connection',
+                    onPressed: _conn == _Conn.checking
+                        ? null
+                        : () => _testConnection(pb.baseURL, silent: false),
+                    icon: _connIcon(context),
+                  )
+                : const Icon(Icons.chevron_right),
           ),
-          const SizedBox(height: 24),
-
-          // Sync status: mobile only (web has no sync engine — it's online/
-          // realtime), and only meaningful once connected to a server.
-          if (!kIsWeb && signedIn) ...[
-            const _SectionHeader('Sync'),
-            _SyncStatusTile(),
-            const SizedBox(height: 24),
-          ],
-
-          const _SectionHeader('Data & storage'),
+          // Version history lives with the server config; shown even when not
+          // connected (greyed out) so it's discoverable — it lights up once you
+          // sign in to a server.
           ListTile(
             contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.download_outlined),
-            title: const Text('Export notes'),
-            subtitle: const Text('Download all notes as Markdown'),
+            enabled: signedIn,
+            leading: const Icon(Icons.history),
+            title: const Text('Version history'),
+            subtitle: Text(signedIn
+                ? 'Automatic restore points'
+                : 'Sign in to a server to use'),
+            onTap: signedIn
+                ? () => Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => const SnapshotsScreen(),
+                    ))
+                : null,
+          ),
+          // Sync status lives with the server too (mobile only — web is realtime).
+          if (!kIsWeb && signedIn) _SyncStatusTile(),
+          const SizedBox(height: 24),
+
+          const _SectionHeader('Export'),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.text_snippet_outlined),
+            title: const Text('Markdown'),
+            subtitle: const Text('Readable files for other apps'),
             onTap: _exportNotes,
           ),
           ListTile(
             contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.upload_outlined),
-            title: const Text('Import notes'),
-            subtitle: const Text('From a Markdown export or Google Keep'),
-            onTap: _importNotes,
+            leading: const Icon(Icons.archive_outlined),
+            title: const Text('Backup file'),
+            subtitle: const Text('An exact copy you can restore later'),
+            onTap: _backUp,
           ),
-          // Full backup/restore: the whole device (mobile) or account (web), as
-          // one lossless JSON file.
+          const SizedBox(height: 16),
+
+          const _SectionHeader('Import'),
           ListTile(
             contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.backup_outlined),
-            title: const Text('Back up to file'),
-            subtitle: Text(kIsWeb
-                ? 'Everything in your account, as one JSON file'
-                : 'Everything on this device, as one JSON file'),
-            onTap: _backUp,
+            leading: const Icon(Icons.note_add_outlined),
+            title: const Text('Notes'),
+            subtitle: const Text('Markdown or Google Keep · adds copies'),
+            onTap: _importNotes,
           ),
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.restore_outlined),
-            title: const Text('Restore from backup'),
-            subtitle: Text(kIsWeb
-                ? 'Merge a backup file into your account'
-                : 'Merge a backup file into this device'),
+            title: const Text('Backup file'),
+            subtitle: const Text('Restore everything, or merge selected'),
             onTap: _restore,
           ),
+          const SizedBox(height: 16),
+
+          const _SectionHeader('Danger zone'),
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: _wipeBusy
@@ -893,7 +876,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
           ],
         ],
-      ),
+      )),
     );
   }
 }

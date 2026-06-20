@@ -6,6 +6,8 @@ import 'package:pocketbase/pocketbase.dart' hide BackupService;
 
 import '../../data/notes_repository.dart' show labelIdsOfRaw;
 import 'backup_service.dart' show BackupService;
+import 'v2/backup_v2.dart';
+import 'v2/thumbnailer.dart';
 
 /// Web counterpart to [BackupService]: a full backup/restore that talks to the
 /// PocketBase API instead of a local drift DB (web has no local store). It
@@ -99,6 +101,202 @@ class RemoteBackupService {
       await _upsertAttachment(m);
     }
     return notes.length;
+  }
+
+  // ---- v2 (zip) format ----
+
+  /// Gathers the signed-in account into the platform-agnostic v2 input,
+  /// downloading attachment bytes via the protected-file token.
+  Future<BackupInput> _gatherV2() async {
+    final notes = await _pb.collection('notes').getFullList(batch: 500);
+    final items =
+        await _pb.collection('checklist_items').getFullList(batch: 500);
+    final atts = await _pb.collection('attachments').getFullList(batch: 500);
+    final labels = await _pb.collection('labels').getFullList(batch: 500);
+    final notebooks = await _pb.collection('notebooks').getFullList(batch: 500);
+
+    final itemsByNote = <String, List<RecordModel>>{};
+    for (final i in items) {
+      (itemsByNote[i.getStringValue('note')] ??= []).add(i);
+    }
+    final attByNote = <String, List<RecordModel>>{};
+    final attBytes = <String, Uint8List?>{};
+    for (final a in atts) {
+      (attByNote[a.getStringValue('note')] ??= []).add(a);
+      final fn = a.getStringValue('file');
+      attBytes[a.id] = (fn.isEmpty || a.getBoolValue('deleted'))
+          ? null
+          : await _downloadFile(a, fn);
+    }
+
+    BackupItemInput item(RecordModel i) => BackupItemInput(
+        id: i.id,
+        text: i.getStringValue('text'),
+        checked: i.getBoolValue('checked'),
+        position: i.getIntValue('position'),
+        deleted: i.getBoolValue('deleted'),
+        created: i.getStringValue('created'),
+        updated: i.getStringValue('updated'));
+
+    return BackupInput(
+      labels: [
+        for (final l in labels)
+          BackupLabelInput(
+              id: l.id,
+              name: l.getStringValue('name'),
+              color: l.getStringValue('color'),
+              deleted: l.getBoolValue('deleted'),
+              created: l.getStringValue('created'),
+              updated: l.getStringValue('updated')),
+      ],
+      notebooks: [
+        for (final nb in notebooks)
+          BackupNotebookInput(
+              id: nb.id,
+              name: nb.getStringValue('name'),
+              deleted: nb.getBoolValue('deleted'),
+              created: nb.getStringValue('created'),
+              updated: nb.getStringValue('updated')),
+      ],
+      notes: [
+        for (final n in notes)
+          BackupNoteInput(
+            id: n.id,
+            type: n.getStringValue('type'),
+            title: n.getStringValue('title'),
+            body: n.getStringValue('body'),
+            color: n.getStringValue('color'),
+            pinned: n.getBoolValue('pinned'),
+            archived: n.getBoolValue('archived'),
+            deleted: n.getBoolValue('deleted'),
+            position: n.getIntValue('position'),
+            created: n.getStringValue('created'),
+            updated: n.getStringValue('updated'),
+            labelIds: n.getListValue<String>('labels'),
+            notebookId: n.getStringValue('notebook'),
+            items: [for (final i in (itemsByNote[n.id] ?? const [])) item(i)],
+            attachments: [
+              for (final a in (attByNote[n.id] ?? const []))
+                BackupAttachmentInput(
+                    id: a.id,
+                    bytes: attBytes[a.id],
+                    deleted: a.getBoolValue('deleted'),
+                    created: a.getStringValue('created'),
+                    updated: a.getStringValue('updated')),
+            ],
+          ),
+      ],
+    );
+  }
+
+  /// Exports the signed-in account as a v2 backup zip.
+  Future<Uint8List> exportV2() async => writeBackupV2(await _gatherV2(), thumbnailer: makeThumbnail);
+
+  /// Restores a v2 zip into the signed-in account, upsert **by id**. With
+  /// [selectedNoteIds] only those notes are restored; with [mirror] notes absent
+  /// from the backup are moved to Trash. Damaged entries are skipped.
+  Future<int> importV2(Uint8List bytes,
+      {Set<String>? selectedNoteIds, bool mirror = false}) async {
+    final r = BackupV2Reader.read(bytes);
+    final backupNotebookIds = <String>{};
+    final backupLabelIds = <String>{};
+    for (final nb in r.notebooks) {
+      backupNotebookIds.add(nb['id'] as String);
+      await _upsert('notebooks', nb['id'] as String,
+          {'name': nb['name'] ?? '', 'deleted': nb['deleted'] ?? false});
+    }
+    for (final l in r.labels) {
+      backupLabelIds.add(l['id'] as String);
+      await _upsert('labels', l['id'] as String, {
+        'name': l['name'] ?? '',
+        'color': l['color'] ?? '',
+        'deleted': l['deleted'] ?? false
+      });
+    }
+    var count = 0;
+    final backupNoteIds = <String>{};
+    for (final idx in r.notes) {
+      final id = idx['id'] as String;
+      backupNoteIds.add(id);
+      if (selectedNoteIds != null && !selectedNoteIds.contains(id)) continue;
+      final rec = r.noteRecord(id);
+      if (rec == null) continue; // damaged → skip
+      await _upsert('notes', rec['id'] as String, {
+        'type': rec['type'] ?? 'text',
+        'title': rec['title'] ?? '',
+        'body': rec['body'] ?? '',
+        'pinned': rec['pinned'] ?? false,
+        'archived': rec['archived'] ?? false,
+        'color': rec['color'] ?? '',
+        'labels': (rec['labelIds'] as List?)?.cast<String>() ?? const [],
+        'notebook': rec['notebookId'] ?? '',
+        'deleted': rec['deleted'] ?? false,
+        'position': rec['position'] ?? 0,
+      });
+      for (final i in ((rec['items'] as List?) ?? const [])) {
+        final m = (i as Map).cast<String, dynamic>();
+        await _upsert('checklist_items', m['id'] as String, {
+          'note': rec['id'],
+          'text': m['text'] ?? '',
+          'checked': m['checked'] ?? false,
+          'position': m['position'] ?? 0,
+          'deleted': m['deleted'] ?? false,
+        });
+      }
+      for (final a in ((rec['attachments'] as List?) ?? const [])) {
+        final m = (a as Map).cast<String, dynamic>();
+        final sha = m['sha256'] as String?;
+        final ext = m['ext'] as String? ?? 'jpg';
+        final deleted = m['deleted'] as bool? ?? false;
+        await _putAttachment(m['id'] as String, rec['id'] as String, deleted,
+            sha == null ? null : r.attachmentBytes(sha, ext));
+      }
+      count++;
+    }
+    if (mirror) {
+      // Make the account match the backup exactly: Trash notes, notebooks and
+      // labels that aren't in it.
+      final existingNotes = await _pb.collection('notes').getFullList(
+          batch: 500, fields: 'id', filter: 'deleted = false');
+      for (final e in existingNotes) {
+        if (!backupNoteIds.contains(e.id)) {
+          await _upsert('notes', e.id, {'deleted': true});
+        }
+      }
+      final existingNotebooks = await _pb.collection('notebooks').getFullList(
+          batch: 500, fields: 'id', filter: 'deleted = false');
+      for (final e in existingNotebooks) {
+        if (!backupNotebookIds.contains(e.id)) {
+          await _upsert('notebooks', e.id, {'deleted': true});
+        }
+      }
+      final existingLabels = await _pb.collection('labels').getFullList(
+          batch: 500, fields: 'id', filter: 'deleted = false');
+      for (final e in existingLabels) {
+        if (!backupLabelIds.contains(e.id)) {
+          await _upsert('labels', e.id, {'deleted': true});
+        }
+      }
+    }
+    return count;
+  }
+
+  /// Upsert one attachment from raw bytes (v2): update metadata, else create
+  /// with a multipart upload.
+  Future<void> _putAttachment(
+      String id, String note, bool deleted, Uint8List? data) async {
+    try {
+      await _pb.collection('attachments').update(id, body: {'deleted': deleted});
+    } on ClientException catch (e) {
+      if (e.statusCode != 404) rethrow;
+      if (data == null) return; // missing/damaged bytes — skip
+      await _pb.collection('attachments').create(
+        body: {'id': id, 'note': note, 'deleted': deleted},
+        files: [
+          http.MultipartFile.fromBytes('file', data, filename: 'img_$id.jpg'),
+        ],
+      );
+    }
   }
 
   /// Update the record by id; if it doesn't exist, create it with the same id.
