@@ -14,6 +14,7 @@ import '../../config/app_config.dart';
 import '../../data/notes_repository.dart';
 import '../backup/backup_service.dart' as backup;
 import '../backup/remote_backup_service.dart';
+import '../backup/v2/backup_restore_screen.dart';
 import '../backup/snapshots_screen.dart';
 import '../lock/app_lock.dart';
 import '../../providers.dart';
@@ -417,6 +418,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       ),
     ]);
     if (file == null || !mounted) return;
+    final bytes = await file.readAsBytes();
+    if (!mounted) return;
+
+    // v2 (a zip) → open the preview/restore screen so the user can add selected
+    // notes or replace everything. Legacy v1 (JSON) → direct restore.
+    final isZip = bytes.length >= 2 && bytes[0] == 0x50 && bytes[1] == 0x4B;
+    if (isZip) {
+      await Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => BackupRestoreScreen(bytes: bytes, sourceLabel: file.name),
+      ));
+      return;
+    }
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -440,7 +454,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
     _snack('Restoring…');
     try {
-      final bytes = await file.readAsBytes();
       final n = await _importBackup(bytes);
       if (!mounted) return;
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
