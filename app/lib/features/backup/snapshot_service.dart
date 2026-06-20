@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:pocketbase/pocketbase.dart';
 
 import '../../data/notes_repository.dart' show labelIdsOfRaw;
+import 'v2/backup_preview.dart';
 
 /// Client for the server-side snapshot (version history) feature. Talks to the
 /// `snapshots` / `snapshot_settings` collections and the `/api/noteesek/...`
@@ -157,6 +158,7 @@ class SnapshotNote {
     required this.title,
     required this.body,
     required this.deleted,
+    required this.notebookId,
     required this.labelIds,
     required this.items,
     required this.imageCount,
@@ -167,9 +169,15 @@ class SnapshotNote {
   final String title;
   final String body;
   final bool deleted;
+  final String notebookId; // '' = no notebook
   final List<String> labelIds;
   final List<({String content, bool checked})> items;
   final int imageCount;
+
+  /// A one-line preview snippet (body text, or the checklist items).
+  String get snippet => type == 'checklist'
+      ? items.map((e) => '${e.checked ? '☑' : '☐'} ${e.content}').join('  ')
+      : body.trim();
 
   /// Title falling back to a body/checklist snippet, for the preview list.
   String get displayTitle {
@@ -182,10 +190,48 @@ class SnapshotNote {
 
 /// Parsed contents of a snapshot file.
 class SnapshotContents {
-  const SnapshotContents({required this.notes});
+  const SnapshotContents({required this.notes, required this.notebookNames});
 
   /// Active (non-deleted) notes, as they were at snapshot time.
   final List<SnapshotNote> notes;
+
+  /// Notebook id → name, for grouping the preview.
+  final Map<String, String> notebookNames;
+
+  /// Notebook-grouped summaries in the same shape the backup-file restore
+  /// preview uses, so both screens render an identical list. Snapshots carry no
+  /// client-side thumbnails and are always verified server-side, so `thumb` is
+  /// null and `damaged` is false.
+  List<BackupNotebookGroup> toPreviewGroups() {
+    final byNotebook = <String, List<BackupNoteSummary>>{};
+    for (final n in notes) {
+      final hasName = (notebookNames[n.notebookId] ?? '').isNotEmpty;
+      final key = hasName ? n.notebookId : '';
+      (byNotebook[key] ??= []).add(BackupNoteSummary(
+        id: n.id,
+        title: n.title.trim(),
+        snippet: n.snippet,
+        type: n.type,
+        notebookId: key,
+        thumb: null,
+        damaged: false,
+      ));
+    }
+    final groups = <BackupNotebookGroup>[];
+    final namedKeys = byNotebook.keys.where((k) => k.isNotEmpty).toList()
+      ..sort((a, b) => notebookNames[a]!
+          .toLowerCase()
+          .compareTo(notebookNames[b]!.toLowerCase()));
+    for (final k in namedKeys) {
+      groups.add(BackupNotebookGroup(
+          notebookId: k, name: notebookNames[k]!, notes: byNotebook[k]!));
+    }
+    if (byNotebook.containsKey('')) {
+      groups.add(BackupNotebookGroup(
+          notebookId: '', name: 'No notebook', notes: byNotebook['']!));
+    }
+    return groups;
+  }
 
   static SnapshotContents parse(List<int> bytes) {
     final decoded = jsonDecode(utf8.decode(bytes));
@@ -212,6 +258,11 @@ class SnapshotContents {
       final note = m['note'] as String? ?? '';
       imagesByNote[note] = (imagesByNote[note] ?? 0) + 1;
     }
+    final notebookNames = <String, String>{
+      for (final m in rows('notebooks'))
+        if (m['deleted'] != true)
+          m['id'] as String: ((m['name'] ?? '') as String).trim(),
+    };
 
     final notes = <SnapshotNote>[];
     for (final m in rows('notes')) {
@@ -223,11 +274,12 @@ class SnapshotContents {
         title: (m['title'] ?? '') as String,
         body: (m['body'] ?? '') as String,
         deleted: false,
+        notebookId: (m['notebook'] ?? '') as String,
         labelIds: labelIdsOfRaw(m['labels'] as String? ?? '[]'),
         items: itemsByNote[id] ?? const [],
         imageCount: imagesByNote[id] ?? 0,
       ));
     }
-    return SnapshotContents(notes: notes);
+    return SnapshotContents(notes: notes, notebookNames: notebookNames);
   }
 }

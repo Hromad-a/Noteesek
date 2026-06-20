@@ -10,6 +10,7 @@ import '../../../ui/web_centered.dart';
 import '../backup_service.dart' as backup;
 import '../remote_backup_service.dart';
 import 'backup_preview.dart';
+import 'backup_preview_view.dart';
 import 'backup_v2.dart';
 import 'backup_v2_import.dart';
 
@@ -241,36 +242,31 @@ class _BackupRestoreScreenState extends ConsumerState<BackupRestoreScreen> {
         actions: [
           Padding(
             padding: const EdgeInsets.only(right: 12),
-            child: Center(child: _HealthBadge(data: data)),
+            child: Center(
+                child: BackupHealthBadge(
+                    healthy: data.healthy, damagedCount: data.damagedCount)),
           ),
         ],
       ),
       body: WebCentered(
         child: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-            child: TextField(
-              decoration: const InputDecoration(
-                isDense: true,
-                prefixIcon: Icon(Icons.search),
-                hintText: 'Search notes',
-                border: OutlineInputBorder(),
-              ),
-              onChanged: (v) => setState(() => _query = v),
-            ),
-          ),
-          _SelectionBar(
+          BackupSearchField(onChanged: (v) => setState(() => _query = v)),
+          BackupSelectionBar(
             selected: _selected.length,
             onAll: () => setState(() => _selected.addAll(allNoteIds(data.groups))),
             onNone: () => setState(_selected.clear),
           ),
           Expanded(
-            child: ListView(
-              children: [
-                for (final g in groups) ..._groupTiles(g),
-                const SizedBox(height: 8),
-              ],
+            child: BackupPreviewList(
+              groups: groups,
+              selected: _selected,
+              expanded: _expanded,
+              thumbForPath: (p) => _reader!.entryBytes(p),
+              onToggleNote: _toggleNote,
+              onToggleGroup: _toggleGroup,
+              onToggleExpand: (id) => setState(() =>
+                  _expanded.contains(id) ? _expanded.remove(id) : _expanded.add(id)),
             ),
           ),
           _Footer(
@@ -287,164 +283,6 @@ class _BackupRestoreScreenState extends ConsumerState<BackupRestoreScreen> {
           ),
         ],
       )),
-    );
-  }
-
-  List<Widget> _groupTiles(BackupNotebookGroup g) {
-    final state = groupState(g, _selected);
-    final open = _expanded.contains(g.notebookId);
-    return [
-      Material(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        child: InkWell(
-          onTap: () => setState(() =>
-              open ? _expanded.remove(g.notebookId) : _expanded.add(g.notebookId)),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            child: Row(
-              children: [
-                _TriBox(state: state, onTap: () => _toggleGroup(g)),
-                const SizedBox(width: 10),
-                Icon(g.notebookId.isEmpty ? Icons.folder_off_outlined : Icons.folder_outlined,
-                    size: 20),
-                const SizedBox(width: 8),
-                Expanded(
-                    child: Text(g.name,
-                        style: const TextStyle(fontWeight: FontWeight.w500))),
-                Text('${g.notes.length}',
-                    style: Theme.of(context).textTheme.bodySmall),
-                Icon(open ? Icons.expand_less : Icons.expand_more,
-                    color: Theme.of(context).colorScheme.outline),
-              ],
-            ),
-          ),
-        ),
-      ),
-      if (open)
-        for (final n in g.notes) _noteTile(n),
-    ];
-  }
-
-  Widget _noteTile(BackupNoteSummary n) {
-    final sel = _selected.contains(n.id);
-    Uint8List? thumb;
-    if (n.thumb != null) thumb = _reader!.entryBytes(n.thumb!);
-    return InkWell(
-      onTap: () => _toggleNote(n.id),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(28, 8, 12, 8),
-        child: Row(
-          children: [
-            Icon(sel ? Icons.check_box : Icons.check_box_outline_blank,
-                size: 20,
-                color: sel ? Theme.of(context).colorScheme.primary : null),
-            const SizedBox(width: 10),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(6),
-              child: thumb != null
-                  ? Image.memory(thumb, width: 34, height: 34, fit: BoxFit.cover)
-                  : Container(
-                      width: 34,
-                      height: 34,
-                      color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                      child: Icon(
-                          n.type == 'checklist'
-                              ? Icons.checklist
-                              : Icons.notes,
-                          size: 16,
-                          color: Theme.of(context).colorScheme.outline),
-                    ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(n.title.isEmpty ? 'Untitled' : n.title,
-                      maxLines: 1, overflow: TextOverflow.ellipsis),
-                  if (n.snippet.isNotEmpty)
-                    Text(n.snippet,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodySmall),
-                ],
-              ),
-            ),
-            if (n.damaged)
-              Icon(Icons.warning_amber_rounded,
-                  size: 18, color: Theme.of(context).colorScheme.error),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _TriBox extends StatelessWidget {
-  const _TriBox({required this.state, required this.onTap});
-  final TriState state;
-  final VoidCallback onTap;
-  @override
-  Widget build(BuildContext context) {
-    final c = Theme.of(context).colorScheme.primary;
-    final icon = switch (state) {
-      TriState.all => Icons.check_box,
-      TriState.some => Icons.indeterminate_check_box,
-      TriState.none => Icons.check_box_outline_blank,
-    };
-    return InkResponse(
-      onTap: onTap,
-      child: Icon(icon,
-          size: 22,
-          color: state == TriState.none
-              ? Theme.of(context).colorScheme.outline
-              : c),
-    );
-  }
-}
-
-class _HealthBadge extends StatelessWidget {
-  const _HealthBadge({required this.data});
-  final BackupPreviewData data;
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final ok = data.healthy;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: ok ? scheme.secondaryContainer : scheme.errorContainer,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Text(
-        ok ? 'verified' : '${data.damagedCount} damaged',
-        style: TextStyle(
-            fontSize: 12,
-            color: ok ? scheme.onSecondaryContainer : scheme.onErrorContainer),
-      ),
-    );
-  }
-}
-
-class _SelectionBar extends StatelessWidget {
-  const _SelectionBar(
-      {required this.selected, required this.onAll, required this.onNone});
-  final int selected;
-  final VoidCallback onAll;
-  final VoidCallback onNone;
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 0, 8, 4),
-      child: Row(
-        children: [
-          Text('$selected selected',
-              style: const TextStyle(fontWeight: FontWeight.w500)),
-          const Spacer(),
-          TextButton(onPressed: onAll, child: const Text('All')),
-          TextButton(onPressed: onNone, child: const Text('None')),
-        ],
-      ),
     );
   }
 }

@@ -5,7 +5,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers.dart';
 import '../../sync/sync_controller.dart';
 import '../../ui/app_messenger.dart';
+import '../../ui/web_centered.dart';
 import 'snapshot_service.dart';
+import 'v2/backup_preview.dart';
+import 'v2/backup_preview_view.dart';
 
 final snapshotServiceProvider = Provider<SnapshotService>(
     (ref) => SnapshotService(ref.watch(pocketBaseProvider)));
@@ -302,7 +305,23 @@ class SnapshotPreviewScreen extends ConsumerStatefulWidget {
 class _SnapshotPreviewScreenState
     extends ConsumerState<SnapshotPreviewScreen> {
   final _selected = <String>{};
+  final _expanded = <String>{};
+  String _query = '';
   bool _restoring = false;
+  bool _seeded = false; // default-select everything once the contents load
+
+  void _toggleNote(String id) => setState(() {
+        _selected.contains(id) ? _selected.remove(id) : _selected.add(id);
+      });
+
+  void _toggleGroup(BackupNotebookGroup g) => setState(() {
+        final ids = g.notes.map((n) => n.id);
+        if (groupState(g, _selected) == TriState.all) {
+          _selected.removeAll(ids);
+        } else {
+          _selected.addAll(ids);
+        }
+      });
 
   Future<void> _restore(String mode) async {
     final noteIds = _selected.toList();
@@ -361,6 +380,26 @@ class _SnapshotPreviewScreenState
     return Scaffold(
       appBar: AppBar(
         title: Text('Snapshot · ${_fmtDateTime(widget.snap.createdAt)}'),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(28),
+          child: Padding(
+            padding: const EdgeInsets.only(left: 16, bottom: 8, right: 16),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                '${widget.snap.noteCount} notes · ${_fmtSize(widget.snap.byteSize)}',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+          ),
+        ),
+        actions: const [
+          Padding(
+            padding: EdgeInsets.only(right: 12),
+            child: Center(
+                child: BackupHealthBadge(healthy: true, damagedCount: 0)),
+          ),
+        ],
       ),
       body: contentsAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
@@ -370,41 +409,78 @@ class _SnapshotPreviewScreenState
         ),
         data: (contents) => _restoring
             ? const Center(child: CircularProgressIndicator())
-            : _PreviewList(
-                notes: contents.notes,
-                selected: _selected,
-                onToggle: (id) => setState(() =>
-                    _selected.contains(id) ? _selected.remove(id) : _selected.add(id)),
-              ),
+            : _body(contents),
       ),
-      bottomNavigationBar: contentsAsync.maybeWhen(
-        data: (_) => SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: _restoring ? null : () => _restore('replace'),
-                    child: const Text('Replace everything'),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: FilledButton(
-                    onPressed: (_restoring || _selected.isEmpty)
-                        ? null
-                        : () => _restore('notes'),
-                    child: Text(_selected.isEmpty
-                        ? 'Restore selected'
-                        : 'Restore ${_selected.length} selected'),
-                  ),
-                ),
-              ],
+    );
+  }
+
+  Widget _body(SnapshotContents contents) {
+    final all = contents.toPreviewGroups();
+    if (!_seeded) {
+      _seeded = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        setState(() {
+          _selected.addAll(allNoteIds(all));
+          if (all.isNotEmpty) _expanded.add(all.first.notebookId);
+        });
+      });
+    }
+    if (all.isEmpty) {
+      return const Center(child: Text('This snapshot has no active notes.'));
+    }
+    final scheme = Theme.of(context).colorScheme;
+    final groups = filterGroups(all, _query);
+    return WebCentered(
+      child: Column(
+        children: [
+          BackupSearchField(onChanged: (v) => setState(() => _query = v)),
+          BackupSelectionBar(
+            selected: _selected.length,
+            onAll: () => setState(() => _selected.addAll(allNoteIds(all))),
+            onNone: () => setState(_selected.clear),
+          ),
+          Expanded(
+            child: BackupPreviewList(
+              groups: groups,
+              selected: _selected,
+              expanded: _expanded,
+              onToggleNote: _toggleNote,
+              onToggleGroup: _toggleGroup,
+              onToggleExpand: (id) => setState(() => _expanded.contains(id)
+                  ? _expanded.remove(id)
+                  : _expanded.add(id)),
             ),
           ),
-        ),
-        orElse: () => const SizedBox.shrink(),
+          Material(
+            elevation: 2,
+            child: SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: FilledButton.tonal(
+                        onPressed: (_restoring || _selected.isEmpty)
+                            ? null
+                            : () => _restore('notes'),
+                        child: Text('Restore ${_selected.length} selected'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    OutlinedButton(
+                      onPressed: _restoring ? null : () => _restore('replace'),
+                      style: OutlinedButton.styleFrom(
+                          foregroundColor: scheme.error),
+                      child: const Text('Replace all…'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -414,59 +490,3 @@ final _snapshotContentsProvider =
     FutureProvider.autoDispose.family<SnapshotContents, String>((ref, id) {
   return ref.watch(snapshotServiceProvider).preview(id);
 });
-
-class _PreviewList extends StatelessWidget {
-  const _PreviewList({
-    required this.notes,
-    required this.selected,
-    required this.onToggle,
-  });
-
-  final List<SnapshotNote> notes;
-  final Set<String> selected;
-  final ValueChanged<String> onToggle;
-
-  @override
-  Widget build(BuildContext context) {
-    if (notes.isEmpty) {
-      return const Center(child: Text('This snapshot has no active notes.'));
-    }
-    return ListView.builder(
-      itemCount: notes.length + 1,
-      itemBuilder: (context, i) {
-        if (i == 0) {
-          return Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-            child: Text(
-              'Tap notes to select them for a partial restore, or use '
-              '“Replace everything”.',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          );
-        }
-        final n = notes[i - 1];
-        final subtitleBits = <String>[
-          if (n.type == 'checklist') '${n.items.length} items',
-          if (n.imageCount > 0)
-            '${n.imageCount} ${n.imageCount == 1 ? 'image' : 'images'}',
-        ];
-        final snippet = n.type == 'checklist'
-            ? n.items.map((e) => '${e.checked ? '☑' : '☐'} ${e.content}').join('  ')
-            : n.body.trim();
-        return CheckboxListTile(
-          value: selected.contains(n.id),
-          onChanged: (_) => onToggle(n.id),
-          title: Text(n.displayTitle, maxLines: 1, overflow: TextOverflow.ellipsis),
-          subtitle: Text(
-            [if (subtitleBits.isNotEmpty) subtitleBits.join(' · '), snippet]
-                .where((s) => s.isNotEmpty)
-                .join('\n'),
-            maxLines: 3,
-            overflow: TextOverflow.ellipsis,
-          ),
-          isThreeLine: snippet.isNotEmpty,
-        );
-      },
-    );
-  }
-}
