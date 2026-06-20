@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:drift/drift.dart';
 
 import '../../data/local/database.dart';
+import 'v2/backup_v2.dart';
 
 /// Full local-database backup/restore (mobile). Serializes every row of every
 /// table — including attachment bytes (base64) and the original ids/timestamps —
@@ -77,6 +78,177 @@ class BackupService {
       }
     });
     return notes.length;
+  }
+
+  // ---- v2 (zip) format ----
+
+  static List<String> _ids(String rawJson) {
+    try {
+      final d = jsonDecode(rawJson);
+      if (d is List) return d.map((e) => e.toString()).toList();
+    } catch (_) {/* fall through */}
+    return const [];
+  }
+
+  /// Gathers the whole local DB into the platform-agnostic v2 input.
+  Future<BackupInput> _gatherV2() async {
+    final notes = await _db.select(_db.notes).get();
+    final itemsByNote = <String, List<ChecklistItemRow>>{};
+    for (final i in await _db.select(_db.checklistItems).get()) {
+      (itemsByNote[i.note] ??= []).add(i);
+    }
+    final attsByNote = <String, List<AttachmentRow>>{};
+    for (final a in await _db.select(_db.attachments).get()) {
+      (attsByNote[a.note] ??= []).add(a);
+    }
+    return BackupInput(
+      labels: [
+        for (final l in await _db.select(_db.labels).get())
+          BackupLabelInput(
+              id: l.id,
+              name: l.name,
+              color: l.color,
+              deleted: l.deleted,
+              created: l.created,
+              updated: l.updated),
+      ],
+      notebooks: [
+        for (final nb in await _db.select(_db.notebooks).get())
+          BackupNotebookInput(
+              id: nb.id,
+              name: nb.name,
+              deleted: nb.deleted,
+              created: nb.created,
+              updated: nb.updated),
+      ],
+      notes: [
+        for (final n in notes)
+          BackupNoteInput(
+            id: n.id,
+            type: n.type,
+            title: n.title,
+            body: n.body,
+            color: n.color,
+            pinned: n.pinned,
+            archived: n.archived,
+            deleted: n.deleted,
+            position: n.position,
+            created: n.created,
+            updated: n.updated,
+            labelIds: _ids(n.labels),
+            notebookId: n.notebook,
+            items: [
+              for (final i in (itemsByNote[n.id] ?? const []))
+                BackupItemInput(
+                    id: i.id,
+                    text: i.content,
+                    checked: i.checked,
+                    position: i.position,
+                    deleted: i.deleted,
+                    created: i.created,
+                    updated: i.updated),
+            ],
+            attachments: [
+              for (final a in (attsByNote[n.id] ?? const []))
+                BackupAttachmentInput(
+                    id: a.id,
+                    bytes: a.data,
+                    deleted: a.deleted,
+                    created: a.created,
+                    updated: a.updated),
+            ],
+          ),
+      ],
+    );
+  }
+
+  /// Exports the whole local DB as a v2 backup zip.
+  Future<Uint8List> exportV2() async => writeBackupV2(await _gatherV2());
+
+  /// Restores a v2 zip losslessly (upsert by id), stamping [owner] (v2 files are
+  /// account-portable and carry no owner). Damaged entries are skipped; returns
+  /// the number of notes restored.
+  Future<int> importV2(Uint8List bytes, String owner) async {
+    final r = BackupV2Reader.read(bytes);
+    var count = 0;
+    await _db.transaction(() async {
+      for (final nb in r.notebooks) {
+        await _db.into(_db.notebooks).insertOnConflictUpdate(
+            NotebooksCompanion.insert(
+                id: nb['id'] as String,
+                owner: owner,
+                name: Value(nb['name'] as String? ?? ''),
+                deleted: Value(nb['deleted'] as bool? ?? false),
+                created: Value(nb['created'] as String?),
+                updated: Value(nb['updated'] as String? ?? ''),
+                dirty: const Value(true)));
+      }
+      for (final l in r.labels) {
+        await _db.into(_db.labels).insertOnConflictUpdate(LabelsCompanion.insert(
+            id: l['id'] as String,
+            owner: owner,
+            name: Value(l['name'] as String? ?? ''),
+            color: Value(l['color'] as String? ?? ''),
+            deleted: Value(l['deleted'] as bool? ?? false),
+            created: Value(l['created'] as String?),
+            updated: Value(l['updated'] as String? ?? ''),
+            dirty: const Value(true)));
+      }
+      for (final idx in r.notes) {
+        final rec = r.noteRecord(idx['id'] as String);
+        if (rec == null) continue; // damaged → skip, keep the rest
+        await _db.into(_db.notes).insertOnConflictUpdate(NotesCompanion.insert(
+            id: rec['id'] as String,
+            owner: owner,
+            type: Value(rec['type'] as String? ?? 'text'),
+            title: Value(rec['title'] as String? ?? ''),
+            body: Value(rec['body'] as String? ?? ''),
+            pinned: Value(rec['pinned'] as bool? ?? false),
+            archived: Value(rec['archived'] as bool? ?? false),
+            color: Value(rec['color'] as String? ?? ''),
+            labels: Value(jsonEncode((rec['labelIds'] as List?) ?? const [])),
+            notebook: Value(rec['notebookId'] as String? ?? ''),
+            deleted: Value(rec['deleted'] as bool? ?? false),
+            position: Value(rec['position'] as int? ?? 0),
+            created: Value(rec['created'] as String?),
+            updated: Value(rec['updated'] as String? ?? ''),
+            dirty: const Value(true)));
+        for (final i in ((rec['items'] as List?) ?? const [])) {
+          final m = (i as Map).cast<String, dynamic>();
+          await _db.into(_db.checklistItems).insertOnConflictUpdate(
+              ChecklistItemsCompanion.insert(
+                  id: m['id'] as String,
+                  note: rec['id'] as String,
+                  content: Value(m['text'] as String? ?? ''),
+                  checked: Value(m['checked'] as bool? ?? false),
+                  position: Value(m['position'] as int? ?? 0),
+                  deleted: Value(m['deleted'] as bool? ?? false),
+                  created: Value(m['created'] as String?),
+                  updated: Value(m['updated'] as String? ?? ''),
+                  dirty: const Value(true)));
+        }
+        for (final a in ((rec['attachments'] as List?) ?? const [])) {
+          final m = (a as Map).cast<String, dynamic>();
+          final sha = m['sha256'] as String?;
+          final ext = m['ext'] as String? ?? 'jpg';
+          final deleted = m['deleted'] as bool? ?? false;
+          final data = sha == null ? null : r.attachmentBytes(sha, ext);
+          if (data == null && !deleted) continue; // missing/damaged bytes
+          await _db.into(_db.attachments).insertOnConflictUpdate(
+              AttachmentsCompanion.insert(
+                  id: m['id'] as String,
+                  note: rec['id'] as String,
+                  file: const Value(''),
+                  data: Value(data),
+                  deleted: Value(deleted),
+                  created: Value(m['created'] as String?),
+                  updated: Value(m['updated'] as String? ?? ''),
+                  dirty: const Value(true)));
+        }
+        count++;
+      }
+    });
+    return count;
   }
 
   // ---- row → json ----

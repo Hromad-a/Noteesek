@@ -372,16 +372,25 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   String _backupFileName() {
     final d = DateTime.now();
     String two(int v) => v.toString().padLeft(2, '0');
-    return 'noteesek-backup-${d.year}${two(d.month)}${two(d.day)}.json';
+    return 'noteesek-backup-${d.year}${two(d.month)}${two(d.day)}.zip';
   }
 
   Future<Uint8List> _exportBackup() => kIsWeb
-      ? RemoteBackupService(ref.read(pocketBaseProvider)).export()
-      : backup.BackupService(ref.read(databaseProvider)).export();
+      ? RemoteBackupService(ref.read(pocketBaseProvider)).exportV2()
+      : backup.BackupService(ref.read(databaseProvider)).exportV2();
 
-  Future<int> _importBackup(Uint8List bytes) => kIsWeb
-      ? RemoteBackupService(ref.read(pocketBaseProvider)).import(bytes)
-      : backup.BackupService(ref.read(databaseProvider)).import(bytes);
+  /// Auto-detect format: a zip (PK header) is v2; otherwise the legacy v1 JSON.
+  Future<int> _importBackup(Uint8List bytes) {
+    final isZip = bytes.length >= 2 && bytes[0] == 0x50 && bytes[1] == 0x4B;
+    if (kIsWeb) {
+      final svc = RemoteBackupService(ref.read(pocketBaseProvider));
+      return isZip ? svc.importV2(bytes) : svc.import(bytes);
+    }
+    final svc = backup.BackupService(ref.read(databaseProvider));
+    return isZip
+        ? svc.importV2(bytes, ref.read(activeOwnerProvider))
+        : svc.import(bytes);
+  }
 
   Future<void> _backUp() async {
     _snack('Preparing backup…');
@@ -391,7 +400,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
       // Save straight to the device (Downloads) rather than the share sheet.
       final where =
-          await saveToDownloads(bytes, _backupFileName(), 'application/json');
+          await saveToDownloads(bytes, _backupFileName(), 'application/zip');
       if (mounted) _snack('Backup saved to $where');
     } catch (e) {
       if (mounted) _snack('Backup failed: $e');
@@ -402,8 +411,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final file = await openFile(acceptedTypeGroups: [
       const XTypeGroup(
         label: 'Noteesek backup',
-        extensions: ['json'],
-        mimeTypes: ['application/json'],
+        extensions: ['zip', 'json'],
+        mimeTypes: ['application/zip', 'application/json'],
       ),
     ]);
     if (file == null || !mounted) return;
@@ -826,14 +835,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             onTap: _importNotes,
           ),
           // Full backup/restore: the whole device (mobile) or account (web), as
-          // one lossless JSON file.
+          // one lossless .zip file.
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.backup_outlined),
             title: const Text('Back up to file'),
             subtitle: Text(kIsWeb
-                ? 'Everything in your account, as one JSON file'
-                : 'Everything on this device, as one JSON file'),
+                ? 'Everything in your account, as one .zip file'
+                : 'Everything on this device, as one .zip file'),
             onTap: _backUp,
           ),
           ListTile(
