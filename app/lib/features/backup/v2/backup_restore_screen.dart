@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/notes_repository.dart';
 import '../../../providers.dart';
+import '../../../ui/web_centered.dart';
 import '../backup_service.dart' as backup;
 import '../remote_backup_service.dart';
 import 'backup_preview.dart';
@@ -222,7 +223,8 @@ class _BackupRestoreScreenState extends ConsumerState<BackupRestoreScreen> {
           ),
         ],
       ),
-      body: Column(
+      body: WebCentered(
+        child: Column(
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
@@ -260,7 +262,7 @@ class _BackupRestoreScreenState extends ConsumerState<BackupRestoreScreen> {
             onReplace: (_busy || !widget.allowReplace) ? null : _replace,
           ),
         ],
-      ),
+      )),
     );
   }
 

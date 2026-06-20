@@ -16,6 +16,7 @@ import '../backup/backup_service.dart' as backup;
 import '../backup/remote_backup_service.dart';
 import '../backup/v2/backup_restore_screen.dart';
 import '../backup/v2/backup_v2_import.dart';
+import '../../ui/web_centered.dart';
 import '../backup/snapshots_screen.dart';
 import '../lock/app_lock.dart';
 import '../../providers.dart';
@@ -600,7 +601,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
-      body: ListView(
+      body: WebCentered(
+        child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           const _SectionHeader('Account'),
@@ -856,7 +858,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
           ],
         ],
-      ),
+      )),
     );
   }
 }
