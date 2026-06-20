@@ -28,7 +28,8 @@ selective import of chosen notes; bounded memory (stream entries); back-compat
 import of v1 files.
 
 **Non-goals (this version):** forward error correction / self-healing (L2/L3);
-encryption (can wrap later); cross-device sync semantics.
+encryption (the recommended *future* secrecy/durability layer — preferred over
+FEC; see Prior art); cross-device sync semantics.
 
 ## Container & layout
 
@@ -44,15 +45,19 @@ noteesek-backup-YYYYMMDD-HHMM.zip
 │   └── <noteId>.json    # one self-contained record per note (note + its items +
 │                        #   its attachment metadata)
 ├── attachments/
-│   └── <attachmentId>.<ext>   # raw image bytes, one file per attachment, by id
+│   └── <sha256>.<ext>   # raw image bytes, content-addressed (filename = content hash)
 └── thumbs/
-    └── <attachmentId>.webp    # ~256px (long edge) thumbnail for fast preview
+    └── <sha256>.webp    # ~256px (long edge) thumbnail, keyed by the image's hash
 ```
 
 - Image files are **stored** (not deflated) in the zip — JPEG/PNG/WebP are
   already compressed; JSON entries are deflated.
-- Attachments are keyed by **attachment id** and shared: a note references ids,
-  so an image referenced by multiple notes is stored once.
+- Attachments are **content-addressed**: the filename is the SHA-256 of the bytes
+  (borrowed from restic/borg/kopia). Identical images dedup automatically — even
+  across different attachment ids (same photo on two notes, or a re-import that
+  got a new id) — and the filename *is* its own checksum (self-verifying). Each
+  note keeps an `id → sha256` mapping so a lossless restore can rebuild the
+  original attachment ids.
 
 ## `manifest.json`
 
@@ -84,16 +89,17 @@ the **integrity registry** for every entry, which is why it is duplicated (L1).
     "labelIds": ["..."],
     "notebookId": "...",
     "created": "...", "updated": "...",
-    "attachmentIds": ["img1"],
-    "thumbs": ["thumbs/img1.webp"]             // for the preview grid
+    "attachments": [                            // id + content hash + preview thumb
+      { "id": "img1", "sha256": "9f3a…", "thumb": "thumbs/9f3a….webp" }
+    ]
   }],
 
   // Integrity registry: SHA-256 of every NON-manifest entry in the zip.
   // Verifies content (stronger than zip CRC32) and catches tampering.
   "files": {
     "notes/abc123.json":      "sha256-…",
-    "attachments/img1.jpg":   "sha256-…",
-    "thumbs/img1.webp":       "sha256-…"
+    "attachments/9f3a….jpg":  "sha256-9f3a…",   // filename already = content hash
+    "thumbs/9f3a….webp":      "sha256-…"
   }
 }
 ```
@@ -124,8 +130,10 @@ record, its checklist items, and metadata for its attachments (bytes live in
       "deleted": false, "created": "...", "updated": "..." }
   ],
   "attachments": [
+    // bytes live at attachments/<sha256>.<ext>; `id` is the original attachment
+    // id, kept so a lossless restore can rebuild it.
     { "id": "img1", "ext": "jpg", "mime": "image/jpeg", "bytes": 84213,
-      "sha256": "sha256-…", "deleted": false,
+      "sha256": "9f3a…", "deleted": false,
       "created": "...", "updated": "..." }
   ]
 }
@@ -149,6 +157,13 @@ Notes:
 - **No L2/L3.** No mirroring of note/image bodies and no parity/Reed-Solomon —
   by decision, to avoid fragile error-correction code. Durability beyond this is
   achieved operationally (keep ≥2 backups in ≥2 places; verify periodically).
+  This matches restic/borg/kopia, which also rely on detection + copies, not FEC.
+- **Self-verifying attachments.** An attachment's filename is its SHA-256, so the
+  image is its own checksum — recomputing the hash on read detects corruption
+  without even consulting the manifest.
+- **Encryption** is the recommended *optional* future layer (AES-256-GCM over the
+  zip, or per-entry) — higher value than FEC for sensitive notes, and the default
+  in restic/borg/kopia. Out of scope for this version.
 
 ## Export flow
 
@@ -175,7 +190,9 @@ Open the zip, read **only** `manifest.json` (fallback `.bak`). Render the note
 list from the index (title, snippet, labels, dates, flags) and a thumbnail grid
 by extracting just the referenced `thumbs/*` on demand. No note bodies or
 full-res images are read until a note is opened/selected. Show a per-entry
-"damaged" badge for any file whose CRC/SHA fails.
+"damaged" badge for any file whose CRC/SHA fails. A dedicated **Verify** action
+(the `restic check` analog) walks every `manifest.files` SHA-256 and reports the
+backup's health *without importing* anything.
 
 ## Import flow
 
@@ -228,6 +245,31 @@ So existing v1 backups keep restoring unchanged.
   whether to include trashed notes by default (proposed: yes, flagged);
   default import mode for *full* (non-selective) import (proposed: Restore for
   same-account, Copy when foreign/duplicate ids detected).
+
+## Prior art — restic / borg / kopia
+
+The mature backup tools converge on: content-addressed storage (data keyed by
+hash → automatic dedup), content-defined chunking, pack files + indexes,
+encryption (AEAD) + compression by default, and integrity by **detection**
+(`check` / `check --repair`) — none embed Reed–Solomon/parity. v2 borrows the
+high-value, low-complexity ideas and deliberately skips the rest:
+
+- **Borrowed:** content-addressed attachments (filename = SHA-256 → dedup +
+  self-verifying); an explicit **verify** pass; encryption as the recommended
+  optional layer; detection-not-FEC (durability via ≥2 copies, not in-file
+  healing).
+- **Skipped as overkill here:** content-defined (sub-file) chunking — notes are
+  tiny and images are immutable blobs, so the whole-note / whole-image unit is
+  the natural dedup boundary; pack files + an object-store repository — built for
+  millions of chunks, not thousands of notes.
+- **Repository vs export:** these tools separate a persistent *repository*
+  (incremental, deduped, retention) from a portable *export*. Noteesek already
+  mirrors this — the **server snapshots** are the repository (incremental, shared
+  blobs, retention/GC); this v2 file is the portable export, kept **full**, not
+  incremental (a standalone file has no base to diff against).
+- **Snapshots follow-up:** the server snapshot blobs currently dedup by
+  *attachment id*; moving them to **content-hash** addressing (as above) would
+  dedup identical bytes across ids and make each blob its own checksum.
 
 ## Suggested implementation phasing
 
