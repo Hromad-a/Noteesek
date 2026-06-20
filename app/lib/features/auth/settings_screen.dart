@@ -15,6 +15,7 @@ import '../../data/notes_repository.dart';
 import '../backup/backup_service.dart' as backup;
 import '../backup/remote_backup_service.dart';
 import '../backup/v2/backup_restore_screen.dart';
+import '../backup/v2/backup_v2_import.dart';
 import '../backup/snapshots_screen.dart';
 import '../lock/app_lock.dart';
 import '../../providers.dart';
@@ -23,7 +24,6 @@ import '../export/export_delivery.dart';
 import '../export/export_service.dart';
 import '../export/save_delivery.dart';
 import '../import/import_models.dart';
-import '../import/import_service.dart';
 import '../import/keep_import.dart';
 import '../import/markdown_import.dart';
 
@@ -277,95 +277,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
     if (!mounted) return;
 
-    // Preview + confirm before anything is written.
-    final confirmed = await _confirmImport(notes);
-    if (confirmed != true || !mounted) return;
-
-    _snack('Importing…');
-    try {
-      final ImportResult result =
-          await NoteImportService(ref.read(notesRepositoryProvider))
-              .import(notes);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).hideCurrentSnackBar();
-      _snack(result.imported == 0
-          ? 'Nothing to import'
-          : 'Imported ${result.imported} '
-              'note${result.imported == 1 ? '' : 's'}');
-    } catch (e) {
-      if (mounted) _snack('Import failed: $e');
-    }
-  }
-
-  /// Shows a summary of what would be imported and asks the user to confirm.
-  Future<bool?> _confirmImport(List<ParsedNote> notes) {
-    final checklists = notes.where((n) => n.type == 'checklist').length;
-    final texts = notes.length - checklists;
-    final withImages = notes.where((n) => n.images.isNotEmpty).length;
-    final archived = notes.where((n) => n.archived).length;
-    final labelNames = <String>{
-      for (final n in notes)
-        for (final l in n.labelNames)
-          if (l.trim().isNotEmpty) l.trim()
-    };
-    final notebookNames = <String>{
-      for (final n in notes)
-        if (n.notebookName != null && n.notebookName!.trim().isNotEmpty)
-          n.notebookName!.trim()
-    };
-
-    final lines = <String>[
-      '$texts text · $checklists checklist',
-      if (withImages > 0) '$withImages with images',
-      if (archived > 0) '$archived archived',
-      if (labelNames.isNotEmpty)
-        '${labelNames.length} label${labelNames.length == 1 ? '' : 's'} '
-            '(created if missing)',
-      if (notebookNames.isNotEmpty)
-        '${notebookNames.length} notebook${notebookNames.length == 1 ? '' : 's'} '
-            '(created if missing)',
-    ];
-
-    return showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text('Import ${notes.length} '
-            'note${notes.length == 1 ? '' : 's'}?'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            for (final line in lines)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 2),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('•  '),
-                    Expanded(child: Text(line)),
-                  ],
-                ),
-              ),
-            const SizedBox(height: 12),
-            Text(
-              'Re-importing the same file creates duplicates.',
-              style: Theme.of(dialogContext).textTheme.bodySmall,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('Import'),
-          ),
-        ],
+    // Pack the parsed notes into an in-memory v2 package and open the shared
+    // preview, so importing uses the same grouped/searchable picker as a backup
+    // restore — into a chosen notebook, as copies (no Replace for an import).
+    final pkg = await parsedNotesToBackupBytes(notes);
+    if (!mounted) return;
+    await Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => BackupRestoreScreen(
+        bytes: pkg,
+        sourceLabel: file.name,
+        title: 'Import notes',
+        allowReplace: false,
       ),
-    );
+    ));
   }
+
 
   // ---------------- Backup / restore ----------------
   // Mobile backs up the local drift DB; web backs up the account via the

@@ -18,11 +18,23 @@ import 'backup_v2_import.dart';
 /// the selected notes as copies or **replaces** the whole account/device.
 /// Pops `true` once something was restored.
 class BackupRestoreScreen extends ConsumerStatefulWidget {
-  const BackupRestoreScreen(
-      {super.key, required this.bytes, required this.sourceLabel});
+  const BackupRestoreScreen({
+    super.key,
+    required this.bytes,
+    required this.sourceLabel,
+    this.title = 'Restore a backup',
+    this.allowReplace = true,
+  });
 
   final Uint8List bytes;
   final String sourceLabel;
+
+  /// App-bar title (e.g. "Import notes" when the source is a Markdown import).
+  final String title;
+
+  /// When false, only "Add" is offered (copy-only sources like Markdown import,
+  /// where replacing the whole account from a partial export makes no sense).
+  final bool allowReplace;
 
   @override
   ConsumerState<BackupRestoreScreen> createState() =>
@@ -173,7 +185,7 @@ class _BackupRestoreScreenState extends ConsumerState<BackupRestoreScreen> {
     final theme = Theme.of(context);
     if (_error != null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Restore a backup')),
+        appBar: AppBar(title: Text(widget.title)),
         body: Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
@@ -188,7 +200,7 @@ class _BackupRestoreScreenState extends ConsumerState<BackupRestoreScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Restore a backup'),
+        title: Text(widget.title),
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(28),
           child: Padding(
@@ -240,11 +252,12 @@ class _BackupRestoreScreenState extends ConsumerState<BackupRestoreScreen> {
           _Footer(
             selectedCount: _selected.length,
             busy: _busy,
+            allowReplace: widget.allowReplace,
             notebookNames: _notebookNames,
             target: _targetNotebook,
             onTarget: (v) => setState(() => _targetNotebook = v),
             onAdd: _selected.isEmpty || _busy ? null : _add,
-            onReplace: _busy ? null : _replace,
+            onReplace: (_busy || !widget.allowReplace) ? null : _replace,
           ),
         ],
       ),
@@ -414,6 +427,7 @@ class _Footer extends StatelessWidget {
   const _Footer({
     required this.selectedCount,
     required this.busy,
+    required this.allowReplace,
     required this.notebookNames,
     required this.target,
     required this.onTarget,
@@ -422,6 +436,7 @@ class _Footer extends StatelessWidget {
   });
   final int selectedCount;
   final bool busy;
+  final bool allowReplace;
   final List<String> notebookNames;
   final String? target;
   final ValueChanged<String?> onTarget;
@@ -470,12 +485,15 @@ class _Footer extends StatelessWidget {
                       child: Text(busy ? '…' : 'Add $selectedCount to my notes'),
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  OutlinedButton(
-                    onPressed: onReplace,
-                    style: OutlinedButton.styleFrom(foregroundColor: scheme.error),
-                    child: const Text('Replace all…'),
-                  ),
+                  if (allowReplace) ...[
+                    const SizedBox(width: 8),
+                    OutlinedButton(
+                      onPressed: onReplace,
+                      style:
+                          OutlinedButton.styleFrom(foregroundColor: scheme.error),
+                      child: const Text('Replace all…'),
+                    ),
+                  ],
                 ],
               ),
             ],

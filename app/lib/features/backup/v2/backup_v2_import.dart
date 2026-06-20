@@ -1,9 +1,11 @@
 import 'dart:typed_data';
 
+import '../../../data/local/ids.dart';
 import '../../../data/notes_repository.dart';
 import '../../import/import_models.dart';
 import '../../import/import_service.dart';
 import 'backup_v2.dart';
+import 'thumbnailer.dart';
 
 /// "Add as copies" import for a v2 backup: brings the [selectedNoteIds] (null =
 /// all) into the current account as **new** notes — fresh ids, current owner,
@@ -78,4 +80,55 @@ Future<int> addNotesFromBackup(
   }
 
   return (await NoteImportService(repo).import(parsed)).imported;
+}
+
+/// Packs [notes] (from a Markdown/Keep import, a snapshot, etc.) into an
+/// in-memory v2 zip so they flow through the shared preview/restore screen.
+/// Labels and the notebook are name-based here; ids are synthetic (only
+/// internally consistent) — the Add import resolves names to real ids.
+Future<Uint8List> parsedNotesToBackupBytes(List<ParsedNote> notes) async {
+  final labelId = <String, String>{};
+  final notebookId = <String, String>{};
+  for (final n in notes) {
+    for (final name in n.labelNames) {
+      labelId.putIfAbsent(name, newPbId);
+    }
+    final nb = n.notebookName;
+    if (nb != null && nb.trim().isNotEmpty) notebookId.putIfAbsent(nb, newPbId);
+  }
+
+  final input = BackupInput(
+    labels: [
+      for (final e in labelId.entries) BackupLabelInput(id: e.value, name: e.key)
+    ],
+    notebooks: [
+      for (final e in notebookId.entries)
+        BackupNotebookInput(id: e.value, name: e.key)
+    ],
+    notes: [
+      for (final n in notes)
+        BackupNoteInput(
+          id: newPbId(),
+          type: n.type,
+          title: n.title,
+          body: n.body,
+          color: n.color,
+          pinned: n.pinned,
+          archived: n.archived,
+          labelIds: [for (final name in n.labelNames) labelId[name]!],
+          notebookId: (n.notebookName != null && n.notebookName!.trim().isNotEmpty)
+              ? notebookId[n.notebookName]!
+              : '',
+          items: [
+            for (final i in n.items)
+              BackupItemInput(id: newPbId(), text: i.content, checked: i.checked)
+          ],
+          attachments: [
+            for (final img in n.images)
+              BackupAttachmentInput(id: newPbId(), bytes: img)
+          ],
+        ),
+    ],
+  );
+  return writeBackupV2(input, thumbnailer: makeThumbnail);
 }
