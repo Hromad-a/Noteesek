@@ -162,19 +162,23 @@ about the one note as a unit; we do **not** lock individual items.
 
 ## Phasing
 
-- **Phase 1 — Backend foundation.** `notebooks.sharedWith` + lock fields
-  migrations; rewrite access rules for notebooks/notes/items/attachments; the
-  `users` picker hook. Verify rules with API tests.
-- **Phase 2 — Sharing UI.** Owner shares/unshares from the inline popup +
+- **Phase 1 — Backend foundation.** ✅ Done. `notebooks.sharedWith` + lock fields
+  migrations; access rules for notebooks/notes/items/attachments; the `users`
+  picker hook. Verified with a two-user API smoke test.
+- **Phase 2 — Sharing UI.** ✅ Done. Owner shares/unshares from the inline sheet +
   registered-user picker; shared indicator on note cards + selector; members
-  popup. (Read/write already works via rules.)
-- **Phase 3 — Online-only edit path + removal cleanup.** Reachability-gated
-  editing for shared notes (online write path, not the dirty queue); purge
-  inaccessible shared data on the losing side after unshare/remove.
-- **Phase 4 — Locking.** `lockedBy`/`lockedAt` lifecycle, heartbeat, expiry,
-  realtime read-only badges, LWW + "changed elsewhere" backstop banner.
-- **Phase 5 (optional hardening).** Atomic lock-acquire hook; title-vs-body
-  auto-merge; field-level niceties.
+  sheet; Manage Notebooks share action. `sharedWith` + locks plumbed through both
+  repos + the mobile sync engine (drift v9→v10).
+- **Phase 3 — Online-only edit path + removal cleanup.** ✅ Done. Shared notes are
+  read-only when the server is unreachable; the sync engine reconcile step purges
+  local shared notebooks (+ notes) once I'm unshared/removed.
+- **Phase 4 — Locking.** ✅ Done (core). `lockedBy`/`lockedAt` lifecycle in the
+  editor: acquire on edit, ~25s heartbeat, ~2min auto-expire, release on close;
+  others get a read-only editor with a "<email> is editing" / offline banner.
+  Backstop is plain **LWW**; the explicit "changed elsewhere" banner for the rare
+  expired-takeover race is **deferred** (the lock makes that case very rare).
+- **Phase 5 (optional hardening).** Not started. The "changed elsewhere" banner;
+  atomic lock-acquire hook; title-vs-body auto-merge; field-level niceties.
 
 ## Deferred / explicitly out of scope
 
