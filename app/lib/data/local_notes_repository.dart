@@ -491,6 +491,17 @@ class LocalNotesRepository implements NotesRepository {
   }
 
   @override
+  Future<void> setNotebookSharedWith(String id, List<String> userIds) async {
+    await (_db.update(_db.notebooks)..where((t) => t.id.equals(id))).write(
+      NotebooksCompanion(
+        sharedWith: Value(encodeLabelIds(userIds)),
+        updated: Value(pbNow()),
+        dirty: const Value(true),
+      ),
+    );
+  }
+
+  @override
   Future<void> deleteNotebook(String id,
       {required bool moveNotesToDefault}) async {
     final nb = await (_db.select(_db.notebooks)..where((t) => t.id.equals(id)))

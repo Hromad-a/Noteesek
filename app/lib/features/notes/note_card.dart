@@ -8,6 +8,8 @@ import '../../data/notes_repository.dart';
 import 'note_colors.dart';
 import 'note_markdown_config.dart';
 import 'note_selection.dart';
+import 'notebook_share_sheet.dart';
+import 'sharing_service.dart';
 
 /// A single Keep-style note card shown in the grid.
 class NoteCard extends ConsumerStatefulWidget {
@@ -361,6 +363,32 @@ class _CardLabels extends ConsumerWidget {
   }
 }
 
+/// A "shared notebook" badge shown on a card whose notebook has members. Tapping
+/// opens the member sheet. Renders nothing for notes in private notebooks.
+class _SharedBadge extends ConsumerWidget {
+  const _SharedBadge({required this.note});
+  final NoteRow note;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (note.notebook.isEmpty) return const SizedBox.shrink();
+    final notebooks = ref.watch(notebooksProvider).asData?.value ?? const [];
+    final nb = notebooks.cast<NotebookRow?>().firstWhere(
+        (n) => n?.id == note.notebook,
+        orElse: () => null);
+    if (nb == null || sharedWithIds(nb.sharedWith).isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return IconButton(
+      visualDensity: VisualDensity.compact,
+      iconSize: 18,
+      tooltip: 'Shared notebook — tap to see members',
+      icon: const Icon(Icons.group_outlined),
+      onPressed: () => showNotebookShareSheet(context, nb.id),
+    );
+  }
+}
+
 class _CardFooter extends ConsumerWidget {
   const _CardFooter({required this.note});
 
@@ -380,6 +408,7 @@ class _CardFooter extends ConsumerWidget {
             icon: Icon(note.pinned ? Icons.push_pin : Icons.push_pin_outlined),
             onPressed: () => repo.setPinned(note.id, !note.pinned),
           ),
+          _SharedBadge(note: note),
           if (kIsWeb) ...[
             const Spacer(),
             IconButton(

@@ -23,6 +23,7 @@ import 'note_card.dart';
 import 'note_colors.dart';
 import 'note_editor_screen.dart';
 import 'note_selection.dart';
+import 'sharing_service.dart';
 import 'trash_screen.dart';
 
 /// Home screen: a Keep-style masonry grid of notes with a create FAB.
@@ -740,12 +741,16 @@ class _NotebookSelector extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final notebooks = ref.watch(notebooksProvider).asData?.value ?? const [];
     final activeId = ref.watch(activeNotebookIdProvider);
+    final activeNb = notebooks.where((n) => n.id == activeId).firstOrNull;
     final label = switch (activeId) {
       kAllNotes => 'All notes',
       kNoNotebook => 'No notebook',
-      _ => notebooks.where((n) => n.id == activeId).firstOrNull?.name ??
-          'All notes',
+      _ => activeNb?.name ?? 'All notes',
     };
+    final chipIcon =
+        activeNb != null && sharedWithIds(activeNb.sharedWith).isNotEmpty
+            ? Icons.group_outlined
+            : _scopeIcon(activeId);
 
     PopupMenuItem<String> scopeItem(String value, IconData icon, String text) =>
         PopupMenuItem(
@@ -779,7 +784,12 @@ class _NotebookSelector extends ConsumerWidget {
         scopeItem(kNoNotebook, Icons.label_off_outlined, 'No notebook'),
         if (notebooks.isNotEmpty) const PopupMenuDivider(),
         for (final nb in notebooks)
-          scopeItem(nb.id, Icons.book_outlined, nb.name),
+          scopeItem(
+              nb.id,
+              sharedWithIds(nb.sharedWith).isNotEmpty
+                  ? Icons.group_outlined
+                  : Icons.book_outlined,
+              nb.name),
         const PopupMenuDivider(),
         const PopupMenuItem(
           value: _newValue,
@@ -809,7 +819,7 @@ class _NotebookSelector extends ConsumerWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(_scopeIcon(activeId), size: 18),
+            Icon(chipIcon, size: 18),
             const SizedBox(width: 8),
             Flexible(
               child: Text(label,

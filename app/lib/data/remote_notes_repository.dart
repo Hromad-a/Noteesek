@@ -497,6 +497,16 @@ class RemoteNotesRepository implements NotesRepository {
       });
 
   @override
+  Future<void> setNotebookSharedWith(String id, List<String> userIds) =>
+      _guardVoid(() async {
+        final r = await _pb
+            .collection('notebooks')
+            .update(id, body: {'sharedWith': userIds});
+        _notebooks[id] = _notebookFrom(r);
+        _events.add(null);
+      });
+
+  @override
   Future<void> deleteNotebook(String id, {required bool moveNotesToDefault}) =>
       _guardVoid(() async {
         final nb = _notebooks[id];

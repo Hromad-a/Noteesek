@@ -165,6 +165,11 @@ abstract interface class NotesRepository {
   /// Set whether this notebook's notes are hidden from the "All notes" view.
   Future<void> setNotebookVisibility(String id, bool hidden);
 
+  /// Replace the set of users this notebook is shared with (owner-only; the
+  /// server enforces that). [userIds] is the full member list, not a delta.
+  /// Server-connected only — no-op semantics offline are the caller's concern.
+  Future<void> setNotebookSharedWith(String id, List<String> userIds);
+
   /// Soft-delete a notebook. Its notes are either reassigned to "no notebook"
   /// ([moveNotesToDefault] = true) or soft-deleted to Trash.
   Future<void> deleteNotebook(String id, {required bool moveNotesToDefault});
