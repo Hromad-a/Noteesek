@@ -751,6 +751,23 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               icon: _connIcon(context),
             ),
           ),
+          // Version history lives with the server config; shown even when not
+          // connected (greyed out) so it's discoverable — it lights up once you
+          // sign in to a server.
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            enabled: signedIn,
+            leading: const Icon(Icons.history),
+            title: const Text('Version history'),
+            subtitle: Text(signedIn
+                ? 'Automatic restore points'
+                : 'Sign in to a server to use'),
+            onTap: signedIn
+                ? () => Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => const SnapshotsScreen(),
+                    ))
+                : null,
+          ),
           const SizedBox(height: 24),
 
           // Sync status: mobile only (web has no sync engine — it's online/
@@ -792,25 +809,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             title: const Text('Backup file'),
             subtitle: const Text('Restore everything, or merge selected'),
             onTap: _restore,
-          ),
-          const SizedBox(height: 16),
-
-          const _SectionHeader('On the server'),
-          // Shown even when not connected (greyed out) so the feature is
-          // discoverable — it lights up once you sign in to a server.
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            enabled: signedIn,
-            leading: const Icon(Icons.history),
-            title: const Text('Version history'),
-            subtitle: Text(signedIn
-                ? 'Automatic restore points'
-                : 'Sign in to a server to use'),
-            onTap: signedIn
-                ? () => Navigator.of(context).push(MaterialPageRoute(
-                      builder: (_) => const SnapshotsScreen(),
-                    ))
-                : null,
           ),
           const SizedBox(height: 16),
 
