@@ -113,6 +113,25 @@ class _BackupRestoreScreenState extends ConsumerState<BackupRestoreScreen> {
 
   /// Restore only the selected notes, by id (no duplicates).
   Future<void> _restoreSelected() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Restore ${_selected.length} '
+            '${_selected.length == 1 ? 'note' : 'notes'}?'),
+        content: const Text(
+            'The selected notes will be replaced with the version from this '
+            'backup. Your other notes are left untouched.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Restore')),
+        ],
+      ),
+    );
+    if (ok != true) return;
     setState(() => _busy = true);
     try {
       final n = kIsWeb
