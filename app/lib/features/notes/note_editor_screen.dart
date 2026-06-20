@@ -55,7 +55,8 @@ class NoteEditorScreen extends ConsumerStatefulWidget {
   ConsumerState<NoteEditorScreen> createState() => _NoteEditorScreenState();
 }
 
-class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
+class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
+    with WidgetsBindingObserver {
   final _titleCtrl = TextEditingController();
   final _bodyCtrl = TextEditingController();
   final _bodyFocus = FocusNode();
@@ -79,11 +80,19 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
   NotesRepository get _repo => ref.read(notesRepositoryProvider);
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _heartbeat?.cancel();
     if (_holdingLock) {
-      // Best-effort release so the note frees up immediately for others.
-      _repo.setNoteLock(widget.noteId, '', '');
+      // Release so the note frees up immediately for others (pushed at once on
+      // mobile so the other device doesn't wait for the next periodic sync).
+      _setLock(widget.noteId, '', '');
     }
     _titleCtrl.dispose();
     _bodyCtrl.dispose();
@@ -93,6 +102,27 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
       c.dispose();
     }
     super.dispose();
+  }
+
+  /// Coming back from background (e.g. the phone was locked with the note open):
+  /// our heartbeat was suspended, so the lock may have gone stale or been taken.
+  /// Forget our hold *without* releasing on the server, pull fresh state, then
+  /// let build() + [_manageLock] re-acquire it if it's free, or drop us to
+  /// read-only if another member now holds it.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) return;
+    // Forget any (possibly stale) hold without releasing on the server, then
+    // re-evaluate from fresh data.
+    _holdingLock = false;
+    _heartbeat?.cancel();
+    if (!kIsWeb) {
+      ref.read(syncControllerProvider.notifier).syncNow().then((_) {
+        if (mounted) setState(() {});
+      });
+    } else if (mounted) {
+      setState(() {});
+    }
   }
 
   /// Whether the note's notebook is shared with anyone.
@@ -105,21 +135,34 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     return nb != null && sharedWithIds(nb.sharedWith).isNotEmpty;
   }
 
+  /// Writes the lock and, on mobile, pushes it to the server immediately so the
+  /// other device sees it without waiting for the next periodic sync. (On web
+  /// [NotesRepository.setNoteLock] already hits the server directly.)
+  void _setLock(String id, String by, String at) {
+    _repo.setNoteLock(id, by, at);
+    if (!kIsWeb) ref.read(syncControllerProvider.notifier).syncNow();
+  }
+
   /// Drives the edit lock as a side effect of [build]: acquire + heartbeat when
   /// we may edit a shared note, release when we can't (read-only / left). Only
-  /// fires repo writes on a state transition, so it's safe to call every build.
-  void _manageLock(String id, bool canEdit) {
+  /// fires writes on a state transition, so it's safe to call every build.
+  /// [currentLockedBy] guards the release: we never clear a lock that's now held
+  /// by someone else (a takeover after our lock went stale).
+  void _manageLock(String id, bool canEdit, String currentLockedBy) {
+    final me = _myId();
     if (canEdit && !_holdingLock) {
       _holdingLock = true;
-      _repo.setNoteLock(id, _myId(), pbNow());
+      _setLock(id, me, pbNow());
       _heartbeat?.cancel();
       _heartbeat = Timer.periodic(kLockHeartbeat, (_) {
-        if (_holdingLock) _repo.setNoteLock(id, _myId(), pbNow());
+        if (_holdingLock) _setLock(id, me, pbNow());
       });
     } else if (!canEdit && _holdingLock) {
       _holdingLock = false;
       _heartbeat?.cancel();
-      _repo.setNoteLock(id, '', '');
+      if (currentLockedBy.isEmpty || currentLockedBy == me) {
+        _setLock(id, '', '');
+      }
     }
   }
 
@@ -315,7 +358,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
             lockIsFresh(note.lockedAt);
         final readOnly = shared && (!reachable || lockedByOther);
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) _manageLock(note.id, shared && !readOnly);
+          if (mounted) _manageLock(note.id, shared && !readOnly, note.lockedBy);
         });
 
         // The editing toolbar floats above the keyboard on mobile, so it only

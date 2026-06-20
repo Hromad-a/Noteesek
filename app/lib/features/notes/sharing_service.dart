@@ -47,10 +47,12 @@ final shareableUsersProvider =
 List<String> sharedWithIds(String rawSharedWith) => labelIdsOfRaw(rawSharedWith);
 
 /// How long a note edit-lock stays valid without a heartbeat refresh. A lock
-/// older than this is "stale" and can be taken over (covers crashes/disconnects;
-/// see docs/shared-notebooks.md). The holder refreshes well within the window.
-const Duration kLockExpiry = Duration(minutes: 2);
-const Duration kLockHeartbeat = Duration(seconds: 25);
+/// older than this is "stale" and can be taken over (covers crashes / the phone
+/// being locked with the note open; see docs/shared-notebooks.md). Closing the
+/// note releases immediately, so this is only the fallback. The holder
+/// heartbeats well within the window.
+const Duration kLockExpiry = Duration(seconds: 60);
+const Duration kLockHeartbeat = Duration(seconds: 20);
 
 /// Whether a lock with this `lockedAt` ISO timestamp is still held (not stale).
 /// Empty/unparseable ⇒ not held.
