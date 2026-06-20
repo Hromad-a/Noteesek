@@ -133,6 +133,8 @@ about the one note as a unit; we do **not** lock individual items.
    returns `[{id, email}]` for verified accounts so the owner can pick members
    (and so the client can resolve emails → ids for `sharedWith`). Excludes the
    caller; consider excluding existing members from the suggestions.
+   **Decision: exposing every registered email to any signed-in user is
+   accepted** (trusted self-hosted servers) — no extra gating for now.
 2. **(Optional) Atomic lock acquire.** A `POST …/notes/{id}/lock` compare-and-set
    could make acquisition race-free. Given the **LWW + banner** backstop is
    accepted, this is **optional** — we can acquire optimistically client-side and
