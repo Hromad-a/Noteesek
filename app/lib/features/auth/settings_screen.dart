@@ -19,6 +19,7 @@ import '../backup/v2/backup_v2_import.dart';
 import '../../ui/web_centered.dart';
 import '../backup/snapshots_screen.dart';
 import '../lock/app_lock.dart';
+import 'login_screen.dart';
 import '../../providers.dart';
 import '../../sync/sync_controller.dart';
 import '../export/export_delivery.dart';
@@ -65,6 +66,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  /// Opens the connect / sign-in flow (the "Account" and "Server" rows act as
+  /// shortcuts into it when signed out).
+  void _connect() {
+    Navigator.of(context)
+        .push(MaterialPageRoute(builder: (_) => const LoginScreen()));
   }
 
   /// Pings `<url>/api/health`. Updates [_conn]; when not [silent], also reports
@@ -614,12 +622,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               subtitle: const Text('Signed in'),
             )
           else
-            const ListTile(
+            ListTile(
               contentPadding: EdgeInsets.zero,
-              leading: Icon(Icons.cloud_off_outlined),
-              title: Text('Not connected'),
-              subtitle:
-                  Text('Connect a server to sync your notes across devices.'),
+              leading: const Icon(Icons.cloud_off_outlined),
+              title: const Text('Not connected'),
+              subtitle: const Text(
+                  'Connect a server to sync your notes across devices.'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: _connect,
             ),
           const SizedBox(height: 24),
 
@@ -742,7 +752,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             title: Text(pb.baseURL),
             subtitle: Text(signedIn
                 ? 'Sign out to connect to a different server.'
-                : 'Use "Connect to server" to change this and sign in.'),
+                : 'Tap to connect to a server and sign in.'),
+            // When signed out, the row is a shortcut into the connect flow.
+            onTap: signedIn ? null : _connect,
             trailing: IconButton(
               tooltip: 'Test connection',
               onPressed: _conn == _Conn.checking
