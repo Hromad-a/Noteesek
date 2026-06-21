@@ -779,35 +779,44 @@ class _NotebookSelector extends ConsumerWidget {
     };
     final chipIcon = activeNbShared ? Icons.group_outlined : _scopeIcon(activeId);
 
-    // Soft lavender wash that marks shared notebooks (in the menu + the selected
-    // chip). Derived from the theme so it adapts to light/dark.
+    // Shared notebooks read as special without looking "selected": a lavender
+    // outline + tinted icon. The currently-selected shared notebook (and its
+    // chip) instead gets a solid fill. Personal notebooks are untouched.
     final scheme = Theme.of(context).colorScheme;
-    final sharedTint = scheme.primaryContainer.withValues(alpha: 0.55);
 
     PopupMenuItem<String> scopeItem(String value, IconData icon, String text,
         {bool shared = false}) {
+      final selected = value == activeId;
+      final boldFill = shared && selected; // selected shared → solid fill
+      final outlined = shared && !selected; // other shared → outline
+      final fg = boldFill ? scheme.onPrimary : (shared ? scheme.primary : null);
       final tile = ListTile(
         dense: true,
         contentPadding: EdgeInsets.zero,
-        leading: Icon(value == activeId ? Icons.check : icon),
-        title: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis),
+        leading: Icon(selected ? Icons.check : icon, color: fg),
+        title: Text(
+          text,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: boldFill ? TextStyle(color: scheme.onPrimary) : null,
+        ),
       );
+      if (!shared) return PopupMenuItem(value: value, child: tile);
       return PopupMenuItem(
         value: value,
-        // Tint shared notebooks as an inset rounded pill behind the row.
-        padding: shared
-            ? const EdgeInsets.symmetric(horizontal: 8, vertical: 2)
-            : null,
-        child: shared
-            ? Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                decoration: BoxDecoration(
-                  color: sharedTint,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: tile,
-              )
-            : tile,
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          decoration: BoxDecoration(
+            color: boldFill ? scheme.primary : null,
+            border: outlined
+                ? Border.all(
+                    color: scheme.primary.withValues(alpha: 0.55), width: 1.5)
+                : null,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: tile,
+        ),
       );
     }
 
@@ -863,25 +872,28 @@ class _NotebookSelector extends ConsumerWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          // Selected shared notebook keeps the same lavender wash as its menu row.
-          color: activeNbShared ? sharedTint : null,
+          // A selected shared notebook fills the chip solid (it's the selection);
+          // personal scopes keep the plain outlined pill.
+          color: activeNbShared ? scheme.primary : null,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: activeNbShared
-                ? scheme.primary.withValues(alpha: 0.4)
-                : scheme.outline,
-          ),
+          border: activeNbShared ? null : Border.all(color: scheme.outline),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(chipIcon, size: 18),
+            Icon(chipIcon, size: 18, color: activeNbShared ? scheme.onPrimary : null),
             const SizedBox(width: 8),
             Flexible(
-              child: Text(label,
-                  maxLines: 1, overflow: TextOverflow.ellipsis),
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style:
+                    activeNbShared ? TextStyle(color: scheme.onPrimary) : null,
+              ),
             ),
-            const Icon(Icons.arrow_drop_down),
+            Icon(Icons.arrow_drop_down,
+                color: activeNbShared ? scheme.onPrimary : null),
           ],
         ),
       ),
