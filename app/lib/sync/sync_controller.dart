@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pocketbase/pocketbase.dart';
 
@@ -67,17 +68,20 @@ class SyncStatus {
 class SyncController extends Notifier<SyncStatus> {
   Timer? _timer;
   Timer? _debounce;
+  final List<UnsubscribeFunc> _rtUnsubs = [];
 
   @override
   SyncStatus build() {
     ref.onDispose(() {
       _timer?.cancel();
       _debounce?.cancel();
+      _stopRealtime();
     });
 
     final connected = ref.watch(isAuthenticatedProvider);
     _timer?.cancel();
     _debounce?.cancel();
+    _stopRealtime();
     if (connected) {
       Future.microtask(() => syncNow());
       _timer = Timer.periodic(
@@ -93,8 +97,54 @@ class SyncController extends Notifier<SyncStatus> {
           _debounce = Timer(const Duration(seconds: 2), () => syncNow());
         }
       });
+      // Live updates: subscribe to realtime so another device's changes apply
+      // to the local DB *instantly* (the 30s timer is just a fallback). Web has
+      // its own realtime in RemoteNotesRepository, so this is mobile-only.
+      if (!kIsWeb) Future.microtask(_startRealtime);
     }
     return const SyncStatus();
+  }
+
+  /// Subscribe to every content collection. Each event applies one record to
+  /// drift via the engine (same last-write-wins guard as the pull). Best-effort:
+  /// if realtime can't connect, the periodic pull still keeps things in sync.
+  Future<void> _startRealtime() async {
+    // Entirely best-effort: any setup failure (no realtime, test harness without
+    // a real PocketBase, etc.) is swallowed — the periodic pull still syncs.
+    try {
+      await _stopRealtime();
+      if (!ref.read(isAuthenticatedProvider)) return;
+      final pb = ref.read(pocketBaseProvider);
+      final engine = ref.read(syncEngineProvider);
+      const collections = [
+        'labels',
+        'notebooks',
+        'notes',
+        'checklist_items',
+        'attachments',
+      ];
+      for (final c in collections) {
+        final unsub = await pb.collection(c).subscribe('*', (e) {
+          final rec = e.record;
+          if (rec != null) {
+            engine.applyRealtimeRecord(c, rec, e.action);
+          }
+        });
+        _rtUnsubs.add(unsub);
+      }
+    } catch (_) {
+      // Realtime unavailable; the 30s pull keeps things in sync.
+    }
+  }
+
+  Future<void> _stopRealtime() async {
+    final unsubs = [..._rtUnsubs];
+    _rtUnsubs.clear();
+    for (final u in unsubs) {
+      try {
+        await u();
+      } catch (_) {/* already gone */}
+    }
   }
 
   /// Runs a sync. [manual] attempts are surfaced to the user by the caller;

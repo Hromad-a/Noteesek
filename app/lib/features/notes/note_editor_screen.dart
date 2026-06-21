@@ -360,6 +360,15 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) _manageLock(note.id, shared && !readOnly, note.lockedBy);
         });
+        // While read-only (someone else is editing), keep the displayed text in
+        // sync with incoming live updates — _seed only runs once, so refresh the
+        // controllers here. Safe because the user can't be typing in read-only.
+        if (readOnly) {
+          if (_titleCtrl.text != note.title) _titleCtrl.text = note.title;
+          if (note.type != 'checklist' && _bodyCtrl.text != note.body) {
+            _bodyCtrl.text = note.body;
+          }
+        }
 
         // The editing toolbar floats above the keyboard on mobile, so it only
         // shows while the keyboard is up. Web has no soft keyboard, so keep it
