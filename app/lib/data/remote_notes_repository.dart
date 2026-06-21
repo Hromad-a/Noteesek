@@ -547,6 +547,17 @@ class RemoteNotesRepository implements NotesRepository {
         _events.add(null);
       });
 
+  @override
+  Future<void> claimNoteToNotebook(String noteId, String notebookId) =>
+      _guardVoid(() async {
+        final r = await _pb.collection('notes').update(noteId, body: {
+          'notebook': notebookId,
+          if (_ownerId.isNotEmpty) 'owner': _ownerId,
+        });
+        _notes[noteId] = _noteFrom(r);
+        _events.add(null);
+      });
+
   // ---------------- Checklist items ----------------
 
   @override

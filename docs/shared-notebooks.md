@@ -108,6 +108,17 @@ offline divergence.
   **removed** member, on next sync, finds those records no longer readable → the
   client **purges** the now-inaccessible shared notebook + its notes from the
   local DB (they were never theirs to keep).
+- **Claiming a note out of a shared notebook:** moving *any* note (even one you
+  didn't create) from a shared notebook into a notebook you own (or "no
+  notebook") **reassigns its `owner` to you** — `claimNoteToNotebook`, a single
+  server-direct write made while you're still a member so a racing unshare can't
+  reject it. Afterwards the note is fully yours: it survives the notebook being
+  unshared, and the original owner/other members lose access. Their devices drop
+  the now-inaccessible note via a **note-level reconcile** (`_reconcileSharedNotes`,
+  the sibling of the notebook-level one): each sync compares local foreign-owned
+  notes against the set of note ids the server still returns and purges the
+  difference. Moving a note you *already* own, or moving between shared
+  notebooks, stays a plain `setNoteNotebook` (no ownership change).
 
 ## Concurrency — the note lock (`note_locks`)
 

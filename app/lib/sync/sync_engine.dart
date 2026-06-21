@@ -62,8 +62,11 @@ class SyncEngine {
           // Retry any attachment whose bytes haven't downloaded yet (independent
           // of the pull cursor).
           ('bytes', _attachments),
-          // Drop shared notebooks (+ their notes) that were unshared from me.
+          // Drop shared notebooks (+ their notes) that were unshared from me,
+          // and individual notes I've lost access to (e.g. a member claimed one
+          // out of a shared notebook, taking its ownership).
           ('reconcile', _notebooks),
+          ('reconcile', _notes),
         ],
       ];
       for (final (phase, collection) in steps) {
@@ -85,7 +88,11 @@ class SyncEngine {
 
   Future<void> _runStep(String phase, String collection) {
     if (phase == 'bytes') return _downloadPendingAttachmentBytes();
-    if (phase == 'reconcile') return _reconcileSharedNotebooks();
+    if (phase == 'reconcile') {
+      return collection == _notes
+          ? _reconcileSharedNotes()
+          : _reconcileSharedNotebooks();
+    }
     final push = phase == 'push';
     return switch (collection) {
       _labels => push ? _pushLabels() : _pullLabels(),
@@ -532,6 +539,39 @@ class SyncEngine {
         await (_db.delete(_db.notes)..where((t) => t.id.equals(n.id))).go();
       }
       await (_db.delete(_db.notebooks)..where((t) => t.id.equals(nb.id))).go();
+    }
+  }
+
+  /// Remove local copies of individual notes I've lost access to. The
+  /// notebook-level reconcile only covers whole notebooks I was removed from; a
+  /// note can also leave my reach on its own — e.g. another member *claimed* a
+  /// note out of a shared notebook, reassigning its `owner` to themselves. Such
+  /// a note stops being returned by the server but the pull can't see that, so
+  /// reconcile against the full set of note ids the server still lets me read.
+  ///
+  /// Only *foreign*-owned notes are eligible (owner != me and not the offline
+  /// `local` sentinel) — my own notes and locally-created ones are never
+  /// touched. Notes in shared notebooks I'm still a member of stay accessible,
+  /// so they're in the set and survive.
+  Future<void> _reconcileSharedNotes() async {
+    final myId = _pb.authStore.record?.id ?? '';
+    if (myId.isEmpty) return;
+    final accessible = <String>{
+      for (final r in await _pb
+          .collection(_notes)
+          .getFullList(batch: 500, fields: 'id'))
+        r.id,
+    };
+    final local = await _db.select(_db.notes).get();
+    for (final n in local) {
+      final foreign = n.owner != myId && n.owner != AppConfig.localOwner;
+      if (!foreign || accessible.contains(n.id)) continue;
+      // I lost access to this note — purge it and its children locally.
+      await (_db.delete(_db.checklistItems)..where((t) => t.note.equals(n.id)))
+          .go();
+      await (_db.delete(_db.attachments)..where((t) => t.note.equals(n.id)))
+          .go();
+      await (_db.delete(_db.notes)..where((t) => t.id.equals(n.id))).go();
     }
   }
 
