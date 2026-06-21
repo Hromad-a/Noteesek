@@ -8,6 +8,7 @@ import 'package:markdown_widget/markdown_widget.dart';
 
 import '../../data/local/database.dart';
 import '../../data/notes_repository.dart';
+import '../../data/online_shared_repository.dart';
 import '../../providers.dart';
 import '../../sync/sync_controller.dart';
 import '../../ui/app_messenger.dart';
@@ -76,7 +77,11 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
   // know the note is in a shared notebook. See note_lock_controller.dart.
   NoteLockController? _lock;
 
-  NotesRepository get _repo => ref.read(notesRepositoryProvider);
+  // For a shared note on mobile, content edits go straight to the server via
+  // this repo (server-authoritative, realtime) instead of the local-first path.
+  OnlineSharedNoteRepository? _onlineRepo;
+
+  NotesRepository get _repo => _onlineRepo ?? ref.read(notesRepositoryProvider);
 
   @override
   void initState() {
@@ -124,9 +129,18 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
     return nb != null && sharedWithIds(nb.sharedWith).isNotEmpty;
   }
 
-  /// Spin up the lock controller once we know the note is shared (idempotent).
+  /// Spin up the lock controller + server-direct content repo once we know the
+  /// note is shared (idempotent).
   void _ensureLock(String noteId, String me) {
     if (_lock != null || me.isEmpty) return;
+    if (!kIsWeb) {
+      // Route this shared note's content edits straight to the server.
+      _onlineRepo = OnlineSharedNoteRepository(
+        ref.read(databaseProvider),
+        ref.read(activeOwnerProvider),
+        ref.read(pocketBaseProvider),
+      );
+    }
     final lock = NoteLockController(
       pb: ref.read(pocketBaseProvider),
       noteId: noteId,
@@ -527,6 +541,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
                   child: note.type == 'checklist'
                       ? _ChecklistEditor(
                           noteId: note.id,
+                          repo: _repo,
                           controllerFor: _itemCtrl,
                           readOnly: readOnly,
                           onForgetController: (id) =>
@@ -946,12 +961,14 @@ class _AttachmentsSection extends ConsumerWidget {
 class _ChecklistEditor extends ConsumerStatefulWidget {
   const _ChecklistEditor({
     required this.noteId,
+    required this.repo,
     required this.controllerFor,
     required this.onForgetController,
     this.readOnly = false,
   });
 
   final String noteId;
+  final NotesRepository repo; // server-direct for shared notes, else local
   final TextEditingController Function(ChecklistItemRow) controllerFor;
   final void Function(String id) onForgetController;
   final bool readOnly;
@@ -971,8 +988,7 @@ class _ChecklistEditorState extends ConsumerState<_ChecklistEditor> {
       _focusNodes.putIfAbsent(id, () => FocusNode());
 
   Future<void> _addAndFocus({String content = ''}) async {
-    final newId = await ref
-        .read(notesRepositoryProvider)
+    final newId = await widget.repo
         .addItem(widget.noteId, content: content);
     if (mounted) {
       setState(() => _pendingFocusId = newId);
@@ -984,7 +1000,7 @@ class _ChecklistEditorState extends ConsumerState<_ChecklistEditor> {
   /// this item and push the remainder into a new item below (preserving the
   /// single-line "Enter adds the next item" feel).
   void _onItemChanged(ChecklistItemRow item, String value) {
-    final repo = ref.read(notesRepositoryProvider);
+    final repo = widget.repo;
     final br = value.indexOf('\n');
     if (br < 0) {
       repo.setItemContent(item.id, value);
@@ -1016,7 +1032,7 @@ class _ChecklistEditorState extends ConsumerState<_ChecklistEditor> {
   /// One checklist row. When [dragIndex] is non-null the row carries a drag
   /// handle that starts a reorder at that index; completed rows pass null.
   Widget _itemRow(ChecklistItemRow it, {int? dragIndex}) {
-    final repo = ref.read(notesRepositoryProvider);
+    final repo = widget.repo;
     // Read-only viewer: the per-item controller is seeded once, so a live remote
     // edit to the text wouldn't show. Keep it in sync with the item's content
     // (safe — the user can't be typing here in read-only mode).
@@ -1104,7 +1120,7 @@ class _ChecklistEditorState extends ConsumerState<_ChecklistEditor> {
 
   @override
   Widget build(BuildContext context) {
-    final repo = ref.read(notesRepositoryProvider);
+    final repo = widget.repo;
     final autoSort = ref.watch(checklistAutoSortProvider);
     final itemsAsync = ref.watch(checklistItemsProvider(widget.noteId));
 

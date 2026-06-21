@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:pocketbase/pocketbase.dart';
 
@@ -46,6 +47,7 @@ class NoteLockController extends ChangeNotifier {
   Timer? _heartbeat;
   Timer? _watchdog;
   UnsubscribeFunc? _unsub;
+  StreamSubscription<List<ConnectivityResult>>? _connSub;
 
   // Polls the server for reachability + lock state as a fallback to realtime:
   // detects going offline (→ read-only) and coming back (→ re-acquire), which a
@@ -68,6 +70,23 @@ class NoteLockController extends ChangeNotifier {
   /// Begin: subscribe for realtime updates, read the current state, try to take
   /// the lock, and start the reachability watchdog. Call once.
   Future<void> start() async {
+    // Instant offline: a network-loss event flips us read-only immediately,
+    // without waiting for the ~6s watchdog. A network-present event triggers a
+    // fast re-check (the watchdog/refresh confirms the server is actually up).
+    _connSub = Connectivity().onConnectivityChanged.listen((results) {
+      if (_disposed || _paused) return;
+      final offline = results.every((r) => r == ConnectivityResult.none);
+      if (offline) {
+        if (_reachable) {
+          _reachable = false;
+          notifyListeners();
+        }
+      } else {
+        // Network came back — verify the server right away.
+        // ignore: discarded_futures
+        _refresh();
+      }
+    });
     await _subscribe();
     _startWatchdog();
     await _refresh();
@@ -297,6 +316,7 @@ class NoteLockController extends ChangeNotifier {
     _disposed = true;
     _heartbeat?.cancel();
     _watchdog?.cancel();
+    _connSub?.cancel();
     final id = _myLockId;
     _myLockId = null;
     // Best-effort cleanup; runs to completion even as the widget tears down.
