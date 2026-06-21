@@ -21,7 +21,7 @@ assumption, so most of the work is in the **backend access rules** and the
 | **Attribution** | **None.** No per-note author tracking; just a "shared" indicator. |
 | **Indicator** | A "shared" icon on **note cards** *and* in the **notebook selector**. Tapping it reveals the member list. |
 | **On removal** | Notes a removed member created **stay in the notebook**; the person just loses access. |
-| **Concurrency** | **Pessimistic note-level lock** (one editor at a time) + heartbeat + auto-expire. **No** manual take-over. Backstop for rare races: **last-write-wins + a "changed elsewhere" banner**. |
+| **Concurrency** | **Server-authoritative note-level lock** in a dedicated `note_locks` collection (UNIQUE on note → atomic acquire, one editor at a time), realtime, heartbeat + ~9 s auto-expire with a precise staleness timer. No manual take-over; no LWW backstop needed (the constraint prevents two holders). |
 
 ## Data model
 
@@ -32,10 +32,17 @@ assumption, so most of the work is in the **backend access rules** and the
   behaviour). A user is a *member* iff they're the `owner` **or** appear in
   `sharedWith`.
 
-**`notes`** — add lock fields (note-level pessimistic lock):
-- `lockedBy` — relation → `users`, nullable. Who currently holds the edit lock.
-- `lockedAt` — autodate/text timestamp, nullable. Refreshed by the holder's
-  heartbeat; used to expire stale locks.
+**`note_locks`** (new collection) — the edit lock, one row per locked note:
+- `note` — relation → `notes`, required, **UNIQUE** (cascade-delete). The
+  uniqueness is what makes acquire atomic.
+- `lockedBy` — relation → `users`. The current holder.
+- `lockedAt` — text ISO timestamp, refreshed by the holder's heartbeat; used to
+  expire stale locks.
+- Member-scoped read/write (same predicate as the note). See *Concurrency*.
+
+> The original plan put `lockedBy`/`lockedAt` directly on `notes`. Those columns
+> still exist (migration left in place) but are **unused** — the lock moved to
+> `note_locks` so it's decoupled from note content and atomic via the constraint.
 
 `checklist_items` / `attachments` are unchanged — they inherit access from their
 parent note (see rules).
@@ -84,47 +91,60 @@ offline divergence.
   notes from notebooks you're a member of, the existing "pull records changed
   since cursor" loop brings shared notes (+ items/attachments) onto the device
   automatically. They render read-only when offline.
-- **Write (edit):** a shared-note edit takes the **online path** — it requires
-  reachability, holds the lock, and writes straight to the server (optimistic
-  local update + immediate server write). It is **not** queued as an offline
-  dirty row. If the server is unreachable, the editor is read-only and the write
-  is refused up front.
+- **Write (edit):** shared-note **content edits go straight to the server** on
+  mobile, not through the local-first DB + sync. The editor swaps in
+  `OnlineSharedNoteRepository` (`data/online_shared_repository.dart`) for the open
+  shared note, which overrides the high-frequency content writes (note title/body,
+  checklist add/edit/check/delete/reorder) to write directly to PocketBase; the
+  change comes back into the local DB via realtime, which feeds the (unchanged)
+  read streams. So shared notes are server-authoritative and real-time on mobile
+  just like on web — no local-first lag, no divergence. Low-frequency actions
+  (color, pin, labels, attachments) keep the local-first path.
+- **Server wins on reconnect:** if the phone made edits during a brief offline
+  blip, on reconnect it `refetchNote()`s the open shared note (discarding those
+  local edits and any local-only items) so it can't diverge from the server.
 - **Membership change:** owner edits `notebooks.sharedWith`; LWW propagates. A
   newly-added member pulls the notebook + its notes on next sync/subscription. A
   **removed** member, on next sync, finds those records no longer readable → the
   client **purges** the now-inaccessible shared notebook + its notes from the
   local DB (they were never theirs to keep).
 
-## Concurrency — the note lock
+## Concurrency — the note lock (`note_locks`)
 
-Pessimistic, **note-level**, advisory lock. One editor at a time per note.
+The lock is **server-authoritative** and lives in its own collection,
+**`note_locks`** — one row per locked note, with a **UNIQUE index on `note`**.
+Acquiring = **creating** that row, so the *database* arbitrates: if two members
+open the same note at once, exactly one `create` succeeds and the other gets a
+uniqueness conflict and stays read-only. No client-side duelling, no
+last-write-wins races. Decoupled from the note record, so lock churn never
+touches note content. Implemented client-side as `NoteLockController`
+(`features/notes/note_lock_controller.dart`).
 
-**Lifecycle**
-1. **Acquire on edit.** Opening a shared note for editing sets `lockedBy = me`,
-   `lockedAt = now` — *if* the note is currently unlocked or the existing lock is
-   **expired** (see below). Realtime broadcasts the change.
-2. **Others go read-only.** Members viewing/holding that note flip to read-only
-   with a badge: *"Sarah is editing…"*. Via realtime they can watch her changes
-   stream in live.
-3. **Heartbeat.** While the editor is open, the holder refreshes `lockedAt` every
-   **~20–30 s**.
-4. **Expiry (stale-lock self-heal).** A lock whose `lockedAt` is older than
-   **~2 min** is considered **expired**; any member may then acquire it. This is
-   what rescues crashes / disconnects / "left it open and walked away". **No**
-   manual take-over button (deemed overkill).
-5. **Release.** On save / close / navigate-away (and best-effort on realtime
-   disconnect), clear `lockedBy`/`lockedAt`. Realtime re-enables editing for the
-   next person.
+**Lifecycle** (all direct to the server — shared editing is online-only):
+1. **Subscribe + ask the server.** Opening a shared note subscribes to its lock
+   row over **realtime** and reads the current state; the editor stays read-only
+   until the server answers (never a guess).
+2. **Acquire = create the row** (`{note, lockedBy: me, lockedAt: now}`). On a
+   uniqueness conflict it re-reads: if the existing lock is **stale**, it deletes
+   and re-creates (takeover); otherwise it stays read-only.
+3. **Heartbeat = update `lockedAt`** every **~3 s** while held.
+4. **Release = delete the row** on close (dispose) — instant and reliable. Also
+   on **app background** (screen lock / app switch), so others can edit
+   immediately; re-acquired on foreground.
+5. **Expiry (stale self-heal).** A lock older than **~9 s** (no heartbeat) is
+   stale and may be taken over — covers crashes / abrupt disconnects. A **precise
+   staleness timer** fires the takeover the moment it expires, so a viewer takes
+   over in ~6–9 s rather than waiting for a poll. A **~6 s watchdog** + realtime
+   reconnect re-subscribe are the fallbacks.
 
-**Backstop (rare races).** Two ways a lock can be bypassed: a same-instant
-acquire race, or a takeover of an *expired* lock that overlaps the previous
-holder's final save. For those:
-- **Last-write-wins** decides what persists (last save by `updated`), and
-- the loser's open editor shows a **"This note was changed by someone else —
-  Reload / Keep mine"** banner (non-destructive) so nothing is lost silently.
+**Reachability.** `connectivity_plus` flips a shared note read-only **instantly**
+on network loss (no waiting for the watchdog); the watchdog's own request (with a
+4 s timeout) is the server-reachability check. An **abrupt** offline relies on
+expiry for others to take over (the server can't be told the holder vanished); a
+clean close / background releases instantly.
 
-Granularity note: checklist *items* are separate records, so the lock is only
-about the one note as a unit; we do **not** lock individual items.
+No "changed elsewhere" backstop banner is needed: the UNIQUE constraint prevents
+two holders, so the acquire race it was meant to cover can't happen.
 
 ## Backend hooks (`server/pb_hooks/`)
 
@@ -135,10 +155,9 @@ about the one note as a unit; we do **not** lock individual items.
    caller; consider excluding existing members from the suggestions.
    **Decision: exposing every registered email to any signed-in user is
    accepted** (trusted self-hosted servers) — no extra gating for now.
-2. **(Optional) Atomic lock acquire.** A `POST …/notes/{id}/lock` compare-and-set
-   could make acquisition race-free. Given the **LWW + banner** backstop is
-   accepted, this is **optional** — we can acquire optimistically client-side and
-   let the backstop cover the rare race. Spec it as a later hardening step.
+No lock-acquire hook is needed — atomicity comes for free from the **UNIQUE
+index on `note_locks.note`** (a compare-and-set hook was the original plan; the
+constraint supersedes it).
 
 ## UI
 
@@ -158,27 +177,27 @@ about the one note as a unit; we do **not** lock individual items.
   - If **locked by someone else** → read-only with *"<name> is editing…"*, live
     updates streaming in; becomes editable when released/expired.
   - On entering edit, acquire the lock + start the heartbeat; release on exit.
-  - Backstop banner as described under Concurrency.
 
-## Phasing
+## Phasing — all shipped ✅
 
-- **Phase 1 — Backend foundation.** ✅ Done. `notebooks.sharedWith` + lock fields
-  migrations; access rules for notebooks/notes/items/attachments; the `users`
-  picker hook. Verified with a two-user API smoke test.
-- **Phase 2 — Sharing UI.** ✅ Done. Owner shares/unshares from the inline sheet +
+- **Phase 1 — Backend foundation.** `notebooks.sharedWith` + access rules for
+  notebooks/notes/items/attachments; the `users` picker hook. Verified with a
+  two-user API smoke test.
+- **Phase 2 — Sharing UI.** Owner shares/unshares from the inline sheet +
   registered-user picker; shared indicator on note cards + selector; members
-  sheet; Manage Notebooks share action. `sharedWith` + locks plumbed through both
-  repos + the mobile sync engine (drift v9→v10).
-- **Phase 3 — Online-only edit path + removal cleanup.** ✅ Done. Shared notes are
+  sheet; Manage Notebooks share action.
+- **Phase 3 — Online-only edit path + removal cleanup.** Shared notes are
   read-only when the server is unreachable; the sync engine reconcile step purges
   local shared notebooks (+ notes) once I'm unshared/removed.
-- **Phase 4 — Locking.** ✅ Done (core). `lockedBy`/`lockedAt` lifecycle in the
-  editor: acquire on edit, ~25s heartbeat, ~2min auto-expire, release on close;
-  others get a read-only editor with a "<email> is editing" / offline banner.
-  Backstop is plain **LWW**; the explicit "changed elsewhere" banner for the rare
-  expired-takeover race is **deferred** (the lock makes that case very rare).
-- **Phase 5 (optional hardening).** Not started. The "changed elsewhere" banner;
-  atomic lock-acquire hook; title-vs-body auto-merge; field-level niceties.
+- **Phase 4 — Locking.** Reworked from note-field LWW into the dedicated,
+  server-authoritative **`note_locks`** collection (UNIQUE acquire, realtime,
+  heartbeat/expiry, reliable release, background release, reconnect re-acquire,
+  precise staleness takeover). See *Concurrency* above. The `notes.lockedBy` /
+  `lockedAt` columns from the original approach are now unused (left in place).
+- **Phase 5 — Real-time content + connectivity.** Shared-note content edits go
+  **server-direct** on mobile (`OnlineSharedNoteRepository`) so they're real-time
+  and non-divergent like web; `connectivity_plus` for instant offline; server-
+  wins-on-reconnect (`refetchNote`).
 
 ## Deferred / explicitly out of scope
 
@@ -186,8 +205,8 @@ about the one note as a unit; we do **not** lock individual items.
 - **Author attribution** / "who edited what".
 - **Invite + accept** flow, shareable links, notifications.
 - **Manual lock take-over** button (auto-expire is enough).
-- **Conflicted-copy** safety net — unnecessary given online-only editing + the
-  LWW/banner backstop.
+- **Conflicted-copy** safety net — unnecessary: shared editing is online-only and
+  the lock is single-holder, so there's nothing to reconcile.
 - **CRDT / real-time co-editing** (Google-Docs style) — doesn't fit PocketBase
   or the effort budget.
 - **Offline editing** of shared notes — read-only offline by design.
