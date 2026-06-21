@@ -138,9 +138,17 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
   /// Writes the lock and, on mobile, pushes it to the server immediately so the
   /// other device sees it without waiting for the next periodic sync. (On web
   /// [NotesRepository.setNoteLock] already hits the server directly.)
-  void _setLock(String id, String by, String at) {
-    _repo.setNoteLock(id, by, at);
-    if (!kIsWeb) ref.read(syncControllerProvider.notifier).syncNow();
+  ///
+  /// The local write is **awaited before** the push so the dirty row exists when
+  /// the push runs — otherwise the push races ahead of the commit and the change
+  /// (notably the release on close) isn't sent, leaving the other device locked
+  /// until the next periodic sync / the 60s lock expiry. Resolves all `ref`
+  /// reads synchronously up front so it's safe to fire from dispose().
+  Future<void> _setLock(String id, String by, String at) async {
+    final repo = _repo;
+    final sync = kIsWeb ? null : ref.read(syncControllerProvider.notifier);
+    await repo.setNoteLock(id, by, at);
+    await sync?.syncNow();
   }
 
   /// Drives the edit lock as a side effect of [build]: acquire + heartbeat when
