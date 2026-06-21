@@ -46,6 +46,7 @@ class NoteLockController extends ChangeNotifier {
   bool _paused = false; // app backgrounded — lock released, re-acquire on resume
   Timer? _heartbeat;
   Timer? _watchdog;
+  Timer? _staleTimer; // fires exactly when another holder's lock expires
   UnsubscribeFunc? _unsub;
   StreamSubscription<List<ConnectivityResult>>? _connSub;
 
@@ -61,6 +62,21 @@ class NoteLockController extends ChangeNotifier {
 
   /// The other member's id when someone else holds a fresh lock, else null.
   String? get otherHolder => _otherFresh ? _holder : null;
+
+  /// Schedule a check for the exact moment another member's lock would go stale,
+  /// so we take over right at expiry instead of waiting for the next watchdog
+  /// tick. Rescheduled on every lock update (each heartbeat pushes it out); only
+  /// fires if the holder actually stops heartbeating (e.g. went offline).
+  void _scheduleStaleCheck() {
+    _staleTimer?.cancel();
+    if (iHold || !_otherFresh) return;
+    final at = DateTime.tryParse(_holderAt);
+    if (at == null) return;
+    final wait = at.toUtc().add(kLockExpiry).difference(DateTime.now().toUtc());
+    _staleTimer = Timer(wait + const Duration(milliseconds: 300), () {
+      if (!_disposed && !_paused && !iHold) _tryAcquire();
+    });
+  }
 
   /// Read-only until we've heard from the server, or when offline, or when
   /// another member holds a fresh lock (and we don't).
@@ -121,6 +137,7 @@ class NoteLockController extends ChangeNotifier {
     _paused = true;
     _heartbeat?.cancel();
     _watchdog?.cancel();
+    _staleTimer?.cancel();
     final id = _myLockId;
     _myLockId = null;
     _holder = '';
@@ -173,6 +190,7 @@ class NoteLockController extends ChangeNotifier {
       _myLockId = null;
       _heartbeat?.cancel();
     }
+    _scheduleStaleCheck();
     notifyListeners();
   }
 
@@ -208,6 +226,7 @@ class NoteLockController extends ChangeNotifier {
       _reachable = false;
     }
     _ready = true;
+    _scheduleStaleCheck();
     if (before != _reachable) {
       if (_reachable && !_disposed && !_paused) {
         // Reconnected: the realtime sub is likely dead — re-establish it, and
