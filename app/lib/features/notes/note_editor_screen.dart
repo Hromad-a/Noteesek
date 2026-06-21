@@ -384,7 +384,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
                     tooltip: 'Shared notebook — members',
                     icon: const Icon(Icons.group_outlined),
                     onPressed: () =>
-                        showNotebookShareSheet(context, note.notebook),
+                        showNotebookShareSheet(context, ref, note.notebook),
                   ),
                 if (readOnly)
                   // Read-only: no edit affordances (the lock/offline banner in

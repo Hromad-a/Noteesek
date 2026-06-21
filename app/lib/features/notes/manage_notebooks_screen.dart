@@ -168,7 +168,7 @@ class _ManageNotebooksScreenState extends ConsumerState<ManageNotebooksScreen> {
             IconButton(
               tooltip: ownedByMe ? 'Share' : 'Members',
               icon: Icon(shared ? Icons.group : Icons.person_add_alt_outlined),
-              onPressed: () => showNotebookShareSheet(context, nb.id),
+              onPressed: () => showNotebookShareSheet(context, ref, nb.id),
             ),
           // Members (non-owners) can't write the owner's global visibility flag,
           // so they hide a shared notebook from their own "All notes" locally.

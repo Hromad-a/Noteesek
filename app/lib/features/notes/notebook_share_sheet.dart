@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../config/app_config.dart';
 import '../../data/local/database.dart';
 import '../../data/notes_repository.dart';
 import '../../providers.dart';
@@ -9,13 +10,66 @@ import '../../sync/sync_controller.dart';
 import 'sharing_service.dart';
 
 /// Opens the "who is this shared with" sheet for a notebook. The owner can
-/// add/remove members inline; everyone else sees a read-only member list.
-Future<void> showNotebookShareSheet(BuildContext context, String notebookId) {
+/// add/remove members inline; everyone else sees a read-only member list. The
+/// first time it's opened, a one-time explainer of how shared notebooks work is
+/// shown.
+Future<void> showNotebookShareSheet(
+    BuildContext context, WidgetRef ref, String notebookId) async {
+  final prefs = ref.read(sharedPreferencesProvider);
+  if (!(prefs.getBool(AppConfig.kSharedNotebookIntroSeen) ?? false)) {
+    await _showSharedNotebookIntro(context);
+    await prefs.setBool(AppConfig.kSharedNotebookIntroSeen, true);
+    if (!context.mounted) return;
+  }
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
     showDragHandle: true,
     builder: (_) => _ShareSheet(notebookId: notebookId),
+  );
+}
+
+/// One-time dialog explaining how shared notebooks behave.
+Future<void> _showSharedNotebookIntro(BuildContext context) {
+  final scheme = Theme.of(context).colorScheme;
+  Widget point(IconData icon, String text) => Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, size: 20, color: scheme.primary),
+            const SizedBox(width: 12),
+            Expanded(child: Text(text)),
+          ],
+        ),
+      );
+  return showDialog<void>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      icon: const Icon(Icons.group_outlined),
+      title: const Text('Sharing a notebook'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          point(Icons.edit_outlined,
+              'Everyone you add can view and edit every note in this notebook.'),
+          point(Icons.lock_outline,
+              'One person edits a note at a time — others see it live, read-only, '
+              'until it’s free.'),
+          point(Icons.cloud_outlined,
+              'Shared notes are online-only: editing needs a connection to your '
+              'server.'),
+          point(Icons.shield_outlined,
+              'Only you, the owner, control who it’s shared with.'),
+        ],
+      ),
+      actions: [
+        FilledButton(
+          onPressed: () => Navigator.of(ctx).pop(),
+          child: const Text('Got it'),
+        ),
+      ],
+    ),
   );
 }
 

@@ -41,6 +41,10 @@ class AppConfig {
   /// doesn't own (they can't write the owner's global `hidden_from_all`).
   static const String kLocallyHiddenNotebooks = 'locally_hidden_notebooks';
 
+  /// Whether the one-time "how shared notebooks work" explainer has been shown
+  /// (on first opening the share sheet).
+  static const String kSharedNotebookIntroSeen = 'shared_notebook_intro_seen';
+
   /// App lock (mobile): whether the lock is on, and whether biometric unlock is
   /// allowed. The PIN hash itself lives in secure storage, not here.
   static const String kAppLockEnabled = 'app_lock_enabled';

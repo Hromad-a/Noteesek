@@ -384,7 +384,7 @@ class _SharedBadge extends ConsumerWidget {
       iconSize: 18,
       tooltip: 'Shared notebook — tap to see members',
       icon: const Icon(Icons.group_outlined),
-      onPressed: () => showNotebookShareSheet(context, nb.id),
+      onPressed: () => showNotebookShareSheet(context, ref, nb.id),
     );
   }
 }

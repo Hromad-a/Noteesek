@@ -31,6 +31,12 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           'Optional, and entirely yours.',
     ),
     (
+      icon: Icons.group_outlined,
+      title: 'Share notebooks',
+      body: 'With a server connected, share a notebook with other people — '
+          'everyone can view and edit its notes together, in real time.',
+    ),
+    (
       icon: Icons.checklist_outlined,
       title: 'Notes, your way',
       body: 'Text and checklists, labels and colors, notebooks, images, '
