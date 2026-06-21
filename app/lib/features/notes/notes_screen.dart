@@ -742,26 +742,46 @@ class _NotebookSelector extends ConsumerWidget {
     final notebooks = ref.watch(notebooksProvider).asData?.value ?? const [];
     final activeId = ref.watch(activeNotebookIdProvider);
     final activeNb = notebooks.where((n) => n.id == activeId).firstOrNull;
+    final activeNbShared =
+        activeNb != null && sharedWithIds(activeNb.sharedWith).isNotEmpty;
     final label = switch (activeId) {
       kAllNotes => 'All notes',
       kNoNotebook => 'No notebook',
       _ => activeNb?.name ?? 'All notes',
     };
-    final chipIcon =
-        activeNb != null && sharedWithIds(activeNb.sharedWith).isNotEmpty
-            ? Icons.group_outlined
-            : _scopeIcon(activeId);
+    final chipIcon = activeNbShared ? Icons.group_outlined : _scopeIcon(activeId);
 
-    PopupMenuItem<String> scopeItem(String value, IconData icon, String text) =>
-        PopupMenuItem(
-          value: value,
-          child: ListTile(
-            dense: true,
-            contentPadding: EdgeInsets.zero,
-            leading: Icon(value == activeId ? Icons.check : icon),
-            title: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis),
-          ),
-        );
+    // Soft lavender wash that marks shared notebooks (in the menu + the selected
+    // chip). Derived from the theme so it adapts to light/dark.
+    final scheme = Theme.of(context).colorScheme;
+    final sharedTint = scheme.primaryContainer.withValues(alpha: 0.55);
+
+    PopupMenuItem<String> scopeItem(String value, IconData icon, String text,
+        {bool shared = false}) {
+      final tile = ListTile(
+        dense: true,
+        contentPadding: EdgeInsets.zero,
+        leading: Icon(value == activeId ? Icons.check : icon),
+        title: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis),
+      );
+      return PopupMenuItem(
+        value: value,
+        // Tint shared notebooks as an inset rounded pill behind the row.
+        padding: shared
+            ? const EdgeInsets.symmetric(horizontal: 8, vertical: 2)
+            : null,
+        child: shared
+            ? Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                decoration: BoxDecoration(
+                  color: sharedTint,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: tile,
+              )
+            : tile,
+      );
+    }
 
     return PopupMenuButton<String>(
       tooltip: 'Switch notebook',
@@ -785,11 +805,13 @@ class _NotebookSelector extends ConsumerWidget {
         if (notebooks.isNotEmpty) const PopupMenuDivider(),
         for (final nb in notebooks)
           scopeItem(
-              nb.id,
-              sharedWithIds(nb.sharedWith).isNotEmpty
-                  ? Icons.group_outlined
-                  : Icons.book_outlined,
-              nb.name),
+            nb.id,
+            sharedWithIds(nb.sharedWith).isNotEmpty
+                ? Icons.group_outlined
+                : Icons.book_outlined,
+            nb.name,
+            shared: sharedWithIds(nb.sharedWith).isNotEmpty,
+          ),
         const PopupMenuDivider(),
         const PopupMenuItem(
           value: _newValue,
@@ -813,8 +835,14 @@ class _NotebookSelector extends ConsumerWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
+          // Selected shared notebook keeps the same lavender wash as its menu row.
+          color: activeNbShared ? sharedTint : null,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: Theme.of(context).colorScheme.outline),
+          border: Border.all(
+            color: activeNbShared
+                ? scheme.primary.withValues(alpha: 0.4)
+                : scheme.outline,
+          ),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
