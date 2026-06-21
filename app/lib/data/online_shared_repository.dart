@@ -63,4 +63,18 @@ class OnlineSharedNoteRepository extends LocalNotesRepository {
       await _pb.collection('checklist_items').update(orderedIds[i], body: {'position': i});
     }
   }
+
+  /// Take a shared note out into a notebook I own, claiming ownership. Done in a
+  /// single server-direct write *while still a member* so it can't be rejected
+  /// by a racing unshare; the change comes back into drift via realtime (I keep
+  /// access via the new `owner = me`). Once `owner` is mine the note detaches
+  /// from the shared notebook for everyone else.
+  @override
+  Future<void> claimNoteToNotebook(String noteId, String notebookId) async {
+    final me = _pb.authStore.record?.id;
+    await _pb.collection('notes').update(noteId, body: {
+      'notebook': notebookId,
+      if (me != null && me.isNotEmpty) 'owner': me,
+    });
+  }
 }

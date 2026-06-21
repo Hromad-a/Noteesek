@@ -182,6 +182,18 @@ abstract interface class NotesRepository {
   /// Move a note into [notebookId] (empty string = no notebook).
   Future<void> setNoteNotebook(String noteId, String notebookId);
 
+  /// Take a note *out* of a shared notebook and into one the current user owns
+  /// (or no notebook), claiming ownership in the process: sets the note's
+  /// notebook to [notebookId] **and** reassigns its `owner` to the current user.
+  ///
+  /// This is how a member "takes" a note they didn't create from a shared
+  /// notebook — afterwards it's fully theirs, no longer visible to the notebook
+  /// owner/other members, and it survives the notebook being unshared. The
+  /// ownership change must be a single server-direct write while the caller is
+  /// still a member (otherwise losing access would reject it), so the mobile
+  /// shared-note implementation overrides this to go straight to the server.
+  Future<void> claimNoteToNotebook(String noteId, String notebookId);
+
   // Checklist items
   Stream<List<ChecklistItemRow>> watchItems(String noteId);
   Future<String> addItem(String noteId, {String content});

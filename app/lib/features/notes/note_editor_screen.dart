@@ -293,8 +293,32 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
       ),
     );
     if (chosen != null && chosen != note.notebook) {
-      await _repo.setNoteNotebook(note.id, chosen);
+      // Taking a note OUT of a shared notebook into a non-shared one I'm not the
+      // owner of = "claim" it: reassign ownership so it detaches cleanly and
+      // survives an unshare (server-direct, see claimNoteToNotebook). Moving a
+      // note I already own, or moving within shared notebooks, is a plain move.
+      final me = ref.read(authUserIdProvider);
+      final takingOut = _isShared(note) &&
+          !_notebookShared(chosen) &&
+          me.isNotEmpty &&
+          note.owner != me;
+      if (takingOut) {
+        await _repo.claimNoteToNotebook(note.id, chosen);
+      } else {
+        await _repo.setNoteNotebook(note.id, chosen);
+      }
     }
+  }
+
+  /// Whether [notebookId] is a notebook shared with anyone (empty = no notebook,
+  /// never shared).
+  bool _notebookShared(String notebookId) {
+    if (notebookId.isEmpty) return false;
+    final notebooks = ref.read(notebooksProvider).asData?.value ?? const [];
+    final nb = notebooks
+        .cast<NotebookRow?>()
+        .firstWhere((n) => n?.id == notebookId, orElse: () => null);
+    return nb != null && sharedWithIds(nb.sharedWith).isNotEmpty;
   }
 
   Future<void> _pickImage(String noteId) async {

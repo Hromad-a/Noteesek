@@ -546,6 +546,14 @@ class LocalNotesRepository implements NotesRepository {
   Future<void> setNoteNotebook(String noteId, String notebookId) =>
       _patch(noteId, NotesCompanion(notebook: Value(notebookId)));
 
+  @override
+  Future<void> claimNoteToNotebook(String noteId, String notebookId) => _patch(
+      noteId,
+      NotesCompanion(
+        notebook: Value(notebookId),
+        owner: Value(_ownerId),
+      ));
+
   // ---- Checklist items ----
 
   @override
