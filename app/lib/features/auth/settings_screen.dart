@@ -12,6 +12,7 @@ import 'package:pocketbase/pocketbase.dart';
 
 import '../../config/app_config.dart';
 import '../../data/notes_repository.dart';
+import '../../data/version_check.dart';
 import '../backup/backup_service.dart' as backup;
 import '../backup/remote_backup_service.dart';
 import '../backup/v2/backup_restore_screen.dart';
@@ -609,6 +610,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     // Repointing it would leave a stale session against a different server, so
     // the URL is read-only until the user signs out.
     final signedIn = pb.authStore.isValid;
+    final versionMismatch =
+        ref.watch(versionStatusProvider).value?.mismatch ?? false;
     final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
@@ -623,7 +626,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               contentPadding: EdgeInsets.zero,
               leading: const Icon(Icons.account_circle_outlined),
               title: Text(email.isEmpty ? 'Signed in' : email),
-              subtitle: const Text('Signed in'),
+              subtitle: Text(versionMismatch
+                  ? 'App and server versions differ — see About below'
+                  : 'Signed in'),
+              trailing: versionMismatch
+                  ? Tooltip(
+                      message: 'App and server versions differ',
+                      child: Icon(Icons.warning_amber_rounded,
+                          color: Colors.orange.shade700),
+                    )
+                  : null,
             )
           else
             ListTile(
