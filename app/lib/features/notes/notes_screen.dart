@@ -668,6 +668,26 @@ class _BottomBar extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Adding notes to a shared notebook needs a connection (online-only). When
+    // the grid is scoped to a shared notebook and we're offline, the create
+    // buttons are dimmed and a tap explains why instead of creating.
+    final notebooks = ref.watch(notebooksProvider).asData?.value ?? const [];
+    final activeId = ref.watch(activeNotebookIdProvider);
+    final activeNb = notebooks.where((n) => n.id == activeId).firstOrNull;
+    final sharedScope =
+        activeNb != null && sharedWithIds(activeNb.sharedWith).isNotEmpty;
+    final online = ref.watch(hasNetworkProvider).value ?? true;
+    final blocked = sharedScope && !online;
+
+    void offlineSnack() {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(
+          content: Text("You're offline — adding notes to a shared notebook "
+              'needs a connection to your server.'),
+        ));
+    }
+
     return BottomAppBar(
       height: 64,
       padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -675,16 +695,24 @@ class _BottomBar extends ConsumerWidget {
         children: [
           const Expanded(child: _NotebookSelector()),
           const SizedBox(width: 8),
-          IconButton.filledTonal(
-            tooltip: 'New checklist',
-            onPressed: onChecklist,
-            icon: const Icon(Icons.checklist),
+          Opacity(
+            opacity: blocked ? 0.4 : 1,
+            child: IconButton.filledTonal(
+              tooltip: blocked
+                  ? 'Offline — shared notebook'
+                  : 'New checklist',
+              onPressed: blocked ? offlineSnack : onChecklist,
+              icon: const Icon(Icons.checklist),
+            ),
           ),
           const SizedBox(width: 8),
-          IconButton.filled(
-            tooltip: 'New note',
-            onPressed: onText,
-            icon: const Icon(Icons.edit),
+          Opacity(
+            opacity: blocked ? 0.4 : 1,
+            child: IconButton.filled(
+              tooltip: blocked ? 'Offline — shared notebook' : 'New note',
+              onPressed: blocked ? offlineSnack : onText,
+              icon: const Icon(Icons.edit),
+            ),
           ),
         ],
       ),
