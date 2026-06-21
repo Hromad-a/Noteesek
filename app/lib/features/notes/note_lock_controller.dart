@@ -36,8 +36,15 @@ class NoteLockController extends ChangeNotifier {
   bool _ready = false; // first server response received
   bool _acquiring = false;
   bool _disposed = false;
+  bool _paused = false; // app backgrounded — lock released, re-acquire on resume
   Timer? _heartbeat;
+  Timer? _watchdog;
   UnsubscribeFunc? _unsub;
+
+  // Polls the server for reachability + lock state as a fallback to realtime:
+  // detects going offline (→ read-only) and coming back (→ re-acquire), which a
+  // realtime subscription alone can't (a dropped SSE doesn't replay state).
+  static const _watchdogInterval = Duration(seconds: 6);
 
   bool get iHold => _myLockId != null;
 
@@ -53,8 +60,15 @@ class NoteLockController extends ChangeNotifier {
       !_ready || !_reachable || (_otherFresh && !iHold);
 
   /// Begin: subscribe for realtime updates, read the current state, try to take
-  /// the lock. Idempotent-ish; call once.
+  /// the lock, and start the reachability watchdog. Call once.
   Future<void> start() async {
+    await _subscribe();
+    _startWatchdog();
+    await _refresh();
+    await _tryAcquire();
+  }
+
+  Future<void> _subscribe() async {
     try {
       _unsub = await pb.collection(_col).subscribe(
             '*',
@@ -62,15 +76,50 @@ class NoteLockController extends ChangeNotifier {
             filter: 'note = "$noteId"',
           );
     } catch (_) {
-      // Realtime optional — we still refresh on start + heartbeat keeps us fresh.
+      // Realtime optional — the watchdog + heartbeat keep state current.
     }
-    await _refresh();
-    await _tryAcquire();
   }
 
-  /// Re-check after returning from background (the subscription may have dropped
-  /// and our heartbeat was suspended, so the lock may be stale or taken).
+  void _startWatchdog() {
+    _watchdog?.cancel();
+    _watchdog = Timer.periodic(_watchdogInterval, (_) async {
+      if (_disposed || _paused) return;
+      await _refresh(); // updates reachability + holder (offline/reconnect)
+      if (!iHold) await _tryAcquire();
+    });
+  }
+
+  /// Backgrounded (screen locked / app switched): release the lock so others can
+  /// edit, and stop activity. We re-acquire in [resume].
+  void pause() {
+    if (_disposed || _paused) return;
+    _paused = true;
+    _heartbeat?.cancel();
+    _watchdog?.cancel();
+    final id = _myLockId;
+    _myLockId = null;
+    _holder = '';
+    _holderAt = '';
+    try {
+      _unsub?.call();
+    } catch (_) {}
+    _unsub = null;
+    if (id != null) {
+      // ignore: discarded_futures
+      pb.collection(_col).delete(id).catchError((_) {});
+    }
+    notifyListeners();
+  }
+
+  /// Foregrounded again: re-subscribe, re-read the lock, and try to re-acquire
+  /// (as if just opened). Also covers a dropped realtime connection.
   Future<void> resume() async {
+    if (_disposed) return;
+    if (_paused) {
+      _paused = false;
+      await _subscribe();
+      _startWatchdog();
+    }
     await _refresh();
     await _tryAcquire();
   }
@@ -108,12 +157,21 @@ class NoteLockController extends ChangeNotifier {
       _reachable = true;
       _holder = rec.getStringValue('lockedBy');
       _holderAt = rec.getStringValue('lockedAt');
-      if (_holder == userId) _myLockId = rec.id;
+      // Reconcile our hold: if the row isn't ours anymore (a stale takeover),
+      // drop it so we go read-only.
+      if (_holder == userId) {
+        _myLockId = rec.id;
+      } else {
+        _myLockId = null;
+        _heartbeat?.cancel();
+      }
     } on ClientException catch (e) {
       if (e.statusCode == 404) {
         _reachable = true; // server reached, just no lock → free
         _holder = '';
         _holderAt = '';
+        _myLockId = null;
+        _heartbeat?.cancel();
       } else if (e.statusCode == 0) {
         _reachable = false;
       }
@@ -211,6 +269,7 @@ class NoteLockController extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _heartbeat?.cancel();
+    _watchdog?.cancel();
     final id = _myLockId;
     _myLockId = null;
     // Best-effort cleanup; runs to completion even as the widget tears down.

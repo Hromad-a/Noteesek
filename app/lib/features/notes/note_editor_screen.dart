@@ -97,11 +97,20 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
     super.dispose();
   }
 
-  /// Coming back from background: the realtime sub may have dropped and our
-  /// heartbeat was suspended, so re-check the lock from the server.
+  /// Backgrounding (screen lock / app switch) releases the shared-note lock so
+  /// others can edit; returning re-acquires it (and re-checks from the server).
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) _lock?.resume();
+    switch (state) {
+      case AppLifecycleState.paused:
+      case AppLifecycleState.hidden:
+        _lock?.pause();
+      case AppLifecycleState.resumed:
+        _lock?.resume();
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.detached:
+        break;
+    }
   }
 
   /// Whether the note's notebook is shared with anyone.
