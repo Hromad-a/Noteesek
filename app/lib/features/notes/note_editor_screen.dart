@@ -7,13 +7,12 @@ import 'package:image_picker/image_picker.dart';
 import 'package:markdown_widget/markdown_widget.dart';
 
 import '../../data/local/database.dart';
-import '../../data/local/ids.dart';
 import '../../data/notes_repository.dart';
 import '../../providers.dart';
-import '../../sync/sync_controller.dart';
 import '../../ui/app_messenger.dart';
 import '../export/share_note_sheet.dart';
 import 'note_colors.dart';
+import 'note_lock_controller.dart';
 import 'note_markdown_config.dart';
 import 'notebook_share_sheet.dart';
 import 'sharing_service.dart';
@@ -71,20 +70,10 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
   // Per-item text controllers for checklists, keyed by item id.
   final Map<String, TextEditingController> _itemCtrls = {};
 
-  // Shared-notebook edit lock (Phase 4). While editing a note in a shared
-  // notebook this screen holds the lock and heartbeats it; others see the note
-  // read-only. See docs/shared-notebooks.md.
-  Timer? _heartbeat;
-  bool _holdingLock = false;
-
-  // Lock visibility is authoritative-by-poll: while a shared note is open we read
-  // the server's lock directly every few seconds instead of trusting the synced
-  // copy (which lags / races across drift+sync+realtime). null = no poll result
-  // yet → fall back to the synced values.
-  Timer? _lockPoll;
-  String? _polledLockedBy;
-  String? _polledLockedAt;
-  static const _lockPollInterval = Duration(seconds: 7);
+  // Shared-notebook edit lock: server-authoritative via the `note_locks`
+  // collection (atomic acquire + realtime visibility). Created lazily once we
+  // know the note is in a shared notebook. See note_lock_controller.dart.
+  NoteLockController? _lock;
 
   NotesRepository get _repo => ref.read(notesRepositoryProvider);
 
@@ -97,13 +86,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _heartbeat?.cancel();
-    _lockPoll?.cancel();
-    if (_holdingLock) {
-      // Release immediately (direct-to-server on mobile) so the note frees up
-      // for others without waiting for a sync / the lock expiry.
-      _releaseLock(widget.noteId);
-    }
+    _lock?.dispose(); // releases the lock (deletes the row) on close
     _titleCtrl.dispose();
     _bodyCtrl.dispose();
     _bodyFocus.dispose();
@@ -114,51 +97,11 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
     super.dispose();
   }
 
-  /// Coming back from background (e.g. the phone was locked with the note open):
-  /// our heartbeat was suspended, so the lock may have gone stale or been taken.
-  /// Forget our hold *without* releasing on the server, pull fresh state, then
-  /// let build() + [_manageLock] re-acquire it if it's free, or drop us to
-  /// read-only if another member now holds it.
+  /// Coming back from background: the realtime sub may have dropped and our
+  /// heartbeat was suspended, so re-check the lock from the server.
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state != AppLifecycleState.resumed) return;
-    // Forget any (possibly stale) hold without releasing on the server, then
-    // re-evaluate from fresh data.
-    _holdingLock = false;
-    _heartbeat?.cancel();
-    if (!kIsWeb) {
-      ref.read(syncControllerProvider.notifier).syncNow().then((_) {
-        if (mounted) setState(() {});
-      });
-    } else if (mounted) {
-      setState(() {});
-    }
-  }
-
-  /// Begin polling the server for this note's lock state (idempotent). Drives the
-  /// read-only view directly off the server, so a release elsewhere is seen
-  /// within one interval regardless of sync/realtime.
-  void _startLockPoll(String id) {
-    if (_lockPoll != null) return;
-    _lockPoll = Timer.periodic(_lockPollInterval, (_) => _pollLock(id));
-    _pollLock(id); // also read immediately
-  }
-
-  Future<void> _pollLock(String id) async {
-    final pb = ref.read(pocketBaseProvider);
-    try {
-      final rec = await pb
-          .collection('notes')
-          .getOne(id, fields: 'lockedBy,lockedAt');
-      if (!mounted) return;
-      setState(() {
-        _polledLockedBy = rec.getStringValue('lockedBy');
-        _polledLockedAt = rec.getStringValue('lockedAt');
-      });
-    } catch (_) {
-      // Unreachable / not found: keep the last value (the reachability gate
-      // already flips a shared note read-only when offline).
-    }
+    if (state == AppLifecycleState.resumed) _lock?.resume();
   }
 
   /// Whether the note's notebook is shared with anyone.
@@ -171,61 +114,21 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
     return nb != null && sharedWithIds(nb.sharedWith).isNotEmpty;
   }
 
-  /// Acquire / heartbeat the lock. Goes through the local DB + sync so the lock
-  /// rides the note's normal push (kept atomic with content edits, which avoids
-  /// clobbering unsynced typing). Awaits the local write before the push so the
-  /// dirty row exists when the push runs.
-  Future<void> _setLock(String id, String by, String at) async {
-    final repo = _repo;
-    final sync = kIsWeb ? null : ref.read(syncControllerProvider.notifier);
-    await repo.setNoteLock(id, by, at);
-    await sync?.syncNow();
+  /// Spin up the lock controller once we know the note is shared (idempotent).
+  void _ensureLock(String noteId, String me) {
+    if (_lock != null || me.isEmpty) return;
+    final lock = NoteLockController(
+      pb: ref.read(pocketBaseProvider),
+      noteId: noteId,
+      userId: me,
+    );
+    _lock = lock;
+    lock.addListener(() {
+      if (mounted) setState(() {});
+    });
+    lock.start();
   }
 
-  /// Release the lock. Clears it locally (so a later content push can't resurrect
-  /// it) AND, on mobile, writes the clear **straight to the server** so the other
-  /// device frees up instantly instead of waiting out the sync queue / the 60s
-  /// expiry. Resolves `ref` up front so it's safe to fire from dispose().
-  Future<void> _releaseLock(String id) async {
-    final repo = _repo;
-    final pb = kIsWeb ? null : ref.read(pocketBaseProvider);
-    await repo.setNoteLock(id, '', '');
-    if (pb != null) {
-      try {
-        await pb.collection('notes').update(
-          id,
-          body: {'lockedBy': '', 'lockedAt': ''},
-        );
-      } catch (_) {
-        // Best-effort; falls back to the lock's 60s expiry on the other device.
-      }
-    }
-  }
-
-  /// Drives the edit lock as a side effect of [build]: acquire + heartbeat when
-  /// we may edit a shared note, release when we can't (read-only / left). Only
-  /// fires writes on a state transition, so it's safe to call every build.
-  /// [currentLockedBy] guards the release: we never clear a lock that's now held
-  /// by someone else (a takeover after our lock went stale).
-  void _manageLock(String id, bool canEdit, String currentLockedBy) {
-    final me = _myId();
-    if (canEdit && !_holdingLock) {
-      _holdingLock = true;
-      _setLock(id, me, pbNow());
-      _heartbeat?.cancel();
-      _heartbeat = Timer.periodic(kLockHeartbeat, (_) {
-        if (_holdingLock) _setLock(id, me, pbNow());
-      });
-    } else if (!canEdit && _holdingLock) {
-      _holdingLock = false;
-      _heartbeat?.cancel();
-      if (currentLockedBy.isEmpty || currentLockedBy == me) {
-        _releaseLock(id);
-      }
-    }
-  }
-
-  String _myId() => ref.read(authUserIdProvider);
 
   void _seed(NoteRow note) {
     if (!_seeded) {
@@ -404,28 +307,16 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
         final bg = noteColorFor(context, note.color);
         final markdownOn = ref.watch(markdownEnabledProvider);
 
-        // Shared-notebook concurrency: a note in a shared notebook is read-only
-        // when the server is unreachable (online-only editing) or another member
-        // currently holds a fresh lock. Otherwise we take the lock + heartbeat.
+        // Shared-notebook concurrency: read-only is decided by the server-backed
+        // lock controller (note_locks) — until it's heard from the server, while
+        // offline, or while another member holds the lock.
         final shared = _isShared(note);
         final me = ref.watch(authUserIdProvider);
-        final reachable =
-            kIsWeb ? true : ref.watch(syncControllerProvider).reachable;
-        // Prefer the directly-polled lock over the synced copy (more current).
-        final lockedBy = _polledLockedBy ?? note.lockedBy;
-        final lockedAt = _polledLockedAt ?? note.lockedAt;
-        final lockedByOther = shared &&
-            lockedBy.isNotEmpty &&
-            lockedBy != me &&
-            lockIsFresh(lockedAt);
-        final readOnly = shared && (!reachable || lockedByOther);
         if (shared) {
           WidgetsBinding.instance
-              .addPostFrameCallback((_) => _startLockPoll(note.id));
+              .addPostFrameCallback((_) => _ensureLock(note.id, me));
         }
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) _manageLock(note.id, shared && !readOnly, lockedBy);
-        });
+        final readOnly = shared && (_lock?.readOnly ?? true);
         // While read-only (someone else is editing), keep the displayed text in
         // sync with incoming live updates — _seed only runs once, so refresh the
         // controllers here. Safe because the user can't be typing in read-only.
@@ -591,7 +482,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
             body: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                if (readOnly) _LockBanner(note: note, offline: !reachable),
+                if (readOnly) _LockBanner(holderId: _lock?.otherHolder),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
                   child: TextField(
@@ -701,25 +592,27 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
 /// either the server is unreachable (online-only editing) or another member
 /// holds the edit lock.
 class _LockBanner extends ConsumerWidget {
-  const _LockBanner({required this.note, required this.offline});
-  final NoteRow note;
-  final bool offline;
+  const _LockBanner({required this.holderId});
+
+  /// The other member holding the lock, or null when it's an offline/connecting
+  /// state rather than someone else editing.
+  final String? holderId;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final IconData icon;
     final String msg;
-    if (offline) {
+    if (holderId == null) {
       icon = Icons.cloud_off_outlined;
-      msg = 'Offline — connect to your server to edit this shared note.';
+      msg = 'Connect to your server to edit this shared note.';
     } else {
       icon = Icons.lock_outline;
       final users =
           ref.watch(shareableUsersProvider).asData?.value ?? const [];
       final email = users
           .cast<ShareableUser?>()
-          .firstWhere((u) => u?.id == note.lockedBy, orElse: () => null)
+          .firstWhere((u) => u?.id == holderId, orElse: () => null)
           ?.email;
       msg = email != null
           ? 'Being edited by $email'
