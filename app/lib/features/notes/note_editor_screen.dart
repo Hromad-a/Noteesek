@@ -77,6 +77,15 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
   Timer? _heartbeat;
   bool _holdingLock = false;
 
+  // Lock visibility is authoritative-by-poll: while a shared note is open we read
+  // the server's lock directly every few seconds instead of trusting the synced
+  // copy (which lags / races across drift+sync+realtime). null = no poll result
+  // yet → fall back to the synced values.
+  Timer? _lockPoll;
+  String? _polledLockedBy;
+  String? _polledLockedAt;
+  static const _lockPollInterval = Duration(seconds: 7);
+
   NotesRepository get _repo => ref.read(notesRepositoryProvider);
 
   @override
@@ -89,6 +98,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _heartbeat?.cancel();
+    _lockPoll?.cancel();
     if (_holdingLock) {
       // Release immediately (direct-to-server on mobile) so the note frees up
       // for others without waiting for a sync / the lock expiry.
@@ -122,6 +132,32 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
       });
     } else if (mounted) {
       setState(() {});
+    }
+  }
+
+  /// Begin polling the server for this note's lock state (idempotent). Drives the
+  /// read-only view directly off the server, so a release elsewhere is seen
+  /// within one interval regardless of sync/realtime.
+  void _startLockPoll(String id) {
+    if (_lockPoll != null) return;
+    _lockPoll = Timer.periodic(_lockPollInterval, (_) => _pollLock(id));
+    _pollLock(id); // also read immediately
+  }
+
+  Future<void> _pollLock(String id) async {
+    final pb = ref.read(pocketBaseProvider);
+    try {
+      final rec = await pb
+          .collection('notes')
+          .getOne(id, fields: 'lockedBy,lockedAt');
+      if (!mounted) return;
+      setState(() {
+        _polledLockedBy = rec.getStringValue('lockedBy');
+        _polledLockedAt = rec.getStringValue('lockedAt');
+      });
+    } catch (_) {
+      // Unreachable / not found: keep the last value (the reachability gate
+      // already flips a shared note read-only when offline).
     }
   }
 
@@ -375,13 +411,20 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
         final me = ref.watch(authUserIdProvider);
         final reachable =
             kIsWeb ? true : ref.watch(syncControllerProvider).reachable;
+        // Prefer the directly-polled lock over the synced copy (more current).
+        final lockedBy = _polledLockedBy ?? note.lockedBy;
+        final lockedAt = _polledLockedAt ?? note.lockedAt;
         final lockedByOther = shared &&
-            note.lockedBy.isNotEmpty &&
-            note.lockedBy != me &&
-            lockIsFresh(note.lockedAt);
+            lockedBy.isNotEmpty &&
+            lockedBy != me &&
+            lockIsFresh(lockedAt);
         final readOnly = shared && (!reachable || lockedByOther);
+        if (shared) {
+          WidgetsBinding.instance
+              .addPostFrameCallback((_) => _startLockPoll(note.id));
+        }
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) _manageLock(note.id, shared && !readOnly, note.lockedBy);
+          if (mounted) _manageLock(note.id, shared && !readOnly, lockedBy);
         });
         // While read-only (someone else is editing), keep the displayed text in
         // sync with incoming live updates — _seed only runs once, so refresh the
