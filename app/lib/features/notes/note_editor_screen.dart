@@ -90,9 +90,9 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
     WidgetsBinding.instance.removeObserver(this);
     _heartbeat?.cancel();
     if (_holdingLock) {
-      // Release so the note frees up immediately for others (pushed at once on
-      // mobile so the other device doesn't wait for the next periodic sync).
-      _setLock(widget.noteId, '', '');
+      // Release immediately (direct-to-server on mobile) so the note frees up
+      // for others without waiting for a sync / the lock expiry.
+      _releaseLock(widget.noteId);
     }
     _titleCtrl.dispose();
     _bodyCtrl.dispose();
@@ -135,20 +135,35 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
     return nb != null && sharedWithIds(nb.sharedWith).isNotEmpty;
   }
 
-  /// Writes the lock and, on mobile, pushes it to the server immediately so the
-  /// other device sees it without waiting for the next periodic sync. (On web
-  /// [NotesRepository.setNoteLock] already hits the server directly.)
-  ///
-  /// The local write is **awaited before** the push so the dirty row exists when
-  /// the push runs — otherwise the push races ahead of the commit and the change
-  /// (notably the release on close) isn't sent, leaving the other device locked
-  /// until the next periodic sync / the 60s lock expiry. Resolves all `ref`
-  /// reads synchronously up front so it's safe to fire from dispose().
+  /// Acquire / heartbeat the lock. Goes through the local DB + sync so the lock
+  /// rides the note's normal push (kept atomic with content edits, which avoids
+  /// clobbering unsynced typing). Awaits the local write before the push so the
+  /// dirty row exists when the push runs.
   Future<void> _setLock(String id, String by, String at) async {
     final repo = _repo;
     final sync = kIsWeb ? null : ref.read(syncControllerProvider.notifier);
     await repo.setNoteLock(id, by, at);
     await sync?.syncNow();
+  }
+
+  /// Release the lock. Clears it locally (so a later content push can't resurrect
+  /// it) AND, on mobile, writes the clear **straight to the server** so the other
+  /// device frees up instantly instead of waiting out the sync queue / the 60s
+  /// expiry. Resolves `ref` up front so it's safe to fire from dispose().
+  Future<void> _releaseLock(String id) async {
+    final repo = _repo;
+    final pb = kIsWeb ? null : ref.read(pocketBaseProvider);
+    await repo.setNoteLock(id, '', '');
+    if (pb != null) {
+      try {
+        await pb.collection('notes').update(
+          id,
+          body: {'lockedBy': '', 'lockedAt': ''},
+        );
+      } catch (_) {
+        // Best-effort; falls back to the lock's 60s expiry on the other device.
+      }
+    }
   }
 
   /// Drives the edit lock as a side effect of [build]: acquire + heartbeat when
@@ -169,7 +184,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
       _holdingLock = false;
       _heartbeat?.cancel();
       if (currentLockedBy.isEmpty || currentLockedBy == me) {
-        _setLock(id, '', '');
+        _releaseLock(id);
       }
     }
   }
