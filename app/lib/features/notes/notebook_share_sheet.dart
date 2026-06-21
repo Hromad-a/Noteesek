@@ -5,9 +5,41 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../config/app_config.dart';
 import '../../data/local/database.dart';
 import '../../data/notes_repository.dart';
+import '../../data/version_check.dart';
 import '../../providers.dart';
 import '../../sync/sync_controller.dart';
 import 'sharing_service.dart';
+
+/// Error display for a failed directory load. A client/server version mismatch
+/// is the likely culprit behind an otherwise-cryptic decode error here, so when
+/// one is detected we explain that instead of dumping the raw exception.
+Widget _loadError(WidgetRef ref, String prefix, Object error) {
+  final mismatch = ref.watch(versionStatusProvider).value?.mismatch ?? false;
+  if (mismatch) {
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.warning_amber_rounded,
+              color: Colors.orange.shade700, size: 20),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Text(
+              'This app and your server are running different versions. Update '
+              'Noteesek on this device or your server so they match, then try '
+              'again.',
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+  return Padding(
+    padding: const EdgeInsets.all(8),
+    child: Text('$prefix: $error'),
+  );
+}
 
 /// Opens the "who is this shared with" sheet for a notebook. The owner can
 /// add/remove members inline; everyone else sees a read-only member list. The
@@ -186,8 +218,7 @@ class _MemberList extends ConsumerWidget {
       loading: () => const Padding(
         padding: EdgeInsets.all(16),
         child: Center(child: CircularProgressIndicator())),
-      error: (e, _) => Padding(
-        padding: const EdgeInsets.all(8), child: Text('Could not load members: $e')),
+      error: (e, _) => _loadError(ref, 'Could not load members', e),
       data: (users) {
         final byId = {for (final u in users) u.id: u.email};
         final me = ref.watch(authUserIdProvider);
@@ -245,9 +276,7 @@ class _OwnerPickerState extends ConsumerState<_OwnerPicker> {
       loading: () => const Padding(
         padding: EdgeInsets.all(16),
         child: Center(child: CircularProgressIndicator())),
-      error: (e, _) => Padding(
-        padding: const EdgeInsets.all(8),
-        child: Text('Could not load users: $e')),
+      error: (e, _) => _loadError(ref, 'Could not load users', e),
       data: (users) {
         final q = _query.trim().toLowerCase();
         final shown = q.isEmpty
