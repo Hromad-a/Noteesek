@@ -94,7 +94,7 @@ class SyncController extends Notifier<SyncStatus> {
       ref.listen(hasPendingChangesProvider, (_, next) {
         if (next.value == true && !state.syncing) {
           _debounce?.cancel();
-          _debounce = Timer(const Duration(seconds: 2), () => syncNow());
+          _debounce = Timer(const Duration(seconds: 1), () => syncNow());
         }
       });
       // Live updates: subscribe to realtime so another device's changes apply
@@ -155,10 +155,14 @@ class SyncController extends Notifier<SyncStatus> {
     }
     if (state.syncing) return SyncOutcome.busy;
 
+    final wasUnreachable = !state.reachable;
     state = state.copyWith(syncing: true, message: null);
     try {
       final ran = await ref.read(syncEngineProvider).syncOnce();
       state = SyncStatus(syncing: false, reachable: true, lastSync: DateTime.now());
+      // Reconnected after being offline: realtime subscriptions dropped — bring
+      // them back so live updates resume without leaving/reopening.
+      if (wasUnreachable && !kIsWeb) Future.microtask(_startRealtime);
       return ran ? SyncOutcome.ok : SyncOutcome.busy;
     } catch (e) {
       final unreachable = _isConnectivityError(e);

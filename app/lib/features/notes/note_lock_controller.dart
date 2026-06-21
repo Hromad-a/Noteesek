@@ -21,11 +21,17 @@ class NoteLockController extends ChangeNotifier {
     required this.pb,
     required this.noteId,
     required this.userId,
+    this.onReconnect,
   });
 
   final PocketBase pb;
   final String noteId;
   final String userId;
+
+  /// Called when the watchdog sees the server come back after being offline, so
+  /// the host can re-pull content (a dropped realtime connection doesn't replay
+  /// what changed while we were away).
+  final void Function()? onReconnect;
 
   static const _col = 'note_locks';
 
@@ -152,8 +158,12 @@ class NoteLockController extends ChangeNotifier {
   }
 
   Future<void> _refresh() async {
+    final before = _reachable;
     try {
-      final rec = await pb.collection(_col).getFirstListItem('note = "$noteId"');
+      final rec = await pb
+          .collection(_col)
+          .getFirstListItem('note = "$noteId"')
+          .timeout(const Duration(seconds: 4));
       _reachable = true;
       _holder = rec.getStringValue('lockedBy');
       _holderAt = rec.getStringValue('lockedAt');
@@ -179,7 +189,24 @@ class NoteLockController extends ChangeNotifier {
       _reachable = false;
     }
     _ready = true;
+    if (before != _reachable) {
+      if (_reachable && !_disposed && !_paused) {
+        // Reconnected: the realtime sub is likely dead — re-establish it, and
+        // ask the host to re-pull content (missed while offline).
+        // ignore: discarded_futures
+        _resubscribe();
+        onReconnect?.call();
+      }
+    }
     notifyListeners();
+  }
+
+  Future<void> _resubscribe() async {
+    try {
+      _unsub?.call();
+    } catch (_) {}
+    _unsub = null;
+    await _subscribe();
   }
 
   Future<void> _tryAcquire() async {

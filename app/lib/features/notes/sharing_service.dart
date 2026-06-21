@@ -51,8 +51,8 @@ List<String> sharedWithIds(String rawSharedWith) => labelIdsOfRaw(rawSharedWith)
 /// being locked with the note open; see docs/shared-notebooks.md). Closing the
 /// note releases immediately, so this is only the fallback. The holder
 /// heartbeats well within the window.
-const Duration kLockExpiry = Duration(seconds: 45);
-const Duration kLockHeartbeat = Duration(seconds: 15);
+const Duration kLockExpiry = Duration(seconds: 20);
+const Duration kLockHeartbeat = Duration(seconds: 7);
 
 /// Whether a lock with this `lockedAt` ISO timestamp is still held (not stale).
 /// Empty/unparseable ⇒ not held.

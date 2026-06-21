@@ -9,6 +9,7 @@ import 'package:markdown_widget/markdown_widget.dart';
 import '../../data/local/database.dart';
 import '../../data/notes_repository.dart';
 import '../../providers.dart';
+import '../../sync/sync_controller.dart';
 import '../../ui/app_messenger.dart';
 import '../export/share_note_sheet.dart';
 import 'note_colors.dart';
@@ -130,6 +131,15 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
       pb: ref.read(pocketBaseProvider),
       noteId: noteId,
       userId: me,
+      // On reconnect (mobile), make this shared note match the server —
+      // discarding any edits made during the offline blip so it can't diverge —
+      // then sync the rest. Web reads the server live, so no-op there.
+      onReconnect: kIsWeb
+          ? null
+          : () async {
+              await ref.read(syncEngineProvider).refetchNote(noteId);
+              await ref.read(syncControllerProvider.notifier).syncNow();
+            },
     );
     _lock = lock;
     lock.addListener(() {
@@ -1007,6 +1017,13 @@ class _ChecklistEditorState extends ConsumerState<_ChecklistEditor> {
   /// handle that starts a reorder at that index; completed rows pass null.
   Widget _itemRow(ChecklistItemRow it, {int? dragIndex}) {
     final repo = ref.read(notesRepositoryProvider);
+    // Read-only viewer: the per-item controller is seeded once, so a live remote
+    // edit to the text wouldn't show. Keep it in sync with the item's content
+    // (safe — the user can't be typing here in read-only mode).
+    if (widget.readOnly) {
+      final ctrl = widget.controllerFor(it);
+      if (ctrl.text != it.content) ctrl.text = it.content;
+    }
     return Row(
       // Top-align the whole row so a wrapped item grows downward; each control
       // is itself centred within one line-height so it lines up with the text.

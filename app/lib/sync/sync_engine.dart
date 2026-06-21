@@ -116,6 +116,54 @@ class SyncEngine {
         s.contains('timeout');
   }
 
+  /// Make the local copy of one note (and its items/attachments) match the
+  /// server exactly, **discarding any unsynced local edits** to it. Used for
+  /// shared notes on reconnect ("server is the authority"): brief edits made
+  /// during an offline blip are dropped rather than pushed, so the device that
+  /// went offline can't diverge from everyone else.
+  Future<void> refetchNote(String noteId) async {
+    if (!_pb.authStore.isValid) return;
+    try {
+      final n = await _pb.collection(_notes).getOne(noteId);
+      await _applyRecord(_notes, n); // overwrites local (dirty cleared)
+
+      final items = await _pb
+          .collection(_items)
+          .getFullList(batch: 500, filter: 'note = "$noteId"');
+      final itemIds = {for (final r in items) r.id};
+      for (final r in items) {
+        await _applyRecord(_items, r);
+      }
+      // Drop local-only items (created offline, never on the server).
+      for (final li in await (_db.select(_db.checklistItems)
+            ..where((t) => t.note.equals(noteId)))
+          .get()) {
+        if (!itemIds.contains(li.id)) {
+          await (_db.delete(_db.checklistItems)..where((t) => t.id.equals(li.id)))
+              .go();
+        }
+      }
+
+      final atts = await _pb
+          .collection(_attachments)
+          .getFullList(batch: 500, filter: 'note = "$noteId"');
+      final attIds = {for (final r in atts) r.id};
+      for (final r in atts) {
+        await _applyRecord(_attachments, r);
+      }
+      for (final la in await (_db.select(_db.attachments)
+            ..where((t) => t.note.equals(noteId)))
+          .get()) {
+        if (!attIds.contains(la.id)) {
+          await (_db.delete(_db.attachments)..where((t) => t.id.equals(la.id)))
+              .go();
+        }
+      }
+    } catch (_) {
+      // Offline/transient — leave local as-is; the next reconnect retries.
+    }
+  }
+
   /// Permanently delete a note on the server (children cascade-delete via the
   /// relation). Best-effort: no-op when offline/not connected; 404 is treated
   /// as already gone. Used by "delete forever" / "empty trash".
