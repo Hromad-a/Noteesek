@@ -45,6 +45,7 @@ class SnapshotService {
       'enabled': cfg.enabled,
       'frequency': cfg.frequency,
       'retentionDays': cfg.retentionDays,
+      'hour': cfg.hour,
     };
     try {
       final existing = await _pb
@@ -128,11 +129,16 @@ class SnapshotConfig {
     this.enabled = false,
     this.frequency = 'daily',
     this.retentionDays = 14,
+    this.hour = 0,
   });
 
   final bool enabled;
   final String frequency; // hourly | daily
   final int retentionDays;
+
+  /// For the daily frequency: the hour of day (0–23, **UTC**) the snapshot runs.
+  /// Ignored when [frequency] is hourly. The UI converts to/from local time.
+  final int hour;
 
   factory SnapshotConfig.fromRecord(RecordModel r) => SnapshotConfig(
         enabled: r.getBoolValue('enabled'),
@@ -140,13 +146,16 @@ class SnapshotConfig {
             r.getStringValue('frequency').isEmpty ? 'daily' : r.getStringValue('frequency'),
         retentionDays:
             r.getIntValue('retentionDays') > 0 ? r.getIntValue('retentionDays') : 14,
+        hour: r.getIntValue('hour'),
       );
 
-  SnapshotConfig copyWith({bool? enabled, String? frequency, int? retentionDays}) =>
+  SnapshotConfig copyWith(
+          {bool? enabled, String? frequency, int? retentionDays, int? hour}) =>
       SnapshotConfig(
         enabled: enabled ?? this.enabled,
         frequency: frequency ?? this.frequency,
         retentionDays: retentionDays ?? this.retentionDays,
+        hour: hour ?? this.hour,
       );
 }
 

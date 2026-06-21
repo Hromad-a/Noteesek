@@ -35,6 +35,15 @@ String _fmtDateTime(DateTime dt) {
   return '${dt.day} ${months[dt.month - 1]} ${dt.year}, $h:$m';
 }
 
+// The daily-snapshot hour is stored in UTC (the server cron compares UTC hours);
+// the picker shows the user's local time, converting with the device's current
+// offset. Whole-hour offsets convert cleanly; the rare half-hour zones round.
+int _localHourFromUtc(int utc) =>
+    ((utc + DateTime.now().timeZoneOffset.inHours) % 24 + 24) % 24;
+int _utcHourFromLocal(int local) =>
+    ((local - DateTime.now().timeZoneOffset.inHours) % 24 + 24) % 24;
+String _fmtHour(int h) => '${h.toString().padLeft(2, '0')}:00';
+
 String _fmtSize(int bytes) {
   if (bytes < 1024) return '$bytes B';
   if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(0)} KB';
@@ -204,6 +213,21 @@ class _ConfigEditorState extends ConsumerState<_ConfigEditor> {
                   _save(_cfg.copyWith(frequency: s.first)),
             ),
           ),
+          if (_cfg.frequency == 'daily')
+            ListTile(
+              title: const Text('Run at'),
+              subtitle: const Text('Your local time'),
+              trailing: DropdownButton<int>(
+                value: _localHourFromUtc(_cfg.hour),
+                items: [
+                  for (var h = 0; h < 24; h++)
+                    DropdownMenuItem(value: h, child: Text(_fmtHour(h))),
+                ],
+                onChanged: (h) => h == null
+                    ? null
+                    : _save(_cfg.copyWith(hour: _utcHourFromLocal(h))),
+              ),
+            ),
           ListTile(
             title: const Text('Keep for'),
             trailing: DropdownButton<int>(

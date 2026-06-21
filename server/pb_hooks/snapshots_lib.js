@@ -29,6 +29,29 @@ function intervalSeconds(frequency) {
   return frequency === "hourly" ? 3600 : 86400; // default daily
 }
 
+// Whether a snapshot is due now for these settings, given the last snapshot
+// (or null). Hourly: at least an hour since the last. Daily: only at the
+// configured UTC `hour`, and not already taken today (UTC calendar day).
+function isDue(s, last) {
+  const freq = s.getString("frequency") || "daily";
+  if (freq === "hourly") {
+    if (!last) return true;
+    const elapsed =
+      (Date.now() - fromPbTime(last.getString("created")).getTime()) / 1000;
+    return elapsed >= 3600;
+  }
+  // daily
+  const now = new Date();
+  if (now.getUTCHours() !== s.getInt("hour")) return false; // not the hour
+  if (!last) return true;
+  const lastAt = fromPbTime(last.getString("created"));
+  const sameUtcDay =
+    lastAt.getUTCFullYear() === now.getUTCFullYear() &&
+    lastAt.getUTCMonth() === now.getUTCMonth() &&
+    lastAt.getUTCDate() === now.getUTCDate();
+  return !sameUtcDay; // once per UTC day
+}
+
 // ---- collect one account's records ----
 
 function collect(app, ownerId) {
@@ -243,11 +266,7 @@ function runDueSnapshots(app) {
     const ownerId = s.getString("owner");
     try {
       const last = latestSnapshot(app, ownerId);
-      if (last) {
-        const elapsed =
-          (Date.now() - fromPbTime(last.getString("created")).getTime()) / 1000;
-        if (elapsed < intervalSeconds(s.getString("frequency"))) continue; // not due
-      }
+      if (!isDue(s, last)) continue; // not due (frequency / scheduled hour)
       const stats = currentStats(app, ownerId);
       if (!last && stats.count === 0 && stats.high === "") continue; // empty account
       if (last && stats.high <= last.getString("highWater") &&
@@ -488,6 +507,7 @@ function restoreSnapshot(app, ownerId, snapshotId, mode, noteIds) {
 module.exports = {
   DEFAULT_RETENTION_DAYS,
   intervalSeconds,
+  isDue,
   fromPbTime,
   buildSnapshot,
   currentStats,
