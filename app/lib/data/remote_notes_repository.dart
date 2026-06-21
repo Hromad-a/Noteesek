@@ -497,6 +497,26 @@ class RemoteNotesRepository implements NotesRepository {
       });
 
   @override
+  Future<void> setNotebookSharedWith(String id, List<String> userIds) =>
+      _guardVoid(() async {
+        final r = await _pb
+            .collection('notebooks')
+            .update(id, body: {'sharedWith': userIds});
+        _notebooks[id] = _notebookFrom(r);
+        _events.add(null);
+      });
+
+  @override
+  Future<void> setNoteLock(String id, String lockedBy, String lockedAt) =>
+      _guardVoid(() async {
+        final r = await _pb
+            .collection('notes')
+            .update(id, body: {'lockedBy': lockedBy, 'lockedAt': lockedAt});
+        _notes[id] = _noteFrom(r);
+        _events.add(null);
+      });
+
+  @override
   Future<void> deleteNotebook(String id, {required bool moveNotesToDefault}) =>
       _guardVoid(() async {
         final nb = _notebooks[id];
@@ -654,6 +674,8 @@ class RemoteNotesRepository implements NotesRepository {
         color: r.getStringValue('color'),
         labels: encodeLabelIds(r.getListValue<String>('labels')),
         notebook: r.getStringValue('notebook'),
+        lockedBy: r.getStringValue('lockedBy'),
+        lockedAt: r.getStringValue('lockedAt'),
         deleted: r.getBoolValue('deleted'),
         created: r.getStringValue('created'),
         updated: r.getStringValue('updated'),
@@ -665,6 +687,7 @@ class RemoteNotesRepository implements NotesRepository {
         id: r.id,
         owner: r.getStringValue('owner'),
         name: r.getStringValue('name'),
+        sharedWith: encodeLabelIds(r.getListValue<String>('sharedWith')),
         hiddenFromAll: r.getBoolValue('hidden_from_all'),
         deleted: r.getBoolValue('deleted'),
         created: r.getStringValue('created'),

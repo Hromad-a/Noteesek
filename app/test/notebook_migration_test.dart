@@ -41,7 +41,7 @@ void main() {
     final db = AppDatabase(NativeDatabase.opened(raw));
     await db.customSelect('SELECT 1').get(); // force migration to run
 
-    expect(raw.select('PRAGMA user_version').first.values.first, 9);
+    expect(raw.select('PRAGMA user_version').first.values.first, 10);
 
     // The is_default column is gone; the v9 hidden_from_all column is present
     // and defaults to 0 (visible) for the migrated rows.

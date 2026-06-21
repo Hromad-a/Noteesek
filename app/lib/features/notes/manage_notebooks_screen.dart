@@ -3,6 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/local/database.dart';
 import '../../data/notes_repository.dart';
+import '../../providers.dart';
+import 'notebook_share_sheet.dart';
+import 'sharing_service.dart';
 
 /// Manage notebooks: create, rename, and delete. Deleting a notebook offers to
 /// move its notes out to "No notebook" (uncategorized) or send them to Trash.
@@ -129,45 +132,81 @@ class _ManageNotebooksScreenState extends ConsumerState<ManageNotebooksScreen> {
                 if (notebooks.isEmpty) {
                   return const Center(child: Text('No notebooks yet'));
                 }
+                final me = ref.watch(authUserIdProvider);
+                final canShare = ref.watch(isAuthenticatedProvider);
                 return ListView(
                   children: [
                     for (final nb in notebooks)
-                      ListTile(
-                        leading: const Icon(Icons.book_outlined),
-                        title: Text(nb.name),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              tooltip: nb.hiddenFromAll
-                                  ? 'Hidden from All notes'
-                                  : 'Shown in All notes',
-                              icon: Icon(nb.hiddenFromAll
-                                  ? Icons.visibility_off_outlined
-                                  : Icons.visibility_outlined),
-                              onPressed: () => ref
-                                  .read(notesRepositoryProvider)
-                                  .setNotebookVisibility(
-                                      nb.id, !nb.hiddenFromAll),
-                            ),
-                            IconButton(
-                              tooltip: 'Rename',
-                              icon: const Icon(Icons.edit_outlined),
-                              onPressed: () => _rename(nb),
-                            ),
-                            IconButton(
-                              tooltip: 'Delete',
-                              icon: const Icon(Icons.delete_outline),
-                              onPressed: () => _delete(nb),
-                            ),
-                          ],
-                        ),
-                      ),
+                      _notebookTile(context, ref, nb, me, canShare),
                   ],
                 );
               },
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  /// A notebook row. Owner-only actions (visibility/rename/delete) are hidden for
+  /// notebooks shared *to* this user by someone else; a "Share" button (which
+  /// opens the members sheet) shows whenever a server is connected. Mobile-local
+  /// notebooks (owner sentinel `local`, no signed-in user) are always "owned".
+  Widget _notebookTile(BuildContext context, WidgetRef ref, NotebookRow nb,
+      String me, bool canShare) {
+    final shared = sharedWithIds(nb.sharedWith).isNotEmpty;
+    final ownedByMe = me.isEmpty || nb.owner == me;
+    final locallyHidden = ref.watch(locallyHiddenNotebooksProvider);
+    return ListTile(
+      leading: Icon(shared ? Icons.group_outlined : Icons.book_outlined),
+      title: Text(nb.name),
+      subtitle: shared && !ownedByMe ? const Text('Shared with you') : null,
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (canShare)
+            IconButton(
+              tooltip: ownedByMe ? 'Share' : 'Members',
+              icon: Icon(shared ? Icons.group : Icons.person_add_alt_outlined),
+              onPressed: () => showNotebookShareSheet(context, ref, nb.id),
+            ),
+          // Members (non-owners) can't write the owner's global visibility flag,
+          // so they hide a shared notebook from their own "All notes" locally.
+          if (!ownedByMe)
+            IconButton(
+              tooltip: locallyHidden.contains(nb.id)
+                  ? 'Hidden from your All notes'
+                  : 'Shown in your All notes',
+              icon: Icon(locallyHidden.contains(nb.id)
+                  ? Icons.visibility_off_outlined
+                  : Icons.visibility_outlined),
+              onPressed: () => ref
+                  .read(locallyHiddenNotebooksProvider.notifier)
+                  .toggle(nb.id),
+            ),
+          if (ownedByMe) ...[
+            IconButton(
+              tooltip: nb.hiddenFromAll
+                  ? 'Hidden from All notes'
+                  : 'Shown in All notes',
+              icon: Icon(nb.hiddenFromAll
+                  ? Icons.visibility_off_outlined
+                  : Icons.visibility_outlined),
+              onPressed: () => ref
+                  .read(notesRepositoryProvider)
+                  .setNotebookVisibility(nb.id, !nb.hiddenFromAll),
+            ),
+            IconButton(
+              tooltip: 'Rename',
+              icon: const Icon(Icons.edit_outlined),
+              onPressed: () => _rename(nb),
+            ),
+            IconButton(
+              tooltip: 'Delete',
+              icon: const Icon(Icons.delete_outline),
+              onPressed: () => _delete(nb),
+            ),
+          ],
         ],
       ),
     );

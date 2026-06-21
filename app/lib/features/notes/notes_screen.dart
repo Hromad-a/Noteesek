@@ -23,6 +23,7 @@ import 'note_card.dart';
 import 'note_colors.dart';
 import 'note_editor_screen.dart';
 import 'note_selection.dart';
+import 'sharing_service.dart';
 import 'trash_screen.dart';
 
 /// Home screen: a Keep-style masonry grid of notes with a create FAB.
@@ -667,6 +668,26 @@ class _BottomBar extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Adding notes to a shared notebook needs a connection (online-only). When
+    // the grid is scoped to a shared notebook and we're offline, the create
+    // buttons are dimmed and a tap explains why instead of creating.
+    final notebooks = ref.watch(notebooksProvider).asData?.value ?? const [];
+    final activeId = ref.watch(activeNotebookIdProvider);
+    final activeNb = notebooks.where((n) => n.id == activeId).firstOrNull;
+    final sharedScope =
+        activeNb != null && sharedWithIds(activeNb.sharedWith).isNotEmpty;
+    final online = ref.watch(hasNetworkProvider).value ?? true;
+    final blocked = sharedScope && !online;
+
+    void offlineSnack() {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(
+          content: Text("You're offline — adding notes to a shared notebook "
+              'needs a connection to your server.'),
+        ));
+    }
+
     return BottomAppBar(
       height: 64,
       padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -674,16 +695,24 @@ class _BottomBar extends ConsumerWidget {
         children: [
           const Expanded(child: _NotebookSelector()),
           const SizedBox(width: 8),
-          IconButton.filledTonal(
-            tooltip: 'New checklist',
-            onPressed: onChecklist,
-            icon: const Icon(Icons.checklist),
+          Opacity(
+            opacity: blocked ? 0.4 : 1,
+            child: IconButton.filledTonal(
+              tooltip: blocked
+                  ? 'Offline — shared notebook'
+                  : 'New checklist',
+              onPressed: blocked ? offlineSnack : onChecklist,
+              icon: const Icon(Icons.checklist),
+            ),
           ),
           const SizedBox(width: 8),
-          IconButton.filled(
-            tooltip: 'New note',
-            onPressed: onText,
-            icon: const Icon(Icons.edit),
+          Opacity(
+            opacity: blocked ? 0.4 : 1,
+            child: IconButton.filled(
+              tooltip: blocked ? 'Offline — shared notebook' : 'New note',
+              onPressed: blocked ? offlineSnack : onText,
+              icon: const Icon(Icons.edit),
+            ),
           ),
         ],
       ),
@@ -740,27 +769,37 @@ class _NotebookSelector extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final notebooks = ref.watch(notebooksProvider).asData?.value ?? const [];
     final activeId = ref.watch(activeNotebookIdProvider);
+    final activeNb = notebooks.where((n) => n.id == activeId).firstOrNull;
+    final activeNbShared =
+        activeNb != null && sharedWithIds(activeNb.sharedWith).isNotEmpty;
     final label = switch (activeId) {
       kAllNotes => 'All notes',
       kNoNotebook => 'No notebook',
-      _ => notebooks.where((n) => n.id == activeId).firstOrNull?.name ??
-          'All notes',
+      _ => activeNb?.name ?? 'All notes',
     };
+    final chipIcon = activeNbShared ? Icons.group_outlined : _scopeIcon(activeId);
 
-    PopupMenuItem<String> scopeItem(String value, IconData icon, String text) =>
-        PopupMenuItem(
-          value: value,
-          child: ListTile(
-            dense: true,
-            contentPadding: EdgeInsets.zero,
-            leading: Icon(value == activeId ? Icons.check : icon),
-            title: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis),
-          ),
-        );
+    // Shared notebooks aren't visually coloured — the people icon is the only
+    // (quiet) cue. The selected scope is marked by a trailing checkmark so it
+    // reads clearly without changing the row's colour.
+    PopupMenuItem<String> scopeItem(String value, IconData icon, String text) {
+      final selected = value == activeId;
+      return PopupMenuItem(
+        value: value,
+        child: ListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          leading: Icon(icon),
+          title: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis),
+          trailing: selected ? const Icon(Icons.check) : null,
+        ),
+      );
+    }
 
     return PopupMenuButton<String>(
       tooltip: 'Switch notebook',
       position: PopupMenuPosition.over,
+      constraints: const BoxConstraints(minWidth: 240, maxWidth: 320),
       onSelected: (value) async {
         if (value == _newValue) {
           await _createNotebook(context, ref);
@@ -779,7 +818,13 @@ class _NotebookSelector extends ConsumerWidget {
         scopeItem(kNoNotebook, Icons.label_off_outlined, 'No notebook'),
         if (notebooks.isNotEmpty) const PopupMenuDivider(),
         for (final nb in notebooks)
-          scopeItem(nb.id, Icons.book_outlined, nb.name),
+          scopeItem(
+            nb.id,
+            sharedWithIds(nb.sharedWith).isNotEmpty
+                ? Icons.group_outlined
+                : Icons.book_outlined,
+            nb.name,
+          ),
         const PopupMenuDivider(),
         const PopupMenuItem(
           value: _newValue,
@@ -809,11 +854,14 @@ class _NotebookSelector extends ConsumerWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(_scopeIcon(activeId), size: 18),
+            Icon(chipIcon, size: 18),
             const SizedBox(width: 8),
             Flexible(
-              child: Text(label,
-                  maxLines: 1, overflow: TextOverflow.ellipsis),
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
             const Icon(Icons.arrow_drop_down),
           ],

@@ -4,6 +4,7 @@ import 'package:drift/drift.dart';
 import 'package:http/http.dart' as http;
 import 'package:pocketbase/pocketbase.dart';
 
+import '../config/app_config.dart';
 import '../data/local/database.dart';
 
 /// Implements the last-write-wins sync described in docs/sync-protocol.md.
@@ -61,6 +62,8 @@ class SyncEngine {
           // Retry any attachment whose bytes haven't downloaded yet (independent
           // of the pull cursor).
           ('bytes', _attachments),
+          // Drop shared notebooks (+ their notes) that were unshared from me.
+          ('reconcile', _notebooks),
         ],
       ];
       for (final (phase, collection) in steps) {
@@ -82,6 +85,7 @@ class SyncEngine {
 
   Future<void> _runStep(String phase, String collection) {
     if (phase == 'bytes') return _downloadPendingAttachmentBytes();
+    if (phase == 'reconcile') return _reconcileSharedNotebooks();
     final push = phase == 'push';
     return switch (collection) {
       _labels => push ? _pushLabels() : _pullLabels(),
@@ -110,6 +114,54 @@ class SyncEngine {
         s.contains('connection closed') ||
         s.contains('timed out') ||
         s.contains('timeout');
+  }
+
+  /// Make the local copy of one note (and its items/attachments) match the
+  /// server exactly, **discarding any unsynced local edits** to it. Used for
+  /// shared notes on reconnect ("server is the authority"): brief edits made
+  /// during an offline blip are dropped rather than pushed, so the device that
+  /// went offline can't diverge from everyone else.
+  Future<void> refetchNote(String noteId) async {
+    if (!_pb.authStore.isValid) return;
+    try {
+      final n = await _pb.collection(_notes).getOne(noteId);
+      await _applyRecord(_notes, n); // overwrites local (dirty cleared)
+
+      final items = await _pb
+          .collection(_items)
+          .getFullList(batch: 500, filter: 'note = "$noteId"');
+      final itemIds = {for (final r in items) r.id};
+      for (final r in items) {
+        await _applyRecord(_items, r);
+      }
+      // Drop local-only items (created offline, never on the server).
+      for (final li in await (_db.select(_db.checklistItems)
+            ..where((t) => t.note.equals(noteId)))
+          .get()) {
+        if (!itemIds.contains(li.id)) {
+          await (_db.delete(_db.checklistItems)..where((t) => t.id.equals(li.id)))
+              .go();
+        }
+      }
+
+      final atts = await _pb
+          .collection(_attachments)
+          .getFullList(batch: 500, filter: 'note = "$noteId"');
+      final attIds = {for (final r in atts) r.id};
+      for (final r in atts) {
+        await _applyRecord(_attachments, r);
+      }
+      for (final la in await (_db.select(_db.attachments)
+            ..where((t) => t.note.equals(noteId)))
+          .get()) {
+        if (!attIds.contains(la.id)) {
+          await (_db.delete(_db.attachments)..where((t) => t.id.equals(la.id)))
+              .go();
+        }
+      }
+    } catch (_) {
+      // Offline/transient — leave local as-is; the next reconnect retries.
+    }
   }
 
   /// Permanently delete a note on the server (children cascade-delete via the
@@ -167,6 +219,7 @@ class SyncEngine {
       final body = {
         'owner': nb.owner,
         'name': nb.name,
+        'sharedWith': _decodeIds(nb.sharedWith),
         'hidden_from_all': nb.hiddenFromAll,
         'deleted': nb.deleted,
       };
@@ -196,6 +249,8 @@ class SyncEngine {
         'color': n.color,
         'labels': _decodeIds(n.labels),
         'notebook': n.notebook,
+        'lockedBy': n.lockedBy,
+        'lockedAt': n.lockedAt,
         'deleted': n.deleted,
       };
       final saved = await _upsert(_notes, n.id, body);
@@ -301,103 +356,196 @@ class SyncEngine {
   // ---------------- Pull ----------------
 
   Future<void> _pullLabels() async {
-    await _pull(_labels, (rec) async {
-      await _db.into(_db.labels).insertOnConflictUpdate(LabelsCompanion(
-            id: Value(rec.id),
-            owner: Value(rec.getStringValue('owner')),
-            name: Value(rec.getStringValue('name')),
-            color: Value(rec.getStringValue('color')),
-            deleted: Value(rec.getBoolValue('deleted')),
-            created: Value(rec.getStringValue('created')),
-            updated: Value(rec.getStringValue('updated')),
-            dirty: const Value(false),
-          ));
-    }, _localLabelUpdated);
+    await _pull(_labels, (rec) => _applyRecord(_labels, rec), _localLabelUpdated);
+  }
+
+  // ---------------- Realtime (live updates while online) ----------------
+
+  /// Apply a single record arriving over a realtime subscription, with the same
+  /// last-write-wins guard the pull uses (never clobber a newer dirty local
+  /// edit). A `delete` action removes the local row (hard delete). This is what
+  /// makes another device's change show up on mobile *instantly* instead of
+  /// waiting for the 30s pull — see [_localState]/[_applyRecord] for the mapping.
+  Future<void> applyRealtimeRecord(
+      String collection, RecordModel rec, String action) async {
+    if (action == 'delete') {
+      await _deleteLocal(collection, rec.id);
+      return;
+    }
+    final serverUpdated = rec.getStringValue('updated');
+    final local = await _localState(collection, rec.id);
+    final keepLocal = local != null &&
+        local.dirty &&
+        local.updated.compareTo(serverUpdated) >= 0;
+    if (!keepLocal) await _applyRecord(collection, rec);
+  }
+
+  Future<({String updated, bool dirty})?> _localState(
+      String collection, String id) {
+    return switch (collection) {
+      _labels => _localLabelUpdated(id),
+      _notebooks => _localNotebookUpdated(id),
+      _notes => _localNoteUpdated(id),
+      _items => _localItemUpdated(id),
+      _attachments => _localAttachmentUpdated(id),
+      _ => Future.value(null),
+    };
+  }
+
+  Future<void> _deleteLocal(String collection, String id) async {
+    switch (collection) {
+      case _labels:
+        await (_db.delete(_db.labels)..where((t) => t.id.equals(id))).go();
+      case _notebooks:
+        await (_db.delete(_db.notebooks)..where((t) => t.id.equals(id))).go();
+      case _notes:
+        await (_db.delete(_db.notes)..where((t) => t.id.equals(id))).go();
+      case _items:
+        await (_db.delete(_db.checklistItems)..where((t) => t.id.equals(id)))
+            .go();
+      case _attachments:
+        await (_db.delete(_db.attachments)..where((t) => t.id.equals(id))).go();
+    }
+  }
+
+  /// Upsert one server record into drift (shared by pull + realtime). Mirrors
+  /// the per-collection field mapping; keep in sync with the push bodies.
+  Future<void> _applyRecord(String collection, RecordModel rec) async {
+    switch (collection) {
+      case _labels:
+        await _db.into(_db.labels).insertOnConflictUpdate(LabelsCompanion(
+              id: Value(rec.id),
+              owner: Value(rec.getStringValue('owner')),
+              name: Value(rec.getStringValue('name')),
+              color: Value(rec.getStringValue('color')),
+              deleted: Value(rec.getBoolValue('deleted')),
+              created: Value(rec.getStringValue('created')),
+              updated: Value(rec.getStringValue('updated')),
+              dirty: const Value(false),
+            ));
+      case _notebooks:
+        await _db.into(_db.notebooks).insertOnConflictUpdate(NotebooksCompanion(
+              id: Value(rec.id),
+              owner: Value(rec.getStringValue('owner')),
+              name: Value(rec.getStringValue('name')),
+              sharedWith:
+                  Value(jsonEncode(rec.getListValue<String>('sharedWith'))),
+              hiddenFromAll: Value(rec.getBoolValue('hidden_from_all')),
+              deleted: Value(rec.getBoolValue('deleted')),
+              created: Value(rec.getStringValue('created')),
+              updated: Value(rec.getStringValue('updated')),
+              dirty: const Value(false),
+            ));
+      case _notes:
+        await _db.into(_db.notes).insertOnConflictUpdate(NotesCompanion(
+              id: Value(rec.id),
+              owner: Value(rec.getStringValue('owner')),
+              type: Value(rec.getStringValue('type')),
+              title: Value(rec.getStringValue('title')),
+              body: Value(rec.getStringValue('body')),
+              pinned: Value(rec.getBoolValue('pinned')),
+              archived: Value(rec.getBoolValue('archived')),
+              color: Value(rec.getStringValue('color')),
+              labels: Value(jsonEncode(rec.getListValue<String>('labels'))),
+              notebook: Value(rec.getStringValue('notebook')),
+              lockedBy: Value(rec.getStringValue('lockedBy')),
+              lockedAt: Value(rec.getStringValue('lockedAt')),
+              deleted: Value(rec.getBoolValue('deleted')),
+              created: Value(rec.getStringValue('created')),
+              updated: Value(rec.getStringValue('updated')),
+              dirty: const Value(false),
+            ));
+      case _items:
+        await _db
+            .into(_db.checklistItems)
+            .insertOnConflictUpdate(ChecklistItemsCompanion(
+              id: Value(rec.id),
+              note: Value(rec.getStringValue('note')),
+              content: Value(rec.getStringValue('text')),
+              checked: Value(rec.getBoolValue('checked')),
+              position: Value(rec.getIntValue('position')),
+              deleted: Value(rec.getBoolValue('deleted')),
+              created: Value(rec.getStringValue('created')),
+              updated: Value(rec.getStringValue('updated')),
+              dirty: const Value(false),
+            ));
+      case _attachments:
+        await _db
+            .into(_db.attachments)
+            .insertOnConflictUpdate(AttachmentsCompanion(
+              id: Value(rec.id),
+              note: Value(rec.getStringValue('note')),
+              file: Value(rec.getStringValue('file')),
+              deleted: Value(rec.getBoolValue('deleted')),
+              created: Value(rec.getStringValue('created')),
+              updated: Value(rec.getStringValue('updated')),
+              dirty: const Value(false),
+            ));
+        final filename = rec.getStringValue('file');
+        if (filename.isEmpty || rec.getBoolValue('deleted')) return;
+        final existing = await (_db.select(_db.attachments)
+              ..where((t) => t.id.equals(rec.id)))
+            .getSingleOrNull();
+        if (existing?.data != null) return;
+        final bytes = await _downloadFile(rec, filename);
+        if (bytes != null) {
+          await (_db.update(_db.attachments)..where((t) => t.id.equals(rec.id)))
+              .write(AttachmentsCompanion(data: Value(bytes)));
+        }
+    }
   }
 
   Future<void> _pullNotebooks() async {
-    await _pull(_notebooks, (rec) async {
-      await _db.into(_db.notebooks).insertOnConflictUpdate(NotebooksCompanion(
-            id: Value(rec.id),
-            owner: Value(rec.getStringValue('owner')),
-            name: Value(rec.getStringValue('name')),
-            hiddenFromAll: Value(rec.getBoolValue('hidden_from_all')),
-            deleted: Value(rec.getBoolValue('deleted')),
-            created: Value(rec.getStringValue('created')),
-            updated: Value(rec.getStringValue('updated')),
-            dirty: const Value(false),
-          ));
-    }, _localNotebookUpdated);
+    await _pull(
+        _notebooks, (rec) => _applyRecord(_notebooks, rec), _localNotebookUpdated);
+  }
+
+  /// Remove local copies of shared notebooks I've lost access to (the owner
+  /// unshared the notebook or removed me). Such notebooks were owned by *another*
+  /// account and stop being returned by the server once I'm no longer a member;
+  /// the pull can't detect that on its own, so reconcile against the full set of
+  /// notebook ids the server still lets me read. My own notebooks (and the
+  /// offline `local` sentinel) are never touched.
+  Future<void> _reconcileSharedNotebooks() async {
+    final myId = _pb.authStore.record?.id ?? '';
+    if (myId.isEmpty) return;
+    final accessible = <String>{
+      for (final r in await _pb
+          .collection(_notebooks)
+          .getFullList(batch: 500, fields: 'id'))
+        r.id,
+    };
+    final local = await _db.select(_db.notebooks).get();
+    for (final nb in local) {
+      final foreign = nb.owner != myId && nb.owner != AppConfig.localOwner;
+      if (!foreign || accessible.contains(nb.id)) continue;
+      // I was removed from this notebook — purge it and its notes locally.
+      final notes = await (_db.select(_db.notes)
+            ..where((t) => t.notebook.equals(nb.id)))
+          .get();
+      for (final n in notes) {
+        await (_db.delete(_db.checklistItems)
+              ..where((t) => t.note.equals(n.id)))
+            .go();
+        await (_db.delete(_db.attachments)..where((t) => t.note.equals(n.id)))
+            .go();
+        await (_db.delete(_db.notes)..where((t) => t.id.equals(n.id))).go();
+      }
+      await (_db.delete(_db.notebooks)..where((t) => t.id.equals(nb.id))).go();
+    }
   }
 
   Future<void> _pullNotes() async {
-    await _pull(_notes, (rec) async {
-      await _db.into(_db.notes).insertOnConflictUpdate(NotesCompanion(
-            id: Value(rec.id),
-            owner: Value(rec.getStringValue('owner')),
-            type: Value(rec.getStringValue('type')),
-            title: Value(rec.getStringValue('title')),
-            body: Value(rec.getStringValue('body')),
-            pinned: Value(rec.getBoolValue('pinned')),
-            archived: Value(rec.getBoolValue('archived')),
-            color: Value(rec.getStringValue('color')),
-            labels: Value(jsonEncode(rec.getListValue<String>('labels'))),
-            notebook: Value(rec.getStringValue('notebook')),
-            deleted: Value(rec.getBoolValue('deleted')),
-            created: Value(rec.getStringValue('created')),
-            updated: Value(rec.getStringValue('updated')),
-            dirty: const Value(false),
-          ));
-    }, _localNoteUpdated);
+    await _pull(_notes, (rec) => _applyRecord(_notes, rec), _localNoteUpdated);
   }
 
   Future<void> _pullItems() async {
-    await _pull(_items, (rec) async {
-      await _db
-          .into(_db.checklistItems)
-          .insertOnConflictUpdate(ChecklistItemsCompanion(
-            id: Value(rec.id),
-            note: Value(rec.getStringValue('note')),
-            content: Value(rec.getStringValue('text')),
-            checked: Value(rec.getBoolValue('checked')),
-            position: Value(rec.getIntValue('position')),
-            deleted: Value(rec.getBoolValue('deleted')),
-            created: Value(rec.getStringValue('created')),
-            updated: Value(rec.getStringValue('updated')),
-            dirty: const Value(false),
-          ));
-    }, _localItemUpdated);
+    await _pull(_items, (rec) => _applyRecord(_items, rec), _localItemUpdated);
   }
 
   Future<void> _pullAttachments() async {
-    await _pull(_attachments, (rec) async {
-      // Upsert metadata; omit `data` so locally-held bytes are preserved.
-      await _db
-          .into(_db.attachments)
-          .insertOnConflictUpdate(AttachmentsCompanion(
-            id: Value(rec.id),
-            note: Value(rec.getStringValue('note')),
-            file: Value(rec.getStringValue('file')),
-            deleted: Value(rec.getBoolValue('deleted')),
-            created: Value(rec.getStringValue('created')),
-            updated: Value(rec.getStringValue('updated')),
-            dirty: const Value(false),
-          ));
-
-      // If we don't have the bytes yet (came from another device), download.
-      final filename = rec.getStringValue('file');
-      if (filename.isEmpty || rec.getBoolValue('deleted')) return;
-      final existing = await (_db.select(_db.attachments)
-            ..where((t) => t.id.equals(rec.id)))
-          .getSingleOrNull();
-      if (existing?.data != null) return;
-
-      final bytes = await _downloadFile(rec, filename);
-      if (bytes != null) {
-        await (_db.update(_db.attachments)..where((t) => t.id.equals(rec.id)))
-            .write(AttachmentsCompanion(data: Value(bytes)));
-      }
-    }, _localAttachmentUpdated);
+    await _pull(_attachments, (rec) => _applyRecord(_attachments, rec),
+        _localAttachmentUpdated);
   }
 
   /// Downloads bytes for any attachment that has a server file but no local

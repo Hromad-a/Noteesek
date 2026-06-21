@@ -18,6 +18,8 @@ NoteRow _note({
       color: '',
       labels: '[]',
       notebook: '',
+      lockedBy: '',
+      lockedAt: '',
       deleted: false,
       created: '2026-06-05 00:00:00.000Z',
       updated: '2026-06-06 00:00:00.000Z',

@@ -1,3 +1,4 @@
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,6 +8,21 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'config/app_config.dart';
 import 'data/local/database.dart';
+
+/// Whether the device has any network right now (instant, event-driven). Used to
+/// gate online-only actions like adding to a shared notebook. Not a server-
+/// reachability check — just "is there a network" — and assumes online if the
+/// platform check fails.
+final hasNetworkProvider = StreamProvider<bool>((ref) async* {
+  bool online(List<ConnectivityResult> r) =>
+      r.any((x) => x != ConnectivityResult.none);
+  try {
+    yield online(await Connectivity().checkConnectivity());
+  } catch (_) {
+    yield true;
+  }
+  yield* Connectivity().onConnectivityChanged.map(online);
+});
 
 /// SharedPreferences instance. Overridden with the real value in main() after
 /// async init, so synchronous reads work everywhere.

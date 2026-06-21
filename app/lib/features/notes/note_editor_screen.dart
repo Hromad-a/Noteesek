@@ -8,10 +8,16 @@ import 'package:markdown_widget/markdown_widget.dart';
 
 import '../../data/local/database.dart';
 import '../../data/notes_repository.dart';
+import '../../data/online_shared_repository.dart';
+import '../../providers.dart';
+import '../../sync/sync_controller.dart';
 import '../../ui/app_messenger.dart';
 import '../export/share_note_sheet.dart';
 import 'note_colors.dart';
+import 'note_lock_controller.dart';
 import 'note_markdown_config.dart';
+import 'notebook_share_sheet.dart';
+import 'sharing_service.dart';
 
 enum _OverflowAction {
   convert,
@@ -50,7 +56,8 @@ class NoteEditorScreen extends ConsumerStatefulWidget {
   ConsumerState<NoteEditorScreen> createState() => _NoteEditorScreenState();
 }
 
-class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
+class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
+    with WidgetsBindingObserver {
   final _titleCtrl = TextEditingController();
   final _bodyCtrl = TextEditingController();
   final _bodyFocus = FocusNode();
@@ -65,10 +72,27 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
   // Per-item text controllers for checklists, keyed by item id.
   final Map<String, TextEditingController> _itemCtrls = {};
 
-  NotesRepository get _repo => ref.read(notesRepositoryProvider);
+  // Shared-notebook edit lock: server-authoritative via the `note_locks`
+  // collection (atomic acquire + realtime visibility). Created lazily once we
+  // know the note is in a shared notebook. See note_lock_controller.dart.
+  NoteLockController? _lock;
+
+  // For a shared note on mobile, content edits go straight to the server via
+  // this repo (server-authoritative, realtime) instead of the local-first path.
+  OnlineSharedNoteRepository? _onlineRepo;
+
+  NotesRepository get _repo => _onlineRepo ?? ref.read(notesRepositoryProvider);
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _lock?.dispose(); // releases the lock (deletes the row) on close
     _titleCtrl.dispose();
     _bodyCtrl.dispose();
     _bodyFocus.dispose();
@@ -78,6 +102,66 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     }
     super.dispose();
   }
+
+  /// Backgrounding (screen lock / app switch) releases the shared-note lock so
+  /// others can edit; returning re-acquires it (and re-checks from the server).
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    switch (state) {
+      case AppLifecycleState.paused:
+      case AppLifecycleState.hidden:
+        _lock?.pause();
+      case AppLifecycleState.resumed:
+        _lock?.resume();
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.detached:
+        break;
+    }
+  }
+
+  /// Whether the note's notebook is shared with anyone.
+  bool _isShared(NoteRow note) {
+    if (note.notebook.isEmpty) return false;
+    final notebooks = ref.read(notebooksProvider).asData?.value ?? const [];
+    final nb =
+        notebooks.cast<NotebookRow?>().firstWhere((n) => n?.id == note.notebook,
+            orElse: () => null);
+    return nb != null && sharedWithIds(nb.sharedWith).isNotEmpty;
+  }
+
+  /// Spin up the lock controller + server-direct content repo once we know the
+  /// note is shared (idempotent).
+  void _ensureLock(String noteId, String me) {
+    if (_lock != null || me.isEmpty) return;
+    if (!kIsWeb) {
+      // Route this shared note's content edits straight to the server.
+      _onlineRepo = OnlineSharedNoteRepository(
+        ref.read(databaseProvider),
+        ref.read(activeOwnerProvider),
+        ref.read(pocketBaseProvider),
+      );
+    }
+    final lock = NoteLockController(
+      pb: ref.read(pocketBaseProvider),
+      noteId: noteId,
+      userId: me,
+      // On reconnect (mobile), make this shared note match the server —
+      // discarding any edits made during the offline blip so it can't diverge —
+      // then sync the rest. Web reads the server live, so no-op there.
+      onReconnect: kIsWeb
+          ? null
+          : () async {
+              await ref.read(syncEngineProvider).refetchNote(noteId);
+              await ref.read(syncControllerProvider.notifier).syncNow();
+            },
+    );
+    _lock = lock;
+    lock.addListener(() {
+      if (mounted) setState(() {});
+    });
+    lock.start();
+  }
+
 
   void _seed(NoteRow note) {
     if (!_seeded) {
@@ -255,12 +339,34 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
         _seed(note);
         final bg = noteColorFor(context, note.color);
         final markdownOn = ref.watch(markdownEnabledProvider);
+
+        // Shared-notebook concurrency: read-only is decided by the server-backed
+        // lock controller (note_locks) — until it's heard from the server, while
+        // offline, or while another member holds the lock.
+        final shared = _isShared(note);
+        final me = ref.watch(authUserIdProvider);
+        if (shared) {
+          WidgetsBinding.instance
+              .addPostFrameCallback((_) => _ensureLock(note.id, me));
+        }
+        final readOnly = shared && (_lock?.readOnly ?? true);
+        // While read-only (someone else is editing), keep the displayed text in
+        // sync with incoming live updates — _seed only runs once, so refresh the
+        // controllers here. Safe because the user can't be typing in read-only.
+        if (readOnly) {
+          if (_titleCtrl.text != note.title) _titleCtrl.text = note.title;
+          if (note.type != 'checklist' && _bodyCtrl.text != note.body) {
+            _bodyCtrl.text = note.body;
+          }
+        }
+
         // The editing toolbar floats above the keyboard on mobile, so it only
         // shows while the keyboard is up. Web has no soft keyboard, so keep it
         // present the whole time a text note is open.
         final keyboardOpen = MediaQuery.of(context).viewInsets.bottom > 0;
         final showEditingBar = note.type == 'text' &&
             !_previewMarkdown &&
+            !readOnly &&
             (kIsWeb || keyboardOpen);
 
         return PopScope(
@@ -273,6 +379,18 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
             appBar: AppBar(
               backgroundColor: bg,
               actions: [
+                if (shared)
+                  IconButton(
+                    tooltip: 'Shared notebook — members',
+                    icon: const Icon(Icons.group_outlined),
+                    onPressed: () =>
+                        showNotebookShareSheet(context, ref, note.notebook),
+                  ),
+                if (readOnly)
+                  // Read-only: no edit affordances (the lock/offline banner in
+                  // the body explains why).
+                  const SizedBox.shrink()
+                else ...[
                 IconButton(
                   tooltip: 'Color',
                   icon: const Icon(Icons.palette_outlined),
@@ -391,15 +509,18 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
                     ),
                   ],
                 ),
+                ],
               ],
             ),
             body: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                if (readOnly) _LockBanner(holderId: _lock?.otherHolder),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
                   child: TextField(
                     controller: _titleCtrl,
+                    readOnly: readOnly,
                     decoration: const InputDecoration(
                       hintText: 'Title',
                       border: InputBorder.none,
@@ -410,17 +531,19 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
                 ),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: _AttachmentsSection(noteId: note.id),
+                  child: _AttachmentsSection(noteId: note.id, readOnly: readOnly),
                 ),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: _EditorLabels(note: note),
+                  child: _EditorLabels(note: note, readOnly: readOnly),
                 ),
                 Expanded(
                   child: note.type == 'checklist'
                       ? _ChecklistEditor(
                           noteId: note.id,
+                          repo: _repo,
                           controllerFor: _itemCtrl,
+                          readOnly: readOnly,
                           onForgetController: (id) =>
                               _itemCtrls.remove(id)?.dispose(),
                         )
@@ -438,6 +561,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
                                       child: TextField(
                                         controller: _bodyCtrl,
                                         focusNode: _bodyFocus,
+                                        readOnly: readOnly,
                                         undoController: _undoController,
                                         decoration: const InputDecoration(
                                           hintText: 'Note',
@@ -498,6 +622,55 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
   }
 }
 
+/// Read-only banner shown atop a shared note that can't be edited right now:
+/// either the server is unreachable (online-only editing) or another member
+/// holds the edit lock.
+class _LockBanner extends ConsumerWidget {
+  const _LockBanner({required this.holderId});
+
+  /// The other member holding the lock, or null when it's an offline/connecting
+  /// state rather than someone else editing.
+  final String? holderId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final scheme = Theme.of(context).colorScheme;
+    final IconData icon;
+    final String msg;
+    if (holderId == null) {
+      icon = Icons.cloud_off_outlined;
+      msg = 'Connect to your server to edit this shared note.';
+    } else {
+      icon = Icons.lock_outline;
+      final users =
+          ref.watch(shareableUsersProvider).asData?.value ?? const [];
+      final email = users
+          .cast<ShareableUser?>()
+          .firstWhere((u) => u?.id == holderId, orElse: () => null)
+          ?.email;
+      msg = email != null
+          ? 'Being edited by $email'
+          : 'Another member is editing this note.';
+    }
+    return Material(
+      color: scheme.secondaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Row(
+          children: [
+            Icon(icon, size: 18, color: scheme.onSecondaryContainer),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(msg,
+                  style: TextStyle(color: scheme.onSecondaryContainer)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// Bottom bar showing when the note was created and last edited (bottom-left).
 class _TimestampBar extends StatelessWidget {
   const _TimestampBar({
@@ -542,9 +715,10 @@ class _TimestampBar extends StatelessWidget {
 /// Chips for the labels currently assigned to the note, each removable. Hidden
 /// when the note has no labels.
 class _EditorLabels extends ConsumerWidget {
-  const _EditorLabels({required this.note});
+  const _EditorLabels({required this.note, this.readOnly = false});
 
   final NoteRow note;
+  final bool readOnly;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -560,10 +734,12 @@ class _EditorLabels extends ConsumerWidget {
           Chip(
             label: Text(names[id]!),
             visualDensity: VisualDensity.compact,
-            onDeleted: () => repo.setNoteLabels(
-              note.id,
-              assigned.where((e) => e != id).toList(),
-            ),
+            onDeleted: readOnly
+                ? null
+                : () => repo.setNoteLabels(
+                      note.id,
+                      assigned.where((e) => e != id).toList(),
+                    ),
           ),
     ];
     if (chips.isEmpty) return const SizedBox.shrink();
@@ -723,9 +899,10 @@ class _ColorSwatch extends StatelessWidget {
 }
 
 class _AttachmentsSection extends ConsumerWidget {
-  const _AttachmentsSection({required this.noteId});
+  const _AttachmentsSection({required this.noteId, this.readOnly = false});
 
   final String noteId;
+  final bool readOnly;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -759,16 +936,17 @@ class _AttachmentsSection extends ConsumerWidget {
                               ),
                       ),
                     ),
-                    Positioned(
-                      top: -4,
-                      right: -4,
-                      child: IconButton(
-                        icon: const Icon(Icons.cancel),
-                        tooltip: 'Remove image',
-                        color: Colors.black54,
-                        onPressed: () => repo.deleteAttachment(a.id),
+                    if (!readOnly)
+                      Positioned(
+                        top: -4,
+                        right: -4,
+                        child: IconButton(
+                          icon: const Icon(Icons.cancel),
+                          tooltip: 'Remove image',
+                          color: Colors.black54,
+                          onPressed: () => repo.deleteAttachment(a.id),
+                        ),
                       ),
-                    ),
                   ],
                 ),
             ],
@@ -783,13 +961,17 @@ class _AttachmentsSection extends ConsumerWidget {
 class _ChecklistEditor extends ConsumerStatefulWidget {
   const _ChecklistEditor({
     required this.noteId,
+    required this.repo,
     required this.controllerFor,
     required this.onForgetController,
+    this.readOnly = false,
   });
 
   final String noteId;
+  final NotesRepository repo; // server-direct for shared notes, else local
   final TextEditingController Function(ChecklistItemRow) controllerFor;
   final void Function(String id) onForgetController;
+  final bool readOnly;
 
   @override
   ConsumerState<_ChecklistEditor> createState() => _ChecklistEditorState();
@@ -806,8 +988,7 @@ class _ChecklistEditorState extends ConsumerState<_ChecklistEditor> {
       _focusNodes.putIfAbsent(id, () => FocusNode());
 
   Future<void> _addAndFocus({String content = ''}) async {
-    final newId = await ref
-        .read(notesRepositoryProvider)
+    final newId = await widget.repo
         .addItem(widget.noteId, content: content);
     if (mounted) {
       setState(() => _pendingFocusId = newId);
@@ -819,7 +1000,7 @@ class _ChecklistEditorState extends ConsumerState<_ChecklistEditor> {
   /// this item and push the remainder into a new item below (preserving the
   /// single-line "Enter adds the next item" feel).
   void _onItemChanged(ChecklistItemRow item, String value) {
-    final repo = ref.read(notesRepositoryProvider);
+    final repo = widget.repo;
     final br = value.indexOf('\n');
     if (br < 0) {
       repo.setItemContent(item.id, value);
@@ -851,7 +1032,14 @@ class _ChecklistEditorState extends ConsumerState<_ChecklistEditor> {
   /// One checklist row. When [dragIndex] is non-null the row carries a drag
   /// handle that starts a reorder at that index; completed rows pass null.
   Widget _itemRow(ChecklistItemRow it, {int? dragIndex}) {
-    final repo = ref.read(notesRepositoryProvider);
+    final repo = widget.repo;
+    // Read-only viewer: the per-item controller is seeded once, so a live remote
+    // edit to the text wouldn't show. Keep it in sync with the item's content
+    // (safe — the user can't be typing here in read-only mode).
+    if (widget.readOnly) {
+      final ctrl = widget.controllerFor(it);
+      if (ctrl.text != it.content) ctrl.text = it.content;
+    }
     return Row(
       // Top-align the whole row so a wrapped item grows downward; each control
       // is itself centred within one line-height so it lines up with the text.
@@ -860,7 +1048,7 @@ class _ChecklistEditorState extends ConsumerState<_ChecklistEditor> {
         SizedBox(
           width: 24,
           height: _lineHeight,
-          child: dragIndex != null
+          child: dragIndex != null && !widget.readOnly
               ? Center(
                   child: ReorderableDragStartListener(
                     index: dragIndex,
@@ -877,7 +1065,9 @@ class _ChecklistEditorState extends ConsumerState<_ChecklistEditor> {
               value: it.checked,
               visualDensity: VisualDensity.compact,
               materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              onChanged: (v) => repo.setItemChecked(it.id, v ?? false),
+              onChanged: widget.readOnly
+                  ? null
+                  : (v) => repo.setItemChecked(it.id, v ?? false),
             ),
           ),
         ),
@@ -885,6 +1075,7 @@ class _ChecklistEditorState extends ConsumerState<_ChecklistEditor> {
           child: TextField(
             controller: widget.controllerFor(it),
             focusNode: _focusNodeFor(it.id),
+            readOnly: widget.readOnly,
             // Multi-line so long items wrap and stay fully visible; Enter is
             // intercepted in _onItemChanged to add the next item instead of a
             // line break.
@@ -905,30 +1096,31 @@ class _ChecklistEditorState extends ConsumerState<_ChecklistEditor> {
             onChanged: (v) => _onItemChanged(it, v),
           ),
         ),
-        SizedBox(
-          height: _lineHeight,
-          child: Center(
-            child: IconButton(
-              visualDensity: VisualDensity.compact,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-              icon: const Icon(Icons.close, size: 18),
-              tooltip: 'Remove',
-              onPressed: () {
-                repo.deleteItem(it.id);
-                widget.onForgetController(it.id);
-                _focusNodes.remove(it.id)?.dispose();
-              },
+        if (!widget.readOnly)
+          SizedBox(
+            height: _lineHeight,
+            child: Center(
+              child: IconButton(
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                icon: const Icon(Icons.close, size: 18),
+                tooltip: 'Remove',
+                onPressed: () {
+                  repo.deleteItem(it.id);
+                  widget.onForgetController(it.id);
+                  _focusNodes.remove(it.id)?.dispose();
+                },
+              ),
             ),
           ),
-        ),
       ],
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final repo = ref.read(notesRepositoryProvider);
+    final repo = widget.repo;
     final autoSort = ref.watch(checklistAutoSortProvider);
     final itemsAsync = ref.watch(checklistItemsProvider(widget.noteId));
 
@@ -991,14 +1183,15 @@ class _ChecklistEditorState extends ConsumerState<_ChecklistEditor> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: TextButton.icon(
-                        icon: const Icon(Icons.add),
-                        label: const Text('Add item'),
-                        onPressed: _addAndFocus,
+                    if (!widget.readOnly)
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton.icon(
+                          icon: const Icon(Icons.add),
+                          label: const Text('Add item'),
+                          onPressed: _addAndFocus,
+                        ),
                       ),
-                    ),
                     if (completed.isNotEmpty) ...[
                       const Divider(),
                       InkWell(
@@ -1033,7 +1226,7 @@ class _ChecklistEditorState extends ConsumerState<_ChecklistEditor> {
               hasScrollBody: false,
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
-                onTap: _addAndFocus,
+                onTap: widget.readOnly ? null : _addAndFocus,
                 child: const SizedBox(width: double.infinity, height: 80),
               ),
             ),
