@@ -1,9 +1,11 @@
-name: Deploy to Google Play
-
+# name: Deploy to Google Play
+#
 # ──────────────────────────────────────────────────────────────────────────────
-# DISABLED for now. This workflow no longer has an `on:` trigger or `jobs:`, so
-# GitHub Actions will not run it (tag pushes only fire docker-publish.yml +
-# release-apk.yml). To re-enable, uncomment the `on:` and `jobs:` blocks below.
+# DISABLED for now. The ENTIRE file is commented out (including `name:`) so
+# GitHub treats it as an empty workflow and never registers or runs it — no more
+# failed "invalid workflow" runs on every push. Tag pushes only fire
+# docker-publish.yml + release-apk.yml. To re-enable, uncomment `name:`, `on:`,
+# and `jobs:` below.
 # ──────────────────────────────────────────────────────────────────────────────
 #
 # On a semver tag push, builds the Android App Bundle (.aab) and uploads it to
