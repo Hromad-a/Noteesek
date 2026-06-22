@@ -396,7 +396,7 @@
   "couldNotLoadSettings": "Could not load settings: {detail}",
   "@couldNotLoadSettings": { "placeholders": { "detail": { "type": "String" } } },
   "scheduledBackups": "Scheduled backups",
-  "scheduledBackupsSub": "Snapshot this account when it changes",
+  "scheduledBackupsSub": "Snapshot this account on a schedule, only when it has changed",
   "frequency": "Frequency",
   "daily": "Daily",
   "hourly": "Hourly",

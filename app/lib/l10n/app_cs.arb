@@ -286,7 +286,7 @@
   "noSnapshotsYet": "Zatím žádné snímky. Zobrazí se zde, jakmile proběhne naplánovaná nebo ruční záloha.",
   "couldNotLoadSettings": "Nastavení se nepodařilo načíst: {detail}",
   "scheduledBackups": "Naplánované zálohy",
-  "scheduledBackupsSub": "Vytvořit snímek účtu, když se změní",
+  "scheduledBackupsSub": "Vytvářet snímky účtu podle plánu, jen když došlo ke změně",
   "frequency": "Frekvence",
   "daily": "Denně",
   "hourly": "Každou hodinu",
