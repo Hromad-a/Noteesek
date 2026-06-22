@@ -69,6 +69,11 @@ class SyncEngine {
           // Fetch foreign backgrounds that shared notes reference (our own
           // library pull is owner-scoped, so these arrive only by id).
           ('refbg', _backgrounds),
+          // Fully fetch shared-with-me notebooks' content (cursor-independent):
+          // a note granted access later (e.g. a notebook (re)shared, or restored
+          // notes) can have an `updated` older than our pull cursor, so the
+          // incremental pull above would miss it.
+          ('sharedpull', _notebooks),
           // Drop shared notebooks (+ their notes) that were unshared from me,
           // and individual notes I've lost access to (e.g. a member claimed one
           // out of a shared notebook, taking its ownership).
@@ -100,6 +105,7 @@ class SyncEngine {
           : _downloadPendingAttachmentBytes();
     }
     if (phase == 'refbg') return _fetchReferencedBackgrounds();
+    if (phase == 'sharedpull') return _pullSharedNotebookContent();
     if (phase == 'reconcile') {
       return collection == _notes
           ? _reconcileSharedNotes()
@@ -715,6 +721,37 @@ class SyncEngine {
         await (_db.delete(_db.notes)..where((t) => t.id.equals(n.id))).go();
       }
       await (_db.delete(_db.notebooks)..where((t) => t.id.equals(nb.id))).go();
+    }
+  }
+
+  /// Full-fetch the content of every notebook shared *with* me (foreign-owned,
+  /// present locally). The incremental notes/items/attachments pulls are
+  /// cursor-based, so a record that becomes accessible *after* its `updated`
+  /// (a notebook (re)shared later, or restored notes carrying an old timestamp)
+  /// would never reappear in the cursor window. Re-applying the full set by
+  /// notebook closes that gap; LWW in [_applyRecord] never clobbers local dirty
+  /// edits, and already-current rows are cheap no-ops.
+  Future<void> _pullSharedNotebookContent() async {
+    final myId = _pb.authStore.record?.id ?? '';
+    if (myId.isEmpty) return;
+    for (final nb in await _db.select(_db.notebooks).get()) {
+      final foreign = nb.owner != myId && nb.owner != AppConfig.localOwner;
+      if (!foreign || nb.deleted) continue;
+      final nbId = nb.id.replaceAll("'", "");
+      for (final rec
+          in await _pb.collection(_notes).getFullList(batch: 200, filter: "notebook = '$nbId'")) {
+        await _applyRecord(_notes, rec);
+      }
+      for (final rec in await _pb
+          .collection(_items)
+          .getFullList(batch: 500, filter: "note.notebook = '$nbId'")) {
+        await _applyRecord(_items, rec);
+      }
+      for (final rec in await _pb
+          .collection(_attachments)
+          .getFullList(batch: 200, filter: "note.notebook = '$nbId'")) {
+        await _applyRecord(_attachments, rec);
+      }
     }
   }
 
