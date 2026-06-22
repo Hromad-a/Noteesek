@@ -684,9 +684,8 @@ class _BottomBar extends ConsumerWidget {
     void offlineSnack() {
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
-        ..showSnackBar(const SnackBar(
-          content: Text("You're offline — adding notes to a shared notebook "
-              'needs a connection to your server.'),
+        ..showSnackBar(SnackBar(
+          content: Text(context.l10n.offlineSharedNotebookSnack),
         ));
     }
 
@@ -701,7 +700,7 @@ class _BottomBar extends ConsumerWidget {
             opacity: blocked ? 0.4 : 1,
             child: IconButton.filledTonal(
               tooltip: blocked
-                  ? 'Offline — shared notebook'
+                  ? context.l10n.offlineSharedNotebook
                   : context.l10n.newChecklist,
               onPressed: blocked ? offlineSnack : onChecklist,
               icon: const Icon(Icons.checklist),
@@ -711,7 +710,7 @@ class _BottomBar extends ConsumerWidget {
           Opacity(
             opacity: blocked ? 0.4 : 1,
             child: IconButton.filled(
-              tooltip: blocked ? 'Offline — shared notebook' : context.l10n.newNote,
+              tooltip: blocked ? context.l10n.offlineSharedNotebook : context.l10n.newNote,
               onPressed: blocked ? offlineSnack : onText,
               icon: const Icon(Icons.edit),
             ),
@@ -913,7 +912,7 @@ class _AppDrawer extends ConsumerWidget {
                         const SizedBox(width: 6),
                         Expanded(
                           child: Text(
-                            connected ? email : 'Local only — not synced',
+                            connected ? email : context.l10n.localOnlyNotSynced,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -1317,7 +1316,7 @@ class _EmptyState extends ConsumerWidget {
             Text(context.l10n.noNotesYet, style: theme.textTheme.titleMedium),
             const SizedBox(height: 4),
             Text(
-              'Tap the buttons below to add a note or checklist.',
+              context.l10n.emptyStateHint,
               textAlign: TextAlign.center,
               style: theme.textTheme.bodyMedium
                   ?.copyWith(color: theme.colorScheme.onSurfaceVariant),

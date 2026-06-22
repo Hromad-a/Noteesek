@@ -48,15 +48,16 @@ class _PasswordResetScreenState extends ConsumerState<PasswordResetScreen> {
     super.dispose();
   }
 
-  String _humanizeError(ClientException e) {
+  String _humanizeError(AppLocalizations l10n, ClientException e) {
     final msg = e.response['message'] as String?;
     if (msg != null && msg.isNotEmpty) return msg;
-    if (e.statusCode == 0) return context.l10n.cannotReachServerCheckUrl;
-    return 'Request failed (${e.statusCode}).';
+    if (e.statusCode == 0) return l10n.cannotReachServerCheckUrl;
+    return l10n.requestFailed(e.statusCode);
   }
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+    final l10n = context.l10n; // capture before awaits
     FocusScope.of(context).unfocus();
     setState(() {
       _busy = true;
@@ -71,7 +72,7 @@ class _PasswordResetScreenState extends ConsumerState<PasswordResetScreen> {
       if (!mounted) return;
       setState(() => _done = true);
     } on ClientException catch (e) {
-      setState(() => _error = _humanizeError(e));
+      setState(() => _error = _humanizeError(l10n, e));
     } catch (e) {
       setState(() => _error = e.toString());
     } finally {
@@ -113,13 +114,13 @@ class _PasswordResetScreenState extends ConsumerState<PasswordResetScreen> {
             size: 48, color: Colors.green.shade600),
         const SizedBox(height: 16),
         Text(
-          'Your password has been changed.',
+          context.l10n.passwordChangedHeading,
           textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.titleMedium,
         ),
         const SizedBox(height: 8),
-        const Text(
-          'You can now sign in with your new password.',
+        Text(
+          context.l10n.canNowSignIn,
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: 24),
@@ -139,13 +140,13 @@ class _PasswordResetScreenState extends ConsumerState<PasswordResetScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'Choose a new password',
+            context.l10n.chooseNewPassword,
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.titleMedium,
           ),
           const SizedBox(height: 4),
-          const Text(
-            'Enter the code from the reset email and your new password.',
+          Text(
+            context.l10n.enterCodeAndPassword,
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 24),
@@ -158,7 +159,7 @@ class _PasswordResetScreenState extends ConsumerState<PasswordResetScreen> {
             autocorrect: false,
             validator: (v) => (v != null && v.trim().isNotEmpty)
                 ? null
-                : 'Paste the code from the email',
+                : context.l10n.pasteCodeFromEmail,
           ),
           const SizedBox(height: 12),
           TextFormField(
@@ -181,7 +182,7 @@ class _PasswordResetScreenState extends ConsumerState<PasswordResetScreen> {
             obscureText: true,
             onFieldSubmitted: (_) => _submit(),
             validator: (v) =>
-                v == _newCtrl.text ? null : 'Passwords do not match',
+                v == _newCtrl.text ? null : context.l10n.passwordsDoNotMatch,
           ),
           if (_error != null) ...[
             const SizedBox(height: 16),

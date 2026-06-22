@@ -665,7 +665,7 @@ class _LockBanner extends ConsumerWidget {
     final String msg;
     if (holderId == null) {
       icon = Icons.cloud_off_outlined;
-      msg = 'Connect to your server to edit this shared note.';
+      msg = context.l10n.lockConnectToEdit;
     } else {
       icon = Icons.lock_outline;
       final users =
@@ -675,8 +675,8 @@ class _LockBanner extends ConsumerWidget {
           .firstWhere((u) => u?.id == holderId, orElse: () => null)
           ?.email;
       msg = email != null
-          ? 'Being edited by $email'
-          : 'Another member is editing this note.';
+          ? context.l10n.lockBeingEditedBy(email)
+          : context.l10n.lockAnotherMember;
     }
     return Material(
       color: scheme.secondaryContainer,

@@ -352,10 +352,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Future<void> _restore() async {
     final l10n = context.l10n; // capture before awaits
     final file = await openFile(acceptedTypeGroups: [
-      const XTypeGroup(
-        label: 'Noteesek backup',
-        extensions: ['zip', 'json'],
-        mimeTypes: ['application/zip', 'application/json'],
+      XTypeGroup(
+        label: l10n.backupFileLabel,
+        extensions: const ['zip', 'json'],
+        mimeTypes: const ['application/zip', 'application/json'],
       ),
     ]);
     if (file == null || !mounted) return;
@@ -454,8 +454,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       onChanged: (v) =>
                           setLocal(() => wipeServer = v ?? false),
                       title: Text(context.l10n.wipeOnServer),
-                      subtitle: const Text(
-                          'Only your account — other users are unaffected'),
+                      subtitle: Text(context.l10n.wipeServerSub),
                     ),
                     if (anySelected) ...[
                       const SizedBox(height: 4),
@@ -468,10 +467,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                           Expanded(
                             child: Text(
                               (wipeLocal && wipeServer)
-                                  ? "You'll stay signed in — both copies are "
-                                      'erased, so nothing re-syncs.'
-                                  : "You'll be signed out so the remaining copy "
-                                      "can't sync back.",
+                                  ? context.l10n.wipeBothNotice
+                                  : context.l10n.wipeOneNotice,
                               style: Theme.of(ctx).textTheme.bodySmall,
                             ),
                           ),
@@ -626,7 +623,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               leading: const Icon(Icons.account_circle_outlined),
               title: Text(email.isEmpty ? context.l10n.signedIn : email),
               subtitle: Text(versionMismatch
-                  ? 'App and server versions differ — see About below'
+                  ? context.l10n.accountVersionMismatchSub
                   : context.l10n.signedIn),
               trailing: versionMismatch
                   ? Tooltip(
@@ -641,8 +638,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               contentPadding: EdgeInsets.zero,
               leading: const Icon(Icons.cloud_off_outlined),
               title: Text(context.l10n.notConnected),
-              subtitle: const Text(
-                  'Connect a server to sync your notes across devices.'),
+              subtitle: Text(context.l10n.notConnectedSub),
               trailing: const Icon(Icons.chevron_right),
               onTap: _connect,
             ),
@@ -664,7 +660,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     obscureText: true,
                     validator: (v) => (v != null && v.isNotEmpty)
                         ? null
-                        : 'Enter your current password',
+                        : context.l10n.enterCurrentPassword,
                   ),
                   const SizedBox(height: 12),
                   TextFormField(
@@ -676,7 +672,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     obscureText: true,
                     validator: (v) => (v != null && v.length >= 8)
                         ? null
-                        : 'At least 8 characters',
+                        : context.l10n.atLeast8Chars,
                   ),
                   const SizedBox(height: 12),
                   TextFormField(
@@ -688,7 +684,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     obscureText: true,
                     onFieldSubmitted: (_) => _changePassword(),
                     validator: (v) =>
-                        v == _newCtrl.text ? null : 'Passwords do not match',
+                        v == _newCtrl.text ? null : context.l10n.passwordsDoNotMatch,
                   ),
                   if (_conn == _Conn.unreachable) ...[
                     const SizedBox(height: 12),
@@ -698,8 +694,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            "Server not responding — you can't change your "
-                            'password right now.',
+                            context.l10n.serverNotRespondingPw,
                             style: TextStyle(color: scheme.error),
                           ),
                         ),
@@ -741,8 +736,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               contentPadding: EdgeInsets.zero,
               secondary: const Icon(Icons.text_format),
               title: Text(context.l10n.markdownFormatting),
-              subtitle: const Text(
-                  'Render note text as Markdown and show a formatting toolbar'),
+              subtitle: Text(context.l10n.markdownFormattingSub),
               value: on,
               onChanged: (v) =>
                   ref.read(markdownEnabledProvider.notifier).set(v),
@@ -767,8 +761,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             leading: const Icon(Icons.dns_outlined),
             title: Text(pb.baseURL),
             subtitle: Text(signedIn
-                ? 'Sign out to connect to a different server.'
-                : 'Tap to connect to a server and sign in.'),
+                ? context.l10n.serverSubSignOut
+                : context.l10n.serverSubConnect),
             // When signed out, the row is a shortcut into the connect flow.
             onTap: signedIn ? null : _connect,
             // The live-availability check only makes sense for the server we're
@@ -793,8 +787,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             leading: const Icon(Icons.history),
             title: Text(context.l10n.versionHistory),
             subtitle: Text(signedIn
-                ? 'Automatic restore points'
-                : 'Sign in to a server to use'),
+                ? context.l10n.versionHistorySubOn
+                : context.l10n.versionHistorySubOff),
             onTap: signedIn
                 ? () => Navigator.of(context).push(MaterialPageRoute(
                       builder: (_) => const SnapshotsScreen(),
@@ -851,10 +845,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 : Icon(Icons.delete_forever_outlined, color: scheme.error),
             title: Text(context.l10n.wipeData, style: TextStyle(color: scheme.error)),
             subtitle: Text(kIsWeb
-                ? 'Permanently delete your notes on the server'
+                ? context.l10n.wipeSubServer
                 : signedIn
-                    ? 'Permanently delete notes on this device and/or the server'
-                    : 'Permanently delete all notes on this device'),
+                    ? context.l10n.wipeSubBoth
+                    : context.l10n.wipeSubDevice),
             onTap: _wipeBusy ? null : () => _showWipeDialog(signedIn: signedIn),
           ),
           const SizedBox(height: 24),
@@ -882,8 +876,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               leading: Icon(Icons.logout, color: scheme.error),
               title: Text(context.l10n.signOut, style: TextStyle(color: scheme.error)),
               subtitle: Text(kIsWeb
-                  ? 'Sign out of this account'
-                  : 'Stop syncing; notes stay on this device'),
+                  ? context.l10n.signOutSubWeb
+                  : context.l10n.signOutSubMobile),
               onTap: _signOut,
             ),
           ],
@@ -923,18 +917,19 @@ class _SectionHeader extends StatelessWidget {
 /// Mobile-only sync status row: a simple state icon (synced / syncing /
 /// offline) plus the last-synced time, tappable to sync now.
 class _SyncStatusTile extends ConsumerWidget {
-  String _ago(DateTime? t) {
-    if (t == null) return 'Not synced yet';
+  String _ago(AppLocalizations l10n, DateTime? t) {
+    if (t == null) return l10n.syncNotSyncedYet;
     final d = DateTime.now().difference(t);
-    if (d.inSeconds < 10) return 'Last synced just now';
-    if (d.inMinutes < 1) return 'Last synced ${d.inSeconds}s ago';
-    if (d.inMinutes < 60) return 'Last synced ${d.inMinutes} min ago';
-    if (d.inHours < 24) return 'Last synced ${d.inHours} h ago';
-    return 'Last synced ${d.inDays} d ago';
+    if (d.inSeconds < 10) return l10n.syncJustNow;
+    if (d.inMinutes < 1) return l10n.syncSecondsAgo(d.inSeconds);
+    if (d.inMinutes < 60) return l10n.syncMinutesAgo(d.inMinutes);
+    if (d.inHours < 24) return l10n.syncHoursAgo(d.inHours);
+    return l10n.syncDaysAgo(d.inDays);
   }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = context.l10n;
     final sync = ref.watch(syncControllerProvider);
     final hasPending = ref.watch(hasPendingChangesProvider).value ?? false;
     final scheme = Theme.of(context).colorScheme;
@@ -946,23 +941,23 @@ class _SyncStatusTile extends ConsumerWidget {
             width: 24,
             child: CircularProgressIndicator(strokeWidth: 2),
           ),
-          'Syncing…',
-          _ago(sync.lastSync),
+          l10n.syncSyncing,
+          _ago(l10n, sync.lastSync),
         ),
       _ when !sync.reachable => (
           Icon(Icons.cloud_off, color: scheme.error),
-          'Offline',
-          'Server not responding',
+          l10n.syncOffline,
+          l10n.syncServerNotResponding,
         ),
       _ when hasPending => (
           const Icon(Icons.cloud_upload_outlined),
-          'Changes not synced',
-          'Tap Sync now to push them',
+          l10n.syncChangesNotSynced,
+          l10n.syncTapToPush,
         ),
       _ => (
           const Icon(Icons.cloud_done_outlined),
-          'Synced',
-          _ago(sync.lastSync),
+          l10n.syncSynced,
+          _ago(l10n, sync.lastSync),
         ),
     };
 
@@ -1092,8 +1087,8 @@ class _AboutSectionState extends ConsumerState<_AboutSection> {
     }
 
     String serverSubtitle() {
-      if (_serverLoading) return 'Checking…';
-      if (_serverFailed || _server == null) return 'Unavailable';
+      if (_serverLoading) return context.l10n.checking;
+      if (_serverFailed || _server == null) return context.l10n.unavailable;
       return _server!.display;
     }
 
@@ -1127,9 +1122,8 @@ class _AboutSectionState extends ConsumerState<_AboutSection> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'This app (${_app!.version}) and the server '
-                    '(${_server!.version}) are different versions. Some '
-                    'features may not work until both are updated.',
+                    context.l10n.versionMismatchAbout(
+                        _app!.version, _server!.version),
                     style: theme.textTheme.bodySmall,
                   ),
                 ),
@@ -1278,9 +1272,9 @@ class _AppLockSection extends ConsumerWidget {
                 onPressed: () {
                   final p = pin.text;
                   if (p.length < 4) {
-                    setLocal(() => error = 'Use at least 4 digits');
+                    setLocal(() => error = context.l10n.pinUseAtLeast4Digits);
                   } else if (p != confirm.text) {
-                    setLocal(() => error = "PINs don't match");
+                    setLocal(() => error = context.l10n.pinsDoNotMatch);
                   } else {
                     Navigator.of(ctx).pop(p);
                   }

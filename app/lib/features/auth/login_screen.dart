@@ -157,8 +157,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text(
-                    "Enter your account email and we'll send a reset link."),
+                Text(context.l10n.forgotPasswordEmailPrompt),
                 const SizedBox(height: 12),
                 TextFormField(
                   controller: emailCtrl,
@@ -170,7 +169,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     prefixIcon: Icon(Icons.email_outlined),
                   ),
                   validator: (v) =>
-                      (v?.contains('@') ?? false) ? null : 'Enter your email',
+                      (v?.contains('@') ?? false) ? null : context.l10n.enterYourEmail,
                   onFieldSubmitted: (_) => submit(),
                 ),
               ],
@@ -290,7 +289,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     ],
                     textInputAction: TextInputAction.next,
                     validator: (v) =>
-                        (v?.contains('@') ?? false) ? null : 'Enter your email',
+                        (v?.contains('@') ?? false) ? null : context.l10n.enterYourEmail,
                   ),
                   const SizedBox(height: 12),
                   TextFormField(

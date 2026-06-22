@@ -112,9 +112,7 @@ class _ReconciliationScreenState extends ConsumerState<ReconciliationScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              "Notes can't be merged across accounts. To continue, this "
-              "device's data will be replaced with the data from the account "
-              'you just signed into.',
+              context.l10n.replaceCrossAccountBody,
               style: theme.textTheme.bodyMedium,
             ),
             const SizedBox(height: 16),
@@ -291,7 +289,7 @@ class _ErrorBody extends StatelessWidget {
           children: [
             const Icon(Icons.cloud_off_outlined, size: 48),
             const SizedBox(height: 12),
-            Text("Couldn't read the account data.\n$error",
+            Text('${context.l10n.couldNotReadAccountData}\n$error',
                 textAlign: TextAlign.center),
             const SizedBox(height: 16),
             FilledButton(onPressed: onRetry, child: Text(context.l10n.retry)),

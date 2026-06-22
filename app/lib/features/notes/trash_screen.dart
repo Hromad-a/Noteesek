@@ -44,11 +44,9 @@ class TrashScreen extends ConsumerWidget {
                     onPressed: () async {
                       final ok = await _confirm(
                         context,
-                        title: 'Empty trash?',
-                        message:
-                            'Permanently delete all ${notes.length} notes in '
-                            'trash. This cannot be undone.',
-                        action: 'Empty trash',
+                        title: context.l10n.emptyTrashTitle,
+                        message: context.l10n.emptyTrashBody(notes.length),
+                        action: context.l10n.emptyTrashAction,
                       );
                       if (ok) {
                         await _emptyTrash(
@@ -74,7 +72,7 @@ class TrashScreen extends ConsumerWidget {
                 final NoteRow note = notes[i];
                 final title = note.title.trim().isNotEmpty
                     ? note.title
-                    : (note.body.trim().isNotEmpty ? note.body : 'Empty note');
+                    : (note.body.trim().isNotEmpty ? note.body : context.l10n.emptyNote);
                 return ListTile(
                   leading: Icon(note.type == 'checklist'
                       ? Icons.checklist
@@ -96,10 +94,8 @@ class TrashScreen extends ConsumerWidget {
                         onPressed: () async {
                           final ok = await _confirm(
                             context,
-                            title: 'Delete forever?',
-                            message:
-                                'Permanently delete this note. This cannot be '
-                                'undone.',
+                            title: context.l10n.deleteForeverTitle,
+                            message: context.l10n.deleteForeverBody,
                             action: context.l10n.delete,
                           );
                           if (ok) await _deleteForever(ref, note.id);

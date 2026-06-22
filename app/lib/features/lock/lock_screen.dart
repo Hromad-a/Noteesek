@@ -37,12 +37,13 @@ class _LockScreenState extends ConsumerState<LockScreen> {
 
   Future<void> _tryBiometric() async {
     if (_checking) return;
+    final reason = context.l10n.unlockNoteesek; // capture before awaits
     setState(() => _checking = true);
     try {
       final supported = await _auth.isDeviceSupported();
       if (!supported) return;
       final ok = await _auth.authenticate(
-        localizedReason: 'Unlock Noteesek',
+        localizedReason: reason,
         persistAcrossBackgrounding: true,
       );
       if (ok) ref.read(appLockProvider.notifier).unlock();

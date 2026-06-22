@@ -115,9 +115,7 @@ class _ManageLabelsScreenState extends ConsumerState<ManageLabelsScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(context.l10n.deleteEntityTitle(label.name)),
-        content: const Text(
-            'This removes the label from all notes. The notes themselves are '
-            'kept.'),
+        content: Text(context.l10n.deleteLabelBody),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
