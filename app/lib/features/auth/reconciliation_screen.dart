@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../l10n/l10n.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers.dart';
@@ -76,7 +77,7 @@ class _ReconciliationScreenState extends ConsumerState<ReconciliationScreen> {
       setState(() => _running = false);
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(content: Text('Failed: $e')));
+        ..showSnackBar(SnackBar(content: Text(context.l10n.failedWithDetail('$e'))));
     }
   }
 
@@ -86,7 +87,7 @@ class _ReconciliationScreenState extends ConsumerState<ReconciliationScreen> {
       canPop: false, // a choice (or Cancel) must be made; no silent back-out
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Switch account'),
+          title: Text(context.l10n.switchAccount),
           automaticallyImplyLeading: false,
         ),
         body: _inspectError != null
@@ -106,7 +107,7 @@ class _ReconciliationScreenState extends ConsumerState<ReconciliationScreen> {
           padding: const EdgeInsets.all(16),
           children: [
             Text(
-              'This device holds notes from another account.',
+              context.l10n.deviceHoldsOtherAccount,
               style: theme.textTheme.titleMedium,
             ),
             const SizedBox(height: 8),
@@ -129,13 +130,13 @@ class _ReconciliationScreenState extends ConsumerState<ReconciliationScreen> {
                 backgroundColor: theme.colorScheme.error,
                 foregroundColor: theme.colorScheme.onError,
               ),
-              child: const Text('Replace this device with the server'),
+              child: Text(context.l10n.replaceDeviceWithServer),
             ),
             const SizedBox(height: 8),
             TextButton(
               onPressed:
                   _running ? null : () => Navigator.of(context).pop(false),
-              child: const Text('Cancel'),
+              child: Text(context.l10n.cancel),
             ),
           ],
         ),
@@ -145,10 +146,11 @@ class _ReconciliationScreenState extends ConsumerState<ReconciliationScreen> {
             child: Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
-                children: const [
-                  CircularProgressIndicator(),
-                  SizedBox(height: 12),
-                  Text('Replacing…', style: TextStyle(color: Colors.white)),
+                children: [
+                  const CircularProgressIndicator(),
+                  const SizedBox(height: 12),
+                  Text(context.l10n.replacing,
+                      style: const TextStyle(color: Colors.white)),
                 ],
               ),
             ),
@@ -170,8 +172,7 @@ class _ReconciliationScreenState extends ConsumerState<ReconciliationScreen> {
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                'Deletes ${s.localNotes} note${s.localNotes == 1 ? '' : 's'} '
-                'from this device and cannot be undone.',
+                context.l10n.deletesNotesWarning(s.localNotes),
                 style: theme.textTheme.bodySmall
                     ?.copyWith(color: theme.colorScheme.error),
               ),
@@ -184,9 +185,9 @@ class _ReconciliationScreenState extends ConsumerState<ReconciliationScreen> {
           autocorrect: false,
           enableSuggestions: false,
           textCapitalization: TextCapitalization.characters,
-          decoration: const InputDecoration(
+          decoration: InputDecoration(
             border: OutlineInputBorder(),
-            labelText: 'Type $_confirmWord to confirm',
+            labelText: context.l10n.typeWordToConfirm(_confirmWord),
           ),
           onChanged: (_) => setState(() {}),
         ),
@@ -217,18 +218,13 @@ class _BackupWarning extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Save anything you want to keep first',
+                  context.l10n.saveBeforeReplaceTitle,
                   style: theme.textTheme.titleSmall
                       ?.copyWith(color: scheme.onErrorContainer),
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Replacing is permanent — notes on this device that aren\'t '
-                  'on a server will be lost. Before continuing, either:\n'
-                  '• Cancel and sign back into the original account to sync '
-                  'these notes, or\n'
-                  '• Cancel and use Settings → “Back up to file”, then '
-                  're-import after switching.',
+                  context.l10n.replaceWarningBody,
                   style: theme.textTheme.bodySmall
                       ?.copyWith(color: scheme.onErrorContainer),
                 ),
@@ -261,7 +257,7 @@ class _SummaryCard extends StatelessWidget {
               dense: true,
               contentPadding: EdgeInsets.zero,
               leading: const Icon(Icons.smartphone_outlined),
-              title: const Text('This device (will be discarded)'),
+              title: Text(context.l10n.deviceWillBeDiscarded),
               subtitle: Text(line(summary.localNotebooks, summary.localNotes)),
             ),
             const Divider(height: 1),
@@ -269,7 +265,7 @@ class _SummaryCard extends StatelessWidget {
               dense: true,
               contentPadding: EdgeInsets.zero,
               leading: const Icon(Icons.cloud_download_outlined),
-              title: const Text('This account (will be loaded)'),
+              title: Text(context.l10n.accountWillBeLoaded),
               subtitle:
                   Text(line(summary.serverNotebooks, summary.serverNotes)),
             ),
@@ -299,10 +295,10 @@ class _ErrorBody extends StatelessWidget {
             Text("Couldn't read the account data.\n$error",
                 textAlign: TextAlign.center),
             const SizedBox(height: 16),
-            FilledButton(onPressed: onRetry, child: const Text('Retry')),
+            FilledButton(onPressed: onRetry, child: Text(context.l10n.retry)),
             TextButton(
               onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Cancel'),
+              child: Text(context.l10n.cancel),
             ),
           ],
         ),
