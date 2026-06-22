@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../l10n/l10n.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:local_auth/local_auth.dart';
@@ -36,12 +37,13 @@ class _LockScreenState extends ConsumerState<LockScreen> {
 
   Future<void> _tryBiometric() async {
     if (_checking) return;
+    final reason = context.l10n.unlockNoteesek; // capture before awaits
     setState(() => _checking = true);
     try {
       final supported = await _auth.isDeviceSupported();
       if (!supported) return;
       final ok = await _auth.authenticate(
-        localizedReason: 'Unlock Noteesek',
+        localizedReason: reason,
         persistAcrossBackgrounding: true,
       );
       if (ok) ref.read(appLockProvider.notifier).unlock();
@@ -77,7 +79,7 @@ class _LockScreenState extends ConsumerState<LockScreen> {
               children: [
                 const Icon(Icons.lock_outline, size: 56),
                 const SizedBox(height: 16),
-                Text('Noteesek is locked',
+                Text(context.l10n.appLocked,
                     style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 24),
                 TextField(
@@ -88,7 +90,7 @@ class _LockScreenState extends ConsumerState<LockScreen> {
                   inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                   textAlign: TextAlign.center,
                   decoration: InputDecoration(
-                    labelText: 'PIN',
+                    labelText: context.l10n.pinLabel,
                     border: const OutlineInputBorder(),
                     errorText: _error,
                   ),
@@ -100,14 +102,14 @@ class _LockScreenState extends ConsumerState<LockScreen> {
                 const SizedBox(height: 16),
                 FilledButton(
                   onPressed: _submitPin,
-                  child: const Text('Unlock'),
+                  child: Text(context.l10n.unlock),
                 ),
                 if (biometric) ...[
                   const SizedBox(height: 8),
                   TextButton.icon(
                     onPressed: _checking ? null : _tryBiometric,
                     icon: const Icon(Icons.fingerprint),
-                    label: const Text('Use biometrics'),
+                    label: Text(context.l10n.useBiometrics),
                   ),
                 ],
               ],

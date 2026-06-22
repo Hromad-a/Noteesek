@@ -8,6 +8,7 @@ import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 
 import '../../data/local/database.dart';
 import '../../data/notes_repository.dart';
+import '../../l10n/l10n.dart';
 import '../../providers.dart';
 import '../../sync/sync_controller.dart';
 import '../../ui/app_messenger.dart';
@@ -91,16 +92,16 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
   }
 
   Future<void> _manualSync(BuildContext context, WidgetRef ref) async {
+    final l10n = context.l10n; // capture before the await (context may unmount)
     final outcome =
         await ref.read(syncControllerProvider.notifier).syncNow(manual: true);
     final text = switch (outcome) {
-      SyncOutcome.ok => 'Synced',
-      SyncOutcome.busy => 'Sync already in progress',
-      SyncOutcome.notConnected => 'Connect a server to sync',
-      SyncOutcome.unreachable =>
-        'Server not responding — your notes are saved on this device',
+      SyncOutcome.ok => l10n.snackSynced,
+      SyncOutcome.busy => l10n.snackSyncInProgress,
+      SyncOutcome.notConnected => l10n.syncConnectToSync,
+      SyncOutcome.unreachable => l10n.snackServerNotResponding,
       SyncOutcome.failed =>
-        ref.read(syncControllerProvider).message ?? 'Sync failed',
+        ref.read(syncControllerProvider).message ?? l10n.snackSyncFailed,
     };
     // Route through the app messenger (atomic clear+show) so it never piles up
     // with or gets stuck behind another snackbar (e.g. an undo).
@@ -154,12 +155,12 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
         appBar: selectionMode
             ? const _SelectionAppBar()
             : AppBar(
-                title: const Text('Notes'),
+                title: Text(context.l10n.notesTitle),
                 actions: [
           IconButton(
             tooltip: viewMode == NoteViewMode.grid
-                ? 'Single-column view'
-                : 'Grid view',
+                ? context.l10n.singleColumnView
+                : context.l10n.gridView,
             icon: Icon(viewMode == NoteViewMode.grid
                 ? Icons.view_agenda_outlined
                 : Icons.grid_view_outlined),
@@ -180,26 +181,26 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
               )
             else if (!connected)
               IconButton(
-                tooltip: 'Connect a server to sync',
+                tooltip: context.l10n.syncConnectToSync,
                 icon: const Icon(Icons.cloud_off_outlined),
                 onPressed: null,
               )
             else if (!sync.reachable)
               IconButton(
-                tooltip: 'Offline — tap to retry',
+                tooltip: context.l10n.syncOfflineRetry,
                 icon: Icon(Icons.cloud_off,
                     color: Theme.of(context).colorScheme.error),
                 onPressed: () => _manualSync(context, ref),
               )
             else if (hasPending)
               IconButton(
-                tooltip: 'Changes not synced yet — tap to sync now',
+                tooltip: context.l10n.syncPendingTapToSync,
                 icon: const Icon(Icons.cloud_upload_outlined),
                 onPressed: () => _manualSync(context, ref),
               )
             else
               IconButton(
-                tooltip: 'Synced — tap to sync now',
+                tooltip: context.l10n.syncSyncedTapToSync,
                 icon: const Icon(Icons.cloud_done_outlined),
                 onPressed: () => _manualSync(context, ref),
               ),
@@ -221,7 +222,7 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
                 child: notesAsync.when(
                 loading: () =>
                     const Center(child: CircularProgressIndicator()),
-                error: (e, _) => Center(child: Text('Error: $e')),
+                error: (e, _) => Center(child: Text(context.l10n.errorWithDetail('$e'))),
                 data: (notes) {
                   if (notes.isEmpty) {
                     final searching =
@@ -321,7 +322,7 @@ class _SelectionAppBar extends ConsumerWidget implements PreferredSizeWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Color',
+              Text(context.l10n.color,
                   style: Theme.of(sheetContext).textTheme.titleMedium),
               const SizedBox(height: 16),
               Wrap(
@@ -387,7 +388,7 @@ class _SelectionAppBar extends ConsumerWidget implements PreferredSizeWidget {
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-              child: Text('Move to notebook',
+              child: Text(context.l10n.moveToNotebook,
                   style: Theme.of(sheetContext).textTheme.titleMedium),
             ),
             Flexible(
@@ -428,13 +429,13 @@ class _SelectionAppBar extends ConsumerWidget implements PreferredSizeWidget {
     return AppBar(
       leading: IconButton(
         icon: const Icon(Icons.close),
-        tooltip: 'Cancel',
+        tooltip: context.l10n.cancel,
         onPressed: done,
       ),
-      title: Text('${ids.length} selected'),
+      title: Text(context.l10n.selectedCount(ids.length)),
       actions: [
         IconButton(
-          tooltip: allPinned ? 'Unpin' : 'Pin',
+          tooltip: allPinned ? context.l10n.unpin : context.l10n.pin,
           icon: Icon(allPinned ? Icons.push_pin : Icons.push_pin_outlined),
           onPressed: () async {
             await Future.wait(
@@ -443,7 +444,7 @@ class _SelectionAppBar extends ConsumerWidget implements PreferredSizeWidget {
           },
         ),
         IconButton(
-          tooltip: 'Color',
+          tooltip: context.l10n.color,
           icon: const Icon(Icons.palette_outlined),
           onPressed: () async {
             await _pickColor(context, repo, ids);
@@ -451,7 +452,7 @@ class _SelectionAppBar extends ConsumerWidget implements PreferredSizeWidget {
           },
         ),
         IconButton(
-          tooltip: 'Labels',
+          tooltip: context.l10n.labels,
           icon: const Icon(Icons.label_outline),
           onPressed: () async {
             await _pickLabels(context, repo, ids);
@@ -460,6 +461,7 @@ class _SelectionAppBar extends ConsumerWidget implements PreferredSizeWidget {
         ),
         PopupMenuButton<String>(
           onSelected: (value) async {
+            final l10n = context.l10n; // before any await
             switch (value) {
               case 'share':
                 // Single-note export only — offered when exactly one is picked.
@@ -477,8 +479,8 @@ class _SelectionAppBar extends ConsumerWidget implements PreferredSizeWidget {
                 await Future.wait(deleted.map((id) => repo.softDelete(id)));
                 showUndoSnackBar(
                   message: deleted.length == 1
-                      ? 'Note moved to Trash'
-                      : '${deleted.length} notes moved to Trash',
+                      ? l10n.noteMovedToTrash
+                      : l10n.notesMovedToTrashCount(deleted.length),
                   onUndo: () {
                     for (final id in deleted) {
                       repo.restore(id);
@@ -490,36 +492,36 @@ class _SelectionAppBar extends ConsumerWidget implements PreferredSizeWidget {
           },
           itemBuilder: (context) => [
             if (ids.length == 1)
-              const PopupMenuItem(
+              PopupMenuItem(
                 value: 'share',
                 child: ListTile(
                   contentPadding: EdgeInsets.zero,
                   leading: Icon(Icons.ios_share),
-                  title: Text('Share / export'),
+                  title: Text(context.l10n.shareExport),
                 ),
               ),
-            const PopupMenuItem(
+            PopupMenuItem(
               value: 'archive',
               child: ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: Icon(Icons.archive_outlined),
-                title: Text('Archive'),
+                title: Text(context.l10n.archive),
               ),
             ),
-            const PopupMenuItem(
+            PopupMenuItem(
               value: 'move',
               child: ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: Icon(Icons.drive_file_move_outlined),
-                title: Text('Move to notebook'),
+                title: Text(context.l10n.moveToNotebook),
               ),
             ),
-            const PopupMenuItem(
+            PopupMenuItem(
               value: 'delete',
               child: ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: Icon(Icons.delete_outline),
-                title: Text('Delete'),
+                title: Text(context.l10n.delete),
               ),
             ),
           ],
@@ -553,13 +555,13 @@ class _BulkLabelSheetState extends ConsumerState<_BulkLabelSheet> {
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-              child: Text('Apply labels',
+              child: Text(context.l10n.applyLabels,
                   style: Theme.of(context).textTheme.titleMedium),
             ),
             if (labels.isEmpty)
-              const Padding(
-                padding: EdgeInsets.all(16),
-                child: Text('No labels yet'),
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(context.l10n.noLabelsYet),
               )
             else
               Flexible(
@@ -588,13 +590,13 @@ class _BulkLabelSheetState extends ConsumerState<_BulkLabelSheet> {
                 children: [
                   TextButton(
                     onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('Cancel'),
+                    child: Text(context.l10n.cancel),
                   ),
                   const SizedBox(width: 8),
                   FilledButton(
                     onPressed: () =>
                         Navigator.of(context).pop(_chosen.toList()),
-                    child: const Text('Apply'),
+                    child: Text(context.l10n.apply),
                   ),
                 ],
               ),
@@ -615,17 +617,17 @@ class _SortMenu extends ConsumerWidget {
 
   static const _ascValue = '__asc__';
 
-  String _label(NoteSortField f) => switch (f) {
-        NoteSortField.custom => 'Custom order',
-        NoteSortField.edited => 'Date edited',
-        NoteSortField.created => 'Date created',
+  String _label(BuildContext context, NoteSortField f) => switch (f) {
+        NoteSortField.custom => context.l10n.customOrder,
+        NoteSortField.edited => context.l10n.dateEdited,
+        NoteSortField.created => context.l10n.dateCreated,
       };
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final notifier = ref.read(noteSortProvider.notifier);
     return PopupMenuButton<String>(
-      tooltip: 'Sort notes',
+      tooltip: context.l10n.sortNotes,
       icon: const Icon(Icons.sort),
       onSelected: (value) {
         if (value == _ascValue) {
@@ -639,7 +641,7 @@ class _SortMenu extends ConsumerWidget {
           CheckedPopupMenuItem(
             value: f.name,
             checked: sort.field == f,
-            child: Text(_label(f)),
+            child: Text(_label(context, f)),
           ),
         const PopupMenuDivider(),
         PopupMenuItem(
@@ -650,7 +652,7 @@ class _SortMenu extends ConsumerWidget {
             leading: Icon(sort.ascending
                 ? Icons.arrow_upward
                 : Icons.arrow_downward),
-            title: Text(sort.ascending ? 'Ascending' : 'Descending'),
+            title: Text(sort.ascending ? context.l10n.ascending : context.l10n.descending),
           ),
         ),
       ],
@@ -682,9 +684,8 @@ class _BottomBar extends ConsumerWidget {
     void offlineSnack() {
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
-        ..showSnackBar(const SnackBar(
-          content: Text("You're offline — adding notes to a shared notebook "
-              'needs a connection to your server.'),
+        ..showSnackBar(SnackBar(
+          content: Text(context.l10n.offlineSharedNotebookSnack),
         ));
     }
 
@@ -699,8 +700,8 @@ class _BottomBar extends ConsumerWidget {
             opacity: blocked ? 0.4 : 1,
             child: IconButton.filledTonal(
               tooltip: blocked
-                  ? 'Offline — shared notebook'
-                  : 'New checklist',
+                  ? context.l10n.offlineSharedNotebook
+                  : context.l10n.newChecklist,
               onPressed: blocked ? offlineSnack : onChecklist,
               icon: const Icon(Icons.checklist),
             ),
@@ -709,7 +710,7 @@ class _BottomBar extends ConsumerWidget {
           Opacity(
             opacity: blocked ? 0.4 : 1,
             child: IconButton.filled(
-              tooltip: blocked ? 'Offline — shared notebook' : 'New note',
+              tooltip: blocked ? context.l10n.offlineSharedNotebook : context.l10n.newNote,
               onPressed: blocked ? offlineSnack : onText,
               icon: const Icon(Icons.edit),
             ),
@@ -740,21 +741,21 @@ class _NotebookSelector extends ConsumerWidget {
     final name = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('New notebook'),
+        title: Text(context.l10n.newNotebook),
         content: TextField(
           controller: ctrl,
           autofocus: true,
-          decoration: const InputDecoration(labelText: 'Notebook name'),
+          decoration: InputDecoration(labelText: context.l10n.notebookName),
           onSubmitted: (v) => Navigator.of(ctx).pop(v.trim()),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel'),
+            child: Text(context.l10n.cancel),
           ),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(ctrl.text.trim()),
-            child: const Text('Create'),
+            child: Text(context.l10n.create),
           ),
         ],
       ),
@@ -773,9 +774,9 @@ class _NotebookSelector extends ConsumerWidget {
     final activeNbShared =
         activeNb != null && sharedWithIds(activeNb.sharedWith).isNotEmpty;
     final label = switch (activeId) {
-      kAllNotes => 'All notes',
-      kNoNotebook => 'No notebook',
-      _ => activeNb?.name ?? 'All notes',
+      kAllNotes => context.l10n.allNotes,
+      kNoNotebook => context.l10n.noNotebook,
+      _ => activeNb?.name ?? context.l10n.allNotes,
     };
     final chipIcon = activeNbShared ? Icons.group_outlined : _scopeIcon(activeId);
 
@@ -797,7 +798,7 @@ class _NotebookSelector extends ConsumerWidget {
     }
 
     return PopupMenuButton<String>(
-      tooltip: 'Switch notebook',
+      tooltip: context.l10n.switchNotebook,
       position: PopupMenuPosition.over,
       constraints: const BoxConstraints(minWidth: 240, maxWidth: 320),
       onSelected: (value) async {
@@ -814,8 +815,8 @@ class _NotebookSelector extends ConsumerWidget {
         }
       },
       itemBuilder: (context) => [
-        scopeItem(kAllNotes, Icons.notes_outlined, 'All notes'),
-        scopeItem(kNoNotebook, Icons.label_off_outlined, 'No notebook'),
+        scopeItem(kAllNotes, Icons.notes_outlined, context.l10n.allNotes),
+        scopeItem(kNoNotebook, Icons.label_off_outlined, context.l10n.noNotebook),
         if (notebooks.isNotEmpty) const PopupMenuDivider(),
         for (final nb in notebooks)
           scopeItem(
@@ -826,22 +827,22 @@ class _NotebookSelector extends ConsumerWidget {
             nb.name,
           ),
         const PopupMenuDivider(),
-        const PopupMenuItem(
+        PopupMenuItem(
           value: _newValue,
           child: ListTile(
             dense: true,
             contentPadding: EdgeInsets.zero,
             leading: Icon(Icons.add),
-            title: Text('New notebook'),
+            title: Text(context.l10n.newNotebook),
           ),
         ),
-        const PopupMenuItem(
+        PopupMenuItem(
           value: _manageValue,
           child: ListTile(
             dense: true,
             contentPadding: EdgeInsets.zero,
             leading: Icon(Icons.edit_outlined),
-            title: Text('Manage notebooks'),
+            title: Text(context.l10n.manageNotebooks),
           ),
         ),
       ],
@@ -911,7 +912,7 @@ class _AppDrawer extends ConsumerWidget {
                         const SizedBox(width: 6),
                         Expanded(
                           child: Text(
-                            connected ? email : 'Local only — not synced',
+                            connected ? email : context.l10n.localOnlyNotSynced,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -928,17 +929,17 @@ class _AppDrawer extends ConsumerWidget {
                 children: [
                   ListTile(
                     leading: const Icon(Icons.notes),
-                    title: const Text('Notes'),
+                    title: Text(context.l10n.notesTitle),
                     onTap: () => Navigator.of(context).pop(),
                   ),
                   ListTile(
                     leading: const Icon(Icons.archive_outlined),
-                    title: const Text('Archive'),
+                    title: Text(context.l10n.archiveTitle),
                     onTap: () => _push(context, const ArchiveScreen()),
                   ),
                   ListTile(
                     leading: const Icon(Icons.delete_outline),
-                    title: const Text('Trash'),
+                    title: Text(context.l10n.trash),
                     onTap: () => _push(context, const TrashScreen()),
                   ),
                   const _LabelsSection(),
@@ -949,13 +950,13 @@ class _AppDrawer extends ConsumerWidget {
             if (!kIsWeb && !connected)
               ListTile(
                 leading: const Icon(Icons.cloud_sync_outlined),
-                title: const Text('Connect to server'),
-                subtitle: const Text('Enable sync across devices'),
+                title: Text(context.l10n.connectToServer),
+                subtitle: Text(context.l10n.enableSyncAcrossDevices),
                 onTap: () => _push(context, const LoginScreen()),
               ),
             ListTile(
               leading: const Icon(Icons.settings_outlined),
-              title: const Text('Settings'),
+              title: Text(context.l10n.settingsTitle),
               onTap: () => _push(context, const SettingsScreen()),
             ),
           ],
@@ -986,7 +987,7 @@ class _LabelsSection extends ConsumerWidget {
         const Divider(height: 1),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-          child: Text('Labels',
+          child: Text(context.l10n.labels,
               style: Theme.of(context).textTheme.labelMedium?.copyWith(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   )),
@@ -1007,7 +1008,7 @@ class _LabelsSection extends ConsumerWidget {
         ListTile(
           dense: true,
           leading: const Icon(Icons.edit_outlined),
-          title: const Text('Edit labels'),
+          title: Text(context.l10n.editLabels),
           onTap: () => _push(context, const ManageLabelsScreen()),
         ),
       ],
@@ -1037,7 +1038,7 @@ class _SearchFieldState extends ConsumerState<_SearchField> {
     final filterCount = ref.watch(searchFiltersProvider).count;
     return SearchBar(
       controller: _ctrl,
-      hintText: 'Search notes',
+      hintText: context.l10n.searchNotes,
       leading: const Padding(
         padding: EdgeInsets.only(left: 8),
         child: Icon(Icons.search),
@@ -1046,14 +1047,14 @@ class _SearchFieldState extends ConsumerState<_SearchField> {
         if (query.isNotEmpty)
           IconButton(
             icon: const Icon(Icons.clear),
-            tooltip: 'Clear',
+            tooltip: context.l10n.clear,
             onPressed: () {
               _ctrl.clear();
               ref.read(searchQueryProvider.notifier).set('');
             },
           ),
         IconButton(
-          tooltip: 'Filter',
+          tooltip: context.l10n.filter,
           isSelected: filterCount > 0,
           icon: Badge(
             isLabelVisible: filterCount > 0,
@@ -1099,37 +1100,37 @@ class _FilterSheet extends ConsumerWidget {
           children: [
             Row(
               children: [
-                Text('Filters',
+                Text(context.l10n.filters,
                     style: Theme.of(context).textTheme.titleMedium),
                 const Spacer(),
                 if (filters.isActive)
                   TextButton(
                     onPressed: notifier.clear,
-                    child: const Text('Clear all'),
+                    child: Text(context.l10n.clearAll),
                   ),
               ],
             ),
             const SizedBox(height: 4),
 
             // Notebook scope.
-            const _FilterLabel('Notebook'),
+            _FilterLabel(context.l10n.filterNotebook),
             Wrap(
               spacing: 8,
               runSpacing: 4,
               children: [
                 ChoiceChip(
-                  label: const Text('Current'),
+                  label: Text(context.l10n.current),
                   selected: filters.notebookId == null,
                   onSelected: (_) => notifier.setNotebook(null),
                 ),
                 ChoiceChip(
-                  label: const Text('All notebooks'),
+                  label: Text(context.l10n.allNotebooks),
                   selected: filters.notebookId == SearchFilters.allNotebooks,
                   onSelected: (_) =>
                       notifier.setNotebook(SearchFilters.allNotebooks),
                 ),
                 ChoiceChip(
-                  label: const Text('No notebook'),
+                  label: Text(context.l10n.noNotebook),
                   selected: filters.notebookId == kNoNotebook,
                   onSelected: (_) => notifier.setNotebook(kNoNotebook),
                 ),
@@ -1145,7 +1146,7 @@ class _FilterSheet extends ConsumerWidget {
 
             // Labels (OR match).
             if (labels.isNotEmpty) ...[
-              const _FilterLabel('Labels'),
+              _FilterLabel(context.l10n.labels),
               Wrap(
                 spacing: 8,
                 runSpacing: 4,
@@ -1166,7 +1167,7 @@ class _FilterSheet extends ConsumerWidget {
             ],
 
             // Color.
-            const _FilterLabel('Color'),
+            _FilterLabel(context.l10n.color),
             Wrap(
               spacing: 8,
               runSpacing: 8,
@@ -1198,17 +1199,17 @@ class _FilterSheet extends ConsumerWidget {
             const SizedBox(height: 12),
 
             // Type.
-            const _FilterLabel('Type'),
+            _FilterLabel(context.l10n.filterType),
             Wrap(
               spacing: 8,
               children: [
                 ChoiceChip(
-                  label: const Text('Text'),
+                  label: Text(context.l10n.typeText),
                   selected: filters.type == 'text',
                   onSelected: (s) => notifier.setType(s ? 'text' : null),
                 ),
                 ChoiceChip(
-                  label: const Text('Checklist'),
+                  label: Text(context.l10n.typeChecklist),
                   selected: filters.type == 'checklist',
                   onSelected: (s) => notifier.setType(s ? 'checklist' : null),
                 ),
@@ -1218,7 +1219,7 @@ class _FilterSheet extends ConsumerWidget {
 
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
-              title: const Text('Has image'),
+              title: Text(context.l10n.hasImage),
               value: filters.hasImage,
               onChanged: notifier.setHasImage,
             ),
@@ -1288,7 +1289,7 @@ class _NoMatches extends StatelessWidget {
           Icon(Icons.search_off,
               size: 56, color: Theme.of(context).disabledColor),
           const SizedBox(height: 8),
-          const Text('No matching notes'),
+          Text(context.l10n.noMatchingNotes),
         ],
       ),
     );
@@ -1312,10 +1313,10 @@ class _EmptyState extends ConsumerWidget {
             Icon(Icons.sticky_note_2_outlined,
                 size: 72, color: theme.disabledColor),
             const SizedBox(height: 16),
-            Text('No notes yet', style: theme.textTheme.titleMedium),
+            Text(context.l10n.noNotesYet, style: theme.textTheme.titleMedium),
             const SizedBox(height: 4),
             Text(
-              'Tap the buttons below to add a note or checklist.',
+              context.l10n.emptyStateHint,
               textAlign: TextAlign.center,
               style: theme.textTheme.bodyMedium
                   ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
@@ -1324,7 +1325,7 @@ class _EmptyState extends ConsumerWidget {
               const SizedBox(height: 24),
               OutlinedButton.icon(
                 icon: const Icon(Icons.cloud_sync_outlined),
-                label: const Text('Connect a server to sync'),
+                label: Text(context.l10n.syncConnectToSync),
                 onPressed: () => Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const LoginScreen()),
                 ),

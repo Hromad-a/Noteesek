@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../data/notes_repository.dart';
+import '../../l10n/l10n.dart';
 import 'single_note_export.dart';
 
 /// Shows the single-note export-format chooser (Markdown / plain text / PDF) in
@@ -20,13 +21,13 @@ Future<void> showShareNoteSheet(
         children: [
           ListTile(
             leading: const Icon(Icons.description_outlined),
-            title: const Text('Markdown'),
+            title: Text(context.l10n.markdown),
             onTap: () =>
                 Navigator.of(sheetContext).pop(NoteExportFormat.markdown),
           ),
           ListTile(
             leading: const Icon(Icons.notes_outlined),
-            title: const Text('Plain text'),
+            title: Text(context.l10n.plainText),
             onTap: () =>
                 Navigator.of(sheetContext).pop(NoteExportFormat.plainText),
           ),
@@ -46,7 +47,8 @@ Future<void> showShareNoteSheet(
     if (context.mounted) {
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(content: Text('Share failed: $e')));
+        ..showSnackBar(
+            SnackBar(content: Text(context.l10n.shareFailed('$e'))));
     }
   }
 }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../l10n/l10n.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pocketbase/pocketbase.dart';
 
@@ -47,15 +48,16 @@ class _PasswordResetScreenState extends ConsumerState<PasswordResetScreen> {
     super.dispose();
   }
 
-  String _humanizeError(ClientException e) {
+  String _humanizeError(AppLocalizations l10n, ClientException e) {
     final msg = e.response['message'] as String?;
     if (msg != null && msg.isNotEmpty) return msg;
-    if (e.statusCode == 0) return 'Cannot reach the server. Check the URL.';
-    return 'Request failed (${e.statusCode}).';
+    if (e.statusCode == 0) return l10n.cannotReachServerCheckUrl;
+    return l10n.requestFailed(e.statusCode);
   }
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+    final l10n = context.l10n; // capture before awaits
     FocusScope.of(context).unfocus();
     setState(() {
       _busy = true;
@@ -70,7 +72,7 @@ class _PasswordResetScreenState extends ConsumerState<PasswordResetScreen> {
       if (!mounted) return;
       setState(() => _done = true);
     } on ClientException catch (e) {
-      setState(() => _error = _humanizeError(e));
+      setState(() => _error = _humanizeError(l10n, e));
     } catch (e) {
       setState(() => _error = e.toString());
     } finally {
@@ -89,7 +91,7 @@ class _PasswordResetScreenState extends ConsumerState<PasswordResetScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Reset password'),
+        title: Text(context.l10n.resetPasswordTitle),
         leading: BackButton(onPressed: _backToSignIn),
       ),
       body: Center(
@@ -112,19 +114,19 @@ class _PasswordResetScreenState extends ConsumerState<PasswordResetScreen> {
             size: 48, color: Colors.green.shade600),
         const SizedBox(height: 16),
         Text(
-          'Your password has been changed.',
+          context.l10n.passwordChangedHeading,
           textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.titleMedium,
         ),
         const SizedBox(height: 8),
-        const Text(
-          'You can now sign in with your new password.',
+        Text(
+          context.l10n.canNowSignIn,
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: 24),
         FilledButton(
           onPressed: _backToSignIn,
-          child: const Text('Back to sign in'),
+          child: Text(context.l10n.backToSignIn),
         ),
       ],
     );
@@ -138,49 +140,49 @@ class _PasswordResetScreenState extends ConsumerState<PasswordResetScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'Choose a new password',
+            context.l10n.chooseNewPassword,
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.titleMedium,
           ),
           const SizedBox(height: 4),
-          const Text(
-            'Enter the code from the reset email and your new password.',
+          Text(
+            context.l10n.enterCodeAndPassword,
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 24),
           TextFormField(
             controller: _tokenCtrl,
-            decoration: const InputDecoration(
-              labelText: 'Reset code',
+            decoration: InputDecoration(
+              labelText: context.l10n.resetCode,
               prefixIcon: Icon(Icons.vpn_key_outlined),
             ),
             autocorrect: false,
             validator: (v) => (v != null && v.trim().isNotEmpty)
                 ? null
-                : 'Paste the code from the email',
+                : context.l10n.pasteCodeFromEmail,
           ),
           const SizedBox(height: 12),
           TextFormField(
             controller: _newCtrl,
-            decoration: const InputDecoration(
-              labelText: 'New password',
+            decoration: InputDecoration(
+              labelText: context.l10n.newPassword,
               prefixIcon: Icon(Icons.lock_reset_outlined),
             ),
             obscureText: true,
             validator: (v) =>
-                (v != null && v.length >= 8) ? null : 'At least 8 characters',
+                (v != null && v.length >= 8) ? null : context.l10n.atLeast8Chars,
           ),
           const SizedBox(height: 12),
           TextFormField(
             controller: _confirmCtrl,
-            decoration: const InputDecoration(
-              labelText: 'Confirm new password',
+            decoration: InputDecoration(
+              labelText: context.l10n.confirmNewPassword,
               prefixIcon: Icon(Icons.lock_reset_outlined),
             ),
             obscureText: true,
             onFieldSubmitted: (_) => _submit(),
             validator: (v) =>
-                v == _newCtrl.text ? null : 'Passwords do not match',
+                v == _newCtrl.text ? null : context.l10n.passwordsDoNotMatch,
           ),
           if (_error != null) ...[
             const SizedBox(height: 16),
@@ -198,12 +200,12 @@ class _PasswordResetScreenState extends ConsumerState<PasswordResetScreen> {
                       width: 20,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Text('Set new password'),
+                  : Text(context.l10n.setNewPassword),
             ),
           ),
           TextButton(
             onPressed: _busy ? null : _backToSignIn,
-            child: const Text('Back to sign in'),
+            child: Text(context.l10n.backToSignIn),
           ),
         ],
       ),

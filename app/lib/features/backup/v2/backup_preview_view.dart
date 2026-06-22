@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import '../../../l10n/l10n.dart';
 
 import 'backup_preview.dart';
 
@@ -77,7 +78,7 @@ class BackupPreviewList extends StatelessWidget {
                             fontWeight: FontWeight.w500,
                             color: empty ? scheme.outline : null))),
                 if (empty)
-                  Text('empty', style: Theme.of(context).textTheme.bodySmall)
+                  Text(context.l10n.emptyLabel, style: Theme.of(context).textTheme.bodySmall)
                 else ...[
                   Text('${g.notes.length}',
                       style: Theme.of(context).textTheme.bodySmall),
@@ -186,11 +187,11 @@ class BackupSelectionBar extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(14, 0, 8, 4),
       child: Row(
         children: [
-          Text('$selected selected',
+          Text(context.l10n.selectedCount(selected),
               style: const TextStyle(fontWeight: FontWeight.w500)),
           const Spacer(),
-          TextButton(onPressed: onAll, child: const Text('All')),
-          TextButton(onPressed: onNone, child: const Text('None')),
+          TextButton(onPressed: onAll, child: Text(context.l10n.selectAll)),
+          TextButton(onPressed: onNone, child: Text(context.l10n.selectNone)),
         ],
       ),
     );
@@ -206,10 +207,10 @@ class BackupSearchField extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
       child: TextField(
-        decoration: const InputDecoration(
+        decoration: InputDecoration(
           isDense: true,
           prefixIcon: Icon(Icons.search),
-          hintText: 'Search notes',
+          hintText: context.l10n.searchNotes,
           border: OutlineInputBorder(),
         ),
         onChanged: onChanged,

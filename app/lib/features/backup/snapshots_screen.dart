@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import '../../../l10n/l10n.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers.dart';
@@ -59,7 +60,7 @@ class SnapshotsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final connected = ref.watch(isAuthenticatedProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('Version history')),
+      appBar: AppBar(title: Text(context.l10n.versionHistory)),
       body: connected
           ? const _SnapshotsBody()
           : const _NeedsServer(),
@@ -111,7 +112,7 @@ class _SnapshotsBody extends ConsumerWidget {
           const Divider(height: 1),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: Text('Snapshots',
+            child: Text(context.l10n.snapshotsHeader,
                 style: Theme.of(context).textTheme.titleSmall),
           ),
           listAsync.when(
@@ -121,13 +122,12 @@ class _SnapshotsBody extends ConsumerWidget {
             ),
             error: (e, _) => Padding(
               padding: const EdgeInsets.all(24),
-              child: Text('Could not load snapshots: $e'),
+              child: Text(context.l10n.couldNotLoadSnapshots('$e')),
             ),
             data: (snaps) => snaps.isEmpty
-                ? const Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Text('No snapshots yet. They appear here once a '
-                        'scheduled or manual backup runs.'),
+                ? Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text(context.l10n.noSnapshotsYet),
                   )
                 : Column(
                     children: [for (final s in snaps) _SnapshotTile(s)],
@@ -150,7 +150,7 @@ class _ConfigCard extends ConsumerWidget {
         height: 120, child: Center(child: CircularProgressIndicator())),
       error: (e, _) => Padding(
         padding: const EdgeInsets.all(16),
-        child: Text('Could not load settings: $e'),
+        child: Text(context.l10n.couldNotLoadSettings('$e')),
       ),
       data: (cfg) => _ConfigEditor(initial: cfg),
     );
@@ -169,22 +169,24 @@ class _ConfigEditorState extends ConsumerState<_ConfigEditor> {
   bool _busy = false;
 
   Future<void> _save(SnapshotConfig next) async {
+    final l10n = context.l10n;
     setState(() => _cfg = next);
     try {
       await ref.read(snapshotServiceProvider).saveConfig(next);
     } catch (e) {
-      if (mounted) showAppSnackBar('Could not save: $e');
+      if (mounted) showAppSnackBar(l10n.couldNotSave('$e'));
     }
   }
 
   Future<void> _backupNow() async {
+    final l10n = context.l10n;
     setState(() => _busy = true);
     try {
       await ref.read(snapshotServiceProvider).createNow();
       ref.invalidate(snapshotsListProvider);
-      showAppSnackBar('Backup created');
+      showAppSnackBar(l10n.backupCreated);
     } catch (e) {
-      showAppSnackBar('Backup failed: $e');
+      showAppSnackBar(l10n.backupFailed('$e'));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -195,18 +197,18 @@ class _ConfigEditorState extends ConsumerState<_ConfigEditor> {
     return Column(
       children: [
         SwitchListTile(
-          title: const Text('Scheduled backups'),
-          subtitle: const Text('Snapshot this account when it changes'),
+          title: Text(context.l10n.scheduledBackups),
+          subtitle: Text(context.l10n.scheduledBackupsSub),
           value: _cfg.enabled,
           onChanged: (v) => _save(_cfg.copyWith(enabled: v)),
         ),
         if (_cfg.enabled) ...[
           ListTile(
-            title: const Text('Frequency'),
+            title: Text(context.l10n.frequency),
             trailing: SegmentedButton<String>(
-              segments: const [
-                ButtonSegment(value: 'daily', label: Text('Daily')),
-                ButtonSegment(value: 'hourly', label: Text('Hourly')),
+              segments: [
+                ButtonSegment(value: 'daily', label: Text(context.l10n.daily)),
+                ButtonSegment(value: 'hourly', label: Text(context.l10n.hourly)),
               ],
               selected: {_cfg.frequency},
               onSelectionChanged: (s) =>
@@ -215,8 +217,8 @@ class _ConfigEditorState extends ConsumerState<_ConfigEditor> {
           ),
           if (_cfg.frequency == 'daily')
             ListTile(
-              title: const Text('Run at'),
-              subtitle: const Text('Your local time'),
+              title: Text(context.l10n.runAt),
+              subtitle: Text(context.l10n.yourLocalTime),
               trailing: DropdownButton<int>(
                 value: _localHourFromUtc(_cfg.hour),
                 items: [
@@ -229,14 +231,14 @@ class _ConfigEditorState extends ConsumerState<_ConfigEditor> {
               ),
             ),
           ListTile(
-            title: const Text('Keep for'),
+            title: Text(context.l10n.keepFor),
             trailing: DropdownButton<int>(
               value: const [7, 14, 30, 60, 90].contains(_cfg.retentionDays)
                   ? _cfg.retentionDays
                   : 14,
               items: const [7, 14, 30, 60, 90]
                   .map((d) =>
-                      DropdownMenuItem(value: d, child: Text('$d days')))
+                      DropdownMenuItem(value: d, child: Text(context.l10n.daysCount(d))))
                   .toList(),
               onChanged: (d) =>
                   d == null ? null : _save(_cfg.copyWith(retentionDays: d)),
@@ -254,7 +256,7 @@ class _ConfigEditorState extends ConsumerState<_ConfigEditor> {
                       width: 16, height: 16,
                       child: CircularProgressIndicator(strokeWidth: 2))
                   : const Icon(Icons.backup_outlined),
-              label: const Text('Back up now'),
+              label: Text(context.l10n.backUpNow),
             ),
           ),
         ),
@@ -270,32 +272,32 @@ class _SnapshotTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final reasonLabel = switch (snap.reason) {
-      'manual' => 'Manual',
-      'pre-restore' => 'Before restore',
-      _ => 'Auto',
+      'manual' => context.l10n.snapReasonManual,
+      'pre-restore' => context.l10n.snapReasonBeforeRestore,
+      _ => context.l10n.snapReasonAuto,
     };
     return ListTile(
       leading: const Icon(Icons.history),
       title: Text(_fmtDateTime(snap.createdAt)),
       subtitle: Text(
-          '$reasonLabel · ${snap.noteCount} notes · ${_fmtSize(snap.byteSize)}'),
+          '$reasonLabel · ${context.l10n.notesAndSize(snap.noteCount, _fmtSize(snap.byteSize))}'),
       trailing: IconButton(
         icon: const Icon(Icons.delete_outline),
-        tooltip: 'Delete snapshot',
+        tooltip: context.l10n.deleteSnapshot,
         onPressed: () async {
+          final l10n = context.l10n;
           final yes = await showDialog<bool>(
             context: context,
             builder: (c) => AlertDialog(
-              title: const Text('Delete snapshot?'),
-              content: Text('Delete the snapshot from '
-                  '${_fmtDateTime(snap.createdAt)}? This cannot be undone.'),
+              title: Text(context.l10n.deleteSnapshotTitle),
+              content: Text(context.l10n.deleteSnapshotBody(_fmtDateTime(snap.createdAt))),
               actions: [
                 TextButton(
                     onPressed: () => Navigator.pop(c, false),
-                    child: const Text('Cancel')),
+                    child: Text(context.l10n.cancel)),
                 FilledButton(
                     onPressed: () => Navigator.pop(c, true),
-                    child: const Text('Delete')),
+                    child: Text(context.l10n.delete)),
               ],
             ),
           );
@@ -304,7 +306,7 @@ class _SnapshotTile extends ConsumerWidget {
             await ref.read(snapshotServiceProvider).delete(snap.id);
             ref.invalidate(snapshotsListProvider);
           } catch (e) {
-            showAppSnackBar('Delete failed: $e');
+            showAppSnackBar(l10n.deleteFailed('$e'));
           }
         },
       ),
@@ -348,6 +350,7 @@ class _SnapshotPreviewScreenState
       });
 
   Future<void> _restore(String mode) async {
+    final l10n = context.l10n;
     final noteIds = _selected.toList();
     final confirm = await showDialog<bool>(
       context: context,
@@ -366,10 +369,10 @@ class _SnapshotPreviewScreenState
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(c, false),
-              child: const Text('Cancel')),
+              child: Text(context.l10n.cancel)),
           FilledButton(
               onPressed: () => Navigator.pop(c, true),
-              child: const Text('Restore')),
+              child: Text(context.l10n.restore)),
         ],
       ),
     );
@@ -387,11 +390,11 @@ class _SnapshotPreviewScreenState
       }
       ref.invalidate(snapshotsListProvider);
       if (mounted) {
-        showAppSnackBar('Restored');
+        showAppSnackBar(l10n.restoredOk);
         Navigator.of(context).pop();
       }
     } catch (e) {
-      if (mounted) showAppSnackBar('Restore failed: $e');
+      if (mounted) showAppSnackBar(l10n.restoreFailed('$e'));
     } finally {
       if (mounted) setState(() => _restoring = false);
     }
@@ -403,7 +406,7 @@ class _SnapshotPreviewScreenState
         ref.watch(_snapshotContentsProvider(widget.snap.id));
     return Scaffold(
       appBar: AppBar(
-        title: Text('Snapshot · ${_fmtDateTime(widget.snap.createdAt)}'),
+        title: Text(context.l10n.snapshotTitle(_fmtDateTime(widget.snap.createdAt))),
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(28),
           child: Padding(
@@ -411,7 +414,8 @@ class _SnapshotPreviewScreenState
             child: Align(
               alignment: Alignment.centerLeft,
               child: Text(
-                '${widget.snap.noteCount} notes · ${_fmtSize(widget.snap.byteSize)}',
+                context.l10n.notesAndSize(
+                    widget.snap.noteCount, _fmtSize(widget.snap.byteSize)),
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ),
@@ -429,7 +433,7 @@ class _SnapshotPreviewScreenState
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Padding(
           padding: const EdgeInsets.all(24),
-          child: Text('Could not open snapshot: $e'),
+          child: Text(context.l10n.couldNotOpenSnapshot('$e')),
         ),
         data: (contents) => _restoring
             ? const Center(child: CircularProgressIndicator())
@@ -451,7 +455,7 @@ class _SnapshotPreviewScreenState
       });
     }
     if (all.isEmpty) {
-      return const Center(child: Text('This snapshot has no active notes.'));
+      return Center(child: Text(context.l10n.snapshotNoActiveNotes));
     }
     final scheme = Theme.of(context).colorScheme;
     final groups = filterGroups(all, _query);
@@ -489,7 +493,7 @@ class _SnapshotPreviewScreenState
                         onPressed: (_restoring || _selected.isEmpty)
                             ? null
                             : () => _restore('notes'),
-                        child: Text('Restore ${_selected.length} selected'),
+                        child: Text(context.l10n.restoreSelectedCount(_selected.length)),
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -497,7 +501,7 @@ class _SnapshotPreviewScreenState
                       onPressed: _restoring ? null : () => _restore('replace'),
                       style: OutlinedButton.styleFrom(
                           foregroundColor: scheme.error),
-                      child: const Text('Replace all…'),
+                      child: Text(context.l10n.replaceAll),
                     ),
                   ],
                 ),

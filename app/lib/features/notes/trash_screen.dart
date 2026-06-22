@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import '../../l10n/l10n.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/local/database.dart';
@@ -34,7 +35,7 @@ class TrashScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Trash'),
+        title: Text(context.l10n.trash),
         actions: [
           notesAsync.maybeWhen(
             data: (notes) => notes.isEmpty
@@ -43,18 +44,16 @@ class TrashScreen extends ConsumerWidget {
                     onPressed: () async {
                       final ok = await _confirm(
                         context,
-                        title: 'Empty trash?',
-                        message:
-                            'Permanently delete all ${notes.length} notes in '
-                            'trash. This cannot be undone.',
-                        action: 'Empty trash',
+                        title: context.l10n.emptyTrashTitle,
+                        message: context.l10n.emptyTrashBody(notes.length),
+                        action: context.l10n.emptyTrashAction,
                       );
                       if (ok) {
                         await _emptyTrash(
                             ref, notes.map((n) => n.id).toList());
                       }
                     },
-                    child: const Text('Empty'),
+                    child: Text(context.l10n.emptyAction),
                   ),
             orElse: () => const SizedBox.shrink(),
           ),
@@ -62,7 +61,7 @@ class TrashScreen extends ConsumerWidget {
       ),
       body: notesAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
+        error: (e, _) => Center(child: Text(context.l10n.errorWithDetail('$e'))),
         data: (notes) {
           if (notes.isEmpty) return const _EmptyTrash();
           return SafeArea(
@@ -73,7 +72,7 @@ class TrashScreen extends ConsumerWidget {
                 final NoteRow note = notes[i];
                 final title = note.title.trim().isNotEmpty
                     ? note.title
-                    : (note.body.trim().isNotEmpty ? note.body : 'Empty note');
+                    : (note.body.trim().isNotEmpty ? note.body : context.l10n.emptyNote);
                 return ListTile(
                   leading: Icon(note.type == 'checklist'
                       ? Icons.checklist
@@ -84,22 +83,20 @@ class TrashScreen extends ConsumerWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       IconButton(
-                        tooltip: 'Restore',
+                        tooltip: context.l10n.restore,
                         icon: const Icon(Icons.restore_from_trash),
                         onPressed: () =>
                             ref.read(notesRepositoryProvider).restore(note.id),
                       ),
                       IconButton(
-                        tooltip: 'Delete forever',
+                        tooltip: context.l10n.deleteForever,
                         icon: const Icon(Icons.delete_forever),
                         onPressed: () async {
                           final ok = await _confirm(
                             context,
-                            title: 'Delete forever?',
-                            message:
-                                'Permanently delete this note. This cannot be '
-                                'undone.',
-                            action: 'Delete',
+                            title: context.l10n.deleteForeverTitle,
+                            message: context.l10n.deleteForeverBody,
+                            action: context.l10n.delete,
                           );
                           if (ok) await _deleteForever(ref, note.id);
                         },
@@ -129,7 +126,7 @@ class TrashScreen extends ConsumerWidget {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
+            child: Text(context.l10n.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),
@@ -154,7 +151,7 @@ class _EmptyTrash extends StatelessWidget {
           Icon(Icons.delete_outline,
               size: 64, color: Theme.of(context).disabledColor),
           const SizedBox(height: 12),
-          const Text('Trash is empty'),
+          Text(context.l10n.trashIsEmpty),
         ],
       ),
     );

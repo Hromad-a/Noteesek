@@ -18,7 +18,11 @@ RUN flutter pub get
 # service worker is pure downside — it pins open tabs to a cached old build after
 # a deploy (needing a hard refresh). Disabling it keeps the app always-fresh.
 COPY app/ ./
-RUN dart run build_runner build --delete-conflicting-outputs \
+# gen-l10n first: the .arb files arrive with this COPY (pub get above ran before
+# them), and build_runner analyzes the library graph — which imports the
+# generated AppLocalizations — so it must exist before build_runner runs.
+RUN flutter gen-l10n \
+    && dart run build_runner build --delete-conflicting-outputs \
     && flutter build web --release --pwa-strategy=none
 
 # --- Stage 2: PocketBase serving the web app ----------------------------------

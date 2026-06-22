@@ -12,6 +12,7 @@ import 'package:pocketbase/pocketbase.dart';
 
 import '../../config/app_config.dart';
 import '../../data/notes_repository.dart';
+import '../../l10n/l10n.dart';
 import '../../data/version_check.dart';
 import '../backup/backup_service.dart' as backup;
 import '../backup/remote_backup_service.dart';
@@ -83,7 +84,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final uri = Uri.tryParse(trimmed);
     if (trimmed.isEmpty || uri == null || !uri.isAbsolute) {
       setState(() => _conn = _Conn.unreachable);
-      if (!silent) _snack('Enter a valid URL');
+      if (!silent) _snack(context.l10n.enterValidUrl);
       return;
     }
     setState(() => _conn = _Conn.checking);
@@ -91,11 +92,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       await PocketBase(trimmed).health.check();
       if (!mounted) return;
       setState(() => _conn = _Conn.ok);
-      if (!silent) _snack('Server is reachable');
+      if (!silent) _snack(context.l10n.serverReachable);
     } catch (_) {
       if (!mounted) return;
       setState(() => _conn = _Conn.unreachable);
-      if (!silent) _snack('Cannot reach the server');
+      if (!silent) _snack(context.l10n.cannotReachServer);
     }
   }
 
@@ -107,15 +108,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     super.dispose();
   }
 
-  String _humanizeError(ClientException e) {
+  String _humanizeError(AppLocalizations l10n, ClientException e) {
     final msg = e.response['message'] as String?;
     if (msg != null && msg.isNotEmpty) return msg;
-    if (e.statusCode == 0) return 'Cannot reach the server. Check the URL.';
-    return 'Request failed (${e.statusCode}).';
+    if (e.statusCode == 0) return l10n.cannotReachServerCheckUrl;
+    return l10n.requestFailed(e.statusCode);
   }
 
   Future<void> _changePassword() async {
     if (!_pwFormKey.currentState!.validate()) return;
+    final l10n = context.l10n; // capture before awaits
     FocusScope.of(context).unfocus();
     setState(() {
       _pwBusy = true;
@@ -142,9 +144,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       _confirmCtrl.clear();
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
-        ..showSnackBar(const SnackBar(content: Text('Password changed')));
+        ..showSnackBar(SnackBar(content: Text(l10n.passwordChanged)));
     } on ClientException catch (e) {
-      setState(() => _pwError = _humanizeError(e));
+      setState(() => _pwError = _humanizeError(l10n, e));
     } catch (e) {
       setState(() => _pwError = e.toString());
     } finally {
@@ -156,20 +158,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   /// and keep this device signed in with the fresh token it returns.
   // ignore: unused_element  (kept for when the feature is re-enabled — see build)
   Future<void> _signOutEverywhere() async {
+    final l10n = context.l10n; // capture before awaits
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Sign out of all devices?'),
-        content: const Text(
-            'Every other device signed into this account is signed out '
-            'immediately. This device stays signed in.'),
+        title: Text(l10n.signOutAllTitle),
+        content: Text(l10n.signOutAllBody),
         actions: [
           TextButton(
               onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('Cancel')),
+              child: Text(context.l10n.cancel)),
           FilledButton(
               onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text('Sign out others')),
+              child: Text(context.l10n.signOutOthers)),
         ],
       ),
     );
@@ -183,11 +184,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         // Adopt the fresh token so this device isn't logged out too.
         pb.authStore.save(token, pb.authStore.record);
       }
-      _snack('Signed out of all other devices');
+      _snack(l10n.signedOutOthers);
     } on ClientException catch (e) {
-      _snack(_humanizeError(e));
+      _snack(_humanizeError(l10n, e));
     } catch (e) {
-      _snack('Failed: $e');
+      _snack(l10n.failedWithDetail('$e'));
     }
   }
 
@@ -211,19 +212,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   /// Builds a Markdown zip of all active + archived notes and hands it to the
   /// platform (share sheet on mobile / download on web).
   Future<void> _exportNotes() async {
-    _snack('Preparing export…');
+    final l10n = context.l10n; // capture before awaits
+    _snack(l10n.preparingExport);
     try {
       final bytes =
           await NoteExportService(ref.read(notesRepositoryProvider)).buildZip();
       if (!mounted) return;
       if (bytes == null) {
-        _snack('No notes to export');
+        _snack(l10n.noNotesToExport);
         return;
       }
       await deliverExport(bytes, exportFileName());
       if (mounted) ScaffoldMessenger.of(context).hideCurrentSnackBar();
     } catch (e) {
-      if (mounted) _snack('Export failed: $e');
+      if (mounted) _snack(l10n.exportFailed('$e'));
     }
   }
 
@@ -232,6 +234,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   /// Asks which source to import from, then picks a file and runs the matching
   /// parser. Writes into the repository (local DB on mobile / PocketBase on web).
   Future<void> _importNotes() async {
+    final l10n = context.l10n; // capture before awaits
     final source = await showModalBottomSheet<_ImportSource>(
       context: context,
       showDragHandle: true,
@@ -241,15 +244,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           children: [
             ListTile(
               leading: const Icon(Icons.description_outlined),
-              title: const Text('Markdown export or .md files'),
-              subtitle: const Text('A Noteesek export .zip or a single .md'),
+              title: Text(context.l10n.importMdTitle),
+              subtitle: Text(context.l10n.importMdSub),
               onTap: () =>
                   Navigator.of(sheetContext).pop(_ImportSource.markdown),
             ),
             ListTile(
               leading: const Icon(Icons.add_to_drive_outlined),
-              title: const Text('Google Keep (Takeout)'),
-              subtitle: const Text('The Keep .zip from Google Takeout'),
+              title: Text(context.l10n.importKeepTitle),
+              subtitle: Text(context.l10n.importKeepSub),
               onTap: () => Navigator.of(sheetContext).pop(_ImportSource.keep),
             ),
           ],
@@ -259,7 +262,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     if (source == null) return;
 
     final group = XTypeGroup(
-      label: source == _ImportSource.keep ? 'Takeout zip' : 'Markdown',
+      label: source == _ImportSource.keep ? l10n.importTakeoutZip : l10n.markdown,
       extensions:
           source == _ImportSource.keep ? ['zip'] : ['md', 'markdown', 'zip'],
       // Map to MIME/UTI so the picker filters correctly on Android/iOS/macOS.
@@ -278,11 +281,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         _ImportSource.keep => parseKeepTakeout(bytes),
       };
     } catch (e) {
-      _snack('Could not read that file: $e');
+      _snack(l10n.couldNotReadFile('$e'));
       return;
     }
     if (notes.isEmpty) {
-      _snack('Nothing to import');
+      _snack(l10n.nothingToImport);
       return;
     }
     if (!mounted) return;
@@ -296,7 +299,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       builder: (_) => BackupRestoreScreen(
         bytes: pkg,
         sourceLabel: file.name,
-        title: 'Import notes',
+        title: context.l10n.importNotes,
         copiesOnly: true,
       ),
     ));
@@ -331,7 +334,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   Future<void> _backUp() async {
-    _snack('Preparing backup…');
+    final l10n = context.l10n; // capture before awaits
+    _snack(l10n.preparingBackup);
     try {
       final bytes = await _exportBackup();
       if (!mounted) return;
@@ -339,18 +343,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       // Save straight to the device (Downloads) rather than the share sheet.
       final where =
           await saveToDownloads(bytes, _backupFileName(), 'application/zip');
-      if (mounted) _snack('Backup saved to $where');
+      if (mounted) _snack(l10n.backupSavedTo(where));
     } catch (e) {
-      if (mounted) _snack('Backup failed: $e');
+      if (mounted) _snack(l10n.backupFailed('$e'));
     }
   }
 
   Future<void> _restore() async {
+    final l10n = context.l10n; // capture before awaits
     final file = await openFile(acceptedTypeGroups: [
-      const XTypeGroup(
-        label: 'Noteesek backup',
-        extensions: ['zip', 'json'],
-        mimeTypes: ['application/zip', 'application/json'],
+      XTypeGroup(
+        label: l10n.backupFileLabel,
+        extensions: const ['zip', 'json'],
+        mimeTypes: const ['application/zip', 'application/json'],
       ),
     ]);
     if (file == null || !mounted) return;
@@ -370,32 +375,28 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Restore backup?'),
-        content: Text(kIsWeb
-            ? 'Notes from the backup are added to your account; where ids '
-                'match, the backup version wins. This cannot be undone.'
-            : 'Notes from the backup are merged into this device; where ids '
-                'match, the backup version wins. This cannot be undone.'),
+        title: Text(l10n.restoreBackupTitle),
+        content: Text(kIsWeb ? l10n.restoreBodyAccount : l10n.restoreBodyDevice),
         actions: [
           TextButton(
               onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('Cancel')),
+              child: Text(l10n.cancel)),
           FilledButton(
               onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text('Restore')),
+              child: Text(l10n.restore)),
         ],
       ),
     );
     if (confirmed != true) return;
 
-    _snack('Restoring…');
+    _snack(l10n.restoring);
     try {
       final n = await _importBackup(bytes);
       if (!mounted) return;
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
-      _snack('Restored $n note${n == 1 ? '' : 's'}');
+      _snack(l10n.restoredCount(n));
     } catch (e) {
-      if (mounted) _snack('Restore failed: $e');
+      if (mounted) _snack(l10n.restoreFailed('$e'));
     }
   }
 
@@ -422,21 +423,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           final anySelected =
               (canLocal && wipeLocal) || (canServer && wipeServer);
           return AlertDialog(
-            title: const Text('Wipe data'),
+            title: Text(context.l10n.wipeData),
             content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(canLocal && canServer
-                      ? 'This permanently deletes the selected data. It cannot '
-                          'be undone.'
+                      ? context.l10n.wipeBodySelected
                       : canServer
-                          ? 'This permanently deletes your notes on the server '
-                              '(only your account — other users are unaffected). '
-                              'It cannot be undone.'
-                          : 'This permanently deletes all notes on this device. '
-                              'It cannot be undone.'),
+                          ? context.l10n.wipeBodyServer
+                          : context.l10n.wipeBodyDevice),
                   const SizedBox(height: 8),
                   // Only offer the per-target choice when both targets actually
                   // apply. On web there's no local DB; on local-only mobile
@@ -448,17 +445,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       value: wipeLocal,
                       onChanged: (v) =>
                           setLocal(() => wipeLocal = v ?? false),
-                      title: const Text('This device'),
-                      subtitle: const Text('Local notes database'),
+                      title: Text(context.l10n.wipeThisDevice),
+                      subtitle: Text(context.l10n.wipeLocalDb),
                     ),
                     CheckboxListTile(
                       contentPadding: EdgeInsets.zero,
                       value: wipeServer,
                       onChanged: (v) =>
                           setLocal(() => wipeServer = v ?? false),
-                      title: const Text('On the server'),
-                      subtitle: const Text(
-                          'Only your account — other users are unaffected'),
+                      title: Text(context.l10n.wipeOnServer),
+                      subtitle: Text(context.l10n.wipeServerSub),
                     ),
                     if (anySelected) ...[
                       const SizedBox(height: 4),
@@ -471,10 +467,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                           Expanded(
                             child: Text(
                               (wipeLocal && wipeServer)
-                                  ? "You'll stay signed in — both copies are "
-                                      'erased, so nothing re-syncs.'
-                                  : "You'll be signed out so the remaining copy "
-                                      "can't sync back.",
+                                  ? context.l10n.wipeBothNotice
+                                  : context.l10n.wipeOneNotice,
                               style: Theme.of(ctx).textTheme.bodySmall,
                             ),
                           ),
@@ -483,7 +477,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     ],
                   ],
                   const SizedBox(height: 8),
-                  Text('Type "$phrase" to confirm',
+                  Text(context.l10n.typeToConfirm(phrase),
                       style: Theme.of(ctx).textTheme.bodySmall),
                   const SizedBox(height: 4),
                   TextField(
@@ -491,7 +485,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     autocorrect: false,
                     enableSuggestions: false,
                     textCapitalization: TextCapitalization.characters,
-                    decoration: const InputDecoration(hintText: phrase),
+                    decoration: InputDecoration(hintText: phrase),
                     onChanged: (_) => setLocal(() {}),
                   ),
                 ],
@@ -500,7 +494,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('Cancel'),
+                child: Text(context.l10n.cancel),
               ),
               FilledButton(
                 style: FilledButton.styleFrom(
@@ -510,7 +504,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 onPressed: (typedOk && anySelected)
                     ? () => Navigator.pop(ctx, true)
                     : null,
-                child: const Text('Wipe'),
+                child: Text(context.l10n.wipe),
               ),
             ],
           );
@@ -529,8 +523,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     required bool wipeLocal,
     required bool wipeServer,
   }) async {
+    final l10n = context.l10n; // capture before awaits
     setState(() => _wipeBusy = true);
-    _snack('Wiping…');
+    _snack(l10n.wiping);
     final pb = ref.read(pocketBaseProvider);
     try {
       // Server first: if the device wipe clears a still-connected mirror, a
@@ -551,10 +546,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         await ref.read(activeOwnerProvider.notifier).set(AppConfig.localOwner);
       }
       if (!mounted) return;
-      _snack('Data wiped');
+      _snack(l10n.dataWiped);
     } catch (e) {
       if (!mounted) return;
-      _snack('Wipe failed: ${e is ClientException ? _humanizeError(e) : e}');
+      _snack(l10n.wipeFailed(
+          e is ClientException ? _humanizeError(l10n, e) : '$e'));
     } finally {
       if (mounted) setState(() => _wipeBusy = false);
     }
@@ -615,23 +611,23 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Settings')),
+      appBar: AppBar(title: Text(context.l10n.settingsTitle)),
       body: WebCentered(
         child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          const _SectionHeader('Account'),
+          _SectionHeader(context.l10n.sectionAccount),
           if (signedIn)
             ListTile(
               contentPadding: EdgeInsets.zero,
               leading: const Icon(Icons.account_circle_outlined),
-              title: Text(email.isEmpty ? 'Signed in' : email),
+              title: Text(email.isEmpty ? context.l10n.signedIn : email),
               subtitle: Text(versionMismatch
-                  ? 'App and server versions differ — see About below'
-                  : 'Signed in'),
+                  ? context.l10n.accountVersionMismatchSub
+                  : context.l10n.signedIn),
               trailing: versionMismatch
                   ? Tooltip(
-                      message: 'App and server versions differ',
+                      message: context.l10n.versionsDiffer,
                       child: Icon(Icons.warning_amber_rounded,
                           color: Colors.orange.shade700),
                     )
@@ -641,16 +637,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ListTile(
               contentPadding: EdgeInsets.zero,
               leading: const Icon(Icons.cloud_off_outlined),
-              title: const Text('Not connected'),
-              subtitle: const Text(
-                  'Connect a server to sync your notes across devices.'),
+              title: Text(context.l10n.notConnected),
+              subtitle: Text(context.l10n.notConnectedSub),
               trailing: const Icon(Icons.chevron_right),
               onTap: _connect,
             ),
           const SizedBox(height: 24),
 
           if (signedIn) ...[
-            const _SectionHeader('Change password'),
+            _SectionHeader(context.l10n.changePassword),
             Form(
               key: _pwFormKey,
               child: Column(
@@ -658,38 +653,38 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 children: [
                   TextFormField(
                     controller: _currentCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Current password',
+                    decoration: InputDecoration(
+                      labelText: context.l10n.currentPassword,
                       prefixIcon: Icon(Icons.lock_outline),
                     ),
                     obscureText: true,
                     validator: (v) => (v != null && v.isNotEmpty)
                         ? null
-                        : 'Enter your current password',
+                        : context.l10n.enterCurrentPassword,
                   ),
                   const SizedBox(height: 12),
                   TextFormField(
                     controller: _newCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'New password',
+                    decoration: InputDecoration(
+                      labelText: context.l10n.newPassword,
                       prefixIcon: Icon(Icons.lock_reset_outlined),
                     ),
                     obscureText: true,
                     validator: (v) => (v != null && v.length >= 8)
                         ? null
-                        : 'At least 8 characters',
+                        : context.l10n.atLeast8Chars,
                   ),
                   const SizedBox(height: 12),
                   TextFormField(
                     controller: _confirmCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Confirm new password',
+                    decoration: InputDecoration(
+                      labelText: context.l10n.confirmNewPassword,
                       prefixIcon: Icon(Icons.lock_reset_outlined),
                     ),
                     obscureText: true,
                     onFieldSubmitted: (_) => _changePassword(),
                     validator: (v) =>
-                        v == _newCtrl.text ? null : 'Passwords do not match',
+                        v == _newCtrl.text ? null : context.l10n.passwordsDoNotMatch,
                   ),
                   if (_conn == _Conn.unreachable) ...[
                     const SizedBox(height: 12),
@@ -699,8 +694,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            "Server not responding — you can't change your "
-                            'password right now.',
+                            context.l10n.serverNotRespondingPw,
                             style: TextStyle(color: scheme.error),
                           ),
                         ),
@@ -724,7 +718,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                               width: 20,
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
-                          : const Text('Change password'),
+                          : Text(context.l10n.changePassword),
                     ),
                   ),
                 ],
@@ -733,16 +727,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             const SizedBox(height: 24),
           ],
 
-          const _SectionHeader('Appearance'),
+          _SectionHeader(context.l10n.sectionAppearance),
           _ThemeModeSelector(),
+          const _LanguageSelector(),
           Consumer(builder: (context, ref, _) {
             final on = ref.watch(markdownEnabledProvider);
             return SwitchListTile(
               contentPadding: EdgeInsets.zero,
               secondary: const Icon(Icons.text_format),
-              title: const Text('Markdown formatting'),
-              subtitle: const Text(
-                  'Render note text as Markdown and show a formatting toolbar'),
+              title: Text(context.l10n.markdownFormatting),
+              subtitle: Text(context.l10n.markdownFormattingSub),
               value: on,
               onChanged: (v) =>
                   ref.read(markdownEnabledProvider.notifier).set(v),
@@ -752,12 +746,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
           // App lock is a device-local feature → mobile only.
           if (!kIsWeb) ...[
-            const _SectionHeader('Security'),
+            _SectionHeader(context.l10n.sectionSecurity),
             const _AppLockSection(),
             const SizedBox(height: 24),
           ],
 
-          const _SectionHeader('Server'),
+          _SectionHeader(context.l10n.sectionServer),
           // Display-only: the server URL is bound to the current session and can
           // only be changed by signing out and reconnecting (see the "Connect to
           // server" flow). Editing it here would strand the session on a server
@@ -767,8 +761,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             leading: const Icon(Icons.dns_outlined),
             title: Text(pb.baseURL),
             subtitle: Text(signedIn
-                ? 'Sign out to connect to a different server.'
-                : 'Tap to connect to a server and sign in.'),
+                ? context.l10n.serverSubSignOut
+                : context.l10n.serverSubConnect),
             // When signed out, the row is a shortcut into the connect flow.
             onTap: signedIn ? null : _connect,
             // The live-availability check only makes sense for the server we're
@@ -776,7 +770,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             // connected". Signed out, show the plain connect chevron instead.
             trailing: signedIn
                 ? IconButton(
-                    tooltip: 'Test connection',
+                    tooltip: context.l10n.testConnection,
                     onPressed: _conn == _Conn.checking
                         ? null
                         : () => _testConnection(pb.baseURL, silent: false),
@@ -791,10 +785,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             contentPadding: EdgeInsets.zero,
             enabled: signedIn,
             leading: const Icon(Icons.history),
-            title: const Text('Version history'),
+            title: Text(context.l10n.versionHistory),
             subtitle: Text(signedIn
-                ? 'Automatic restore points'
-                : 'Sign in to a server to use'),
+                ? context.l10n.versionHistorySubOn
+                : context.l10n.versionHistorySubOff),
             onTap: signedIn
                 ? () => Navigator.of(context).push(MaterialPageRoute(
                       builder: (_) => const SnapshotsScreen(),
@@ -805,41 +799,41 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           if (!kIsWeb && signedIn) _SyncStatusTile(),
           const SizedBox(height: 24),
 
-          const _SectionHeader('Export'),
+          _SectionHeader(context.l10n.sectionExport),
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.text_snippet_outlined),
-            title: const Text('Markdown'),
-            subtitle: const Text('Readable files for other apps'),
+            title: Text(context.l10n.markdown),
+            subtitle: Text(context.l10n.exportMdSub),
             onTap: _exportNotes,
           ),
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.archive_outlined),
-            title: const Text('Backup file'),
-            subtitle: const Text('An exact copy you can restore later'),
+            title: Text(context.l10n.backupFile),
+            subtitle: Text(context.l10n.exportBackupSub),
             onTap: _backUp,
           ),
           const SizedBox(height: 16),
 
-          const _SectionHeader('Import'),
+          _SectionHeader(context.l10n.sectionImport),
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.note_add_outlined),
-            title: const Text('Notes'),
-            subtitle: const Text('Markdown or Google Keep · adds copies'),
+            title: Text(context.l10n.notesTitle),
+            subtitle: Text(context.l10n.importNotesSub),
             onTap: _importNotes,
           ),
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.restore_outlined),
-            title: const Text('Backup file'),
-            subtitle: const Text('Restore everything, or merge selected'),
+            title: Text(context.l10n.backupFile),
+            subtitle: Text(context.l10n.importBackupSub),
             onTap: _restore,
           ),
           const SizedBox(height: 16),
 
-          const _SectionHeader('Danger zone'),
+          _SectionHeader(context.l10n.sectionDangerZone),
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: _wipeBusy
@@ -849,17 +843,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : Icon(Icons.delete_forever_outlined, color: scheme.error),
-            title: Text('Wipe data', style: TextStyle(color: scheme.error)),
+            title: Text(context.l10n.wipeData, style: TextStyle(color: scheme.error)),
             subtitle: Text(kIsWeb
-                ? 'Permanently delete your notes on the server'
+                ? context.l10n.wipeSubServer
                 : signedIn
-                    ? 'Permanently delete notes on this device and/or the server'
-                    : 'Permanently delete all notes on this device'),
+                    ? context.l10n.wipeSubBoth
+                    : context.l10n.wipeSubDevice),
             onTap: _wipeBusy ? null : () => _showWipeDialog(signedIn: signedIn),
           ),
           const SizedBox(height: 24),
 
-          const _SectionHeader('About'),
+          _SectionHeader(context.l10n.sectionAbout),
           _AboutSection(signedIn: signedIn),
 
           if (signedIn) ...[
@@ -872,7 +866,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             // ListTile(
             //   contentPadding: EdgeInsets.zero,
             //   leading: const Icon(Icons.devices_outlined),
-            //   title: const Text('Sign out of all devices'),
+            //   title: Text(context.l10n.signOutAllDevices),
             //   subtitle: const Text(
             //       'Invalidate every other login; this device stays signed in'),
             //   onTap: _signOutEverywhere,
@@ -880,10 +874,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ListTile(
               contentPadding: EdgeInsets.zero,
               leading: Icon(Icons.logout, color: scheme.error),
-              title: Text('Sign out', style: TextStyle(color: scheme.error)),
+              title: Text(context.l10n.signOut, style: TextStyle(color: scheme.error)),
               subtitle: Text(kIsWeb
-                  ? 'Sign out of this account'
-                  : 'Stop syncing; notes stay on this device'),
+                  ? context.l10n.signOutSubWeb
+                  : context.l10n.signOutSubMobile),
               onTap: _signOut,
             ),
           ],
@@ -923,18 +917,19 @@ class _SectionHeader extends StatelessWidget {
 /// Mobile-only sync status row: a simple state icon (synced / syncing /
 /// offline) plus the last-synced time, tappable to sync now.
 class _SyncStatusTile extends ConsumerWidget {
-  String _ago(DateTime? t) {
-    if (t == null) return 'Not synced yet';
+  String _ago(AppLocalizations l10n, DateTime? t) {
+    if (t == null) return l10n.syncNotSyncedYet;
     final d = DateTime.now().difference(t);
-    if (d.inSeconds < 10) return 'Last synced just now';
-    if (d.inMinutes < 1) return 'Last synced ${d.inSeconds}s ago';
-    if (d.inMinutes < 60) return 'Last synced ${d.inMinutes} min ago';
-    if (d.inHours < 24) return 'Last synced ${d.inHours} h ago';
-    return 'Last synced ${d.inDays} d ago';
+    if (d.inSeconds < 10) return l10n.syncJustNow;
+    if (d.inMinutes < 1) return l10n.syncSecondsAgo(d.inSeconds);
+    if (d.inMinutes < 60) return l10n.syncMinutesAgo(d.inMinutes);
+    if (d.inHours < 24) return l10n.syncHoursAgo(d.inHours);
+    return l10n.syncDaysAgo(d.inDays);
   }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = context.l10n;
     final sync = ref.watch(syncControllerProvider);
     final hasPending = ref.watch(hasPendingChangesProvider).value ?? false;
     final scheme = Theme.of(context).colorScheme;
@@ -946,23 +941,23 @@ class _SyncStatusTile extends ConsumerWidget {
             width: 24,
             child: CircularProgressIndicator(strokeWidth: 2),
           ),
-          'Syncing…',
-          _ago(sync.lastSync),
+          l10n.syncSyncing,
+          _ago(l10n, sync.lastSync),
         ),
       _ when !sync.reachable => (
           Icon(Icons.cloud_off, color: scheme.error),
-          'Offline',
-          'Server not responding',
+          l10n.syncOffline,
+          l10n.syncServerNotResponding,
         ),
       _ when hasPending => (
           const Icon(Icons.cloud_upload_outlined),
-          'Changes not synced',
-          'Tap Sync now to push them',
+          l10n.syncChangesNotSynced,
+          l10n.syncTapToPush,
         ),
       _ => (
           const Icon(Icons.cloud_done_outlined),
-          'Synced',
-          _ago(sync.lastSync),
+          l10n.syncSynced,
+          _ago(l10n, sync.lastSync),
         ),
     };
 
@@ -977,7 +972,7 @@ class _SyncStatusTile extends ConsumerWidget {
               onPressed: () =>
                   ref.read(syncControllerProvider.notifier).syncNow(manual: true),
               icon: const Icon(Icons.sync, size: 18),
-              label: const Text('Sync now'),
+              label: Text(context.l10n.syncNow),
             ),
     );
   }
@@ -1083,7 +1078,7 @@ class _AboutSectionState extends ConsumerState<_AboutSection> {
       }
       if (mismatch) {
         return Tooltip(
-          message: 'App and server versions differ',
+          message: context.l10n.versionsDiffer,
           child: Icon(Icons.warning_amber_rounded,
               color: Colors.orange.shade700),
         );
@@ -1092,8 +1087,8 @@ class _AboutSectionState extends ConsumerState<_AboutSection> {
     }
 
     String serverSubtitle() {
-      if (_serverLoading) return 'Checking…';
-      if (_serverFailed || _server == null) return 'Unavailable';
+      if (_serverLoading) return context.l10n.checking;
+      if (_serverFailed || _server == null) return context.l10n.unavailable;
       return _server!.display;
     }
 
@@ -1104,7 +1099,7 @@ class _AboutSectionState extends ConsumerState<_AboutSection> {
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.smartphone_outlined),
-            title: const Text('App version'),
+            title: Text(context.l10n.appVersion),
             subtitle: Text(_app?.display ?? '…'),
           ),
         // Server version: on web always; on mobile only when connected.
@@ -1112,7 +1107,7 @@ class _AboutSectionState extends ConsumerState<_AboutSection> {
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.dns_outlined),
-            title: const Text('Server version'),
+            title: Text(context.l10n.serverVersion),
             subtitle: Text(serverSubtitle()),
             trailing: serverTrailing(),
           ),
@@ -1127,9 +1122,8 @@ class _AboutSectionState extends ConsumerState<_AboutSection> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'This app (${_app!.version}) and the server '
-                    '(${_server!.version}) are different versions. Some '
-                    'features may not work until both are updated.',
+                    context.l10n.versionMismatchAbout(
+                        _app!.version, _server!.version),
                     style: theme.textTheme.bodySmall,
                   ),
                 ),
@@ -1149,27 +1143,84 @@ class _ThemeModeSelector extends ConsumerWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: SegmentedButton<ThemeMode>(
-        segments: const [
+        segments: [
           ButtonSegment(
             value: ThemeMode.system,
-            label: Text('System'),
-            icon: Icon(Icons.brightness_auto_outlined),
+            label: Text(context.l10n.themeSystem),
+            icon: const Icon(Icons.brightness_auto_outlined),
           ),
           ButtonSegment(
             value: ThemeMode.light,
-            label: Text('Light'),
-            icon: Icon(Icons.light_mode_outlined),
+            label: Text(context.l10n.themeLight),
+            icon: const Icon(Icons.light_mode_outlined),
           ),
           ButtonSegment(
             value: ThemeMode.dark,
-            label: Text('Dark'),
-            icon: Icon(Icons.dark_mode_outlined),
+            label: Text(context.l10n.themeDark),
+            icon: const Icon(Icons.dark_mode_outlined),
           ),
         ],
         selected: {mode},
         showSelectedIcon: false,
         onSelectionChanged: (s) =>
             ref.read(themeModeProvider.notifier).set(s.first),
+      ),
+    );
+  }
+}
+
+/// Language picker bound to [localeProvider]. `null` = follow the device.
+/// Opens a simple radio dialog with System default / English / Čeština.
+class _LanguageSelector extends ConsumerWidget {
+  const _LanguageSelector();
+
+  String _label(BuildContext context, Locale? locale) => switch (locale?.languageCode) {
+        'en' => context.l10n.languageEnglish,
+        'cs' => context.l10n.languageCzech,
+        _ => context.l10n.languageSystemDefault,
+      };
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final current = ref.watch(localeProvider);
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: const Icon(Icons.translate_outlined),
+      title: Text(context.l10n.languageLabel),
+      subtitle: Text(_label(context, current)),
+      onTap: () => showDialog<void>(
+        context: context,
+        builder: (ctx) => SimpleDialog(
+          title: Text(context.l10n.languageLabel),
+          // Set straight from the radio (then close) so a dismiss changes
+          // nothing — a returned-value approach can't tell "System default"
+          // (null) apart from a barrier-dismiss (also null).
+          children: [
+            RadioGroup<String?>(
+              groupValue: current?.languageCode,
+              onChanged: (code) {
+                ref
+                    .read(localeProvider.notifier)
+                    .set(code == null ? null : Locale(code));
+                Navigator.of(ctx).pop();
+              },
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (final option in <Locale?>[
+                    null,
+                    const Locale('en'),
+                    const Locale('cs')
+                  ])
+                    RadioListTile<String?>(
+                      value: option?.languageCode,
+                      title: Text(_label(ctx, option)),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1190,7 +1241,7 @@ class _AppLockSection extends ConsumerWidget {
         String? error;
         return StatefulBuilder(
           builder: (ctx, setLocal) => AlertDialog(
-            title: const Text('Set a PIN'),
+            title: Text(context.l10n.setAPin),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -1200,7 +1251,7 @@ class _AppLockSection extends ConsumerWidget {
                   obscureText: true,
                   keyboardType: TextInputType.number,
                   inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  decoration: const InputDecoration(labelText: 'PIN'),
+                  decoration: InputDecoration(labelText: context.l10n.pinLabel),
                 ),
                 TextField(
                   controller: confirm,
@@ -1208,27 +1259,27 @@ class _AppLockSection extends ConsumerWidget {
                   keyboardType: TextInputType.number,
                   inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                   decoration:
-                      InputDecoration(labelText: 'Confirm PIN', errorText: error),
+                      InputDecoration(labelText: context.l10n.confirmPin, errorText: error),
                 ),
               ],
             ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(ctx).pop(),
-                child: const Text('Cancel'),
+                child: Text(context.l10n.cancel),
               ),
               TextButton(
                 onPressed: () {
                   final p = pin.text;
                   if (p.length < 4) {
-                    setLocal(() => error = 'Use at least 4 digits');
+                    setLocal(() => error = context.l10n.pinUseAtLeast4Digits);
                   } else if (p != confirm.text) {
-                    setLocal(() => error = "PINs don't match");
+                    setLocal(() => error = context.l10n.pinsDoNotMatch);
                   } else {
                     Navigator.of(ctx).pop(p);
                   }
                 },
-                child: const Text('Save'),
+                child: Text(context.l10n.save),
               ),
             ],
           ),
@@ -1249,8 +1300,8 @@ class _AppLockSection extends ConsumerWidget {
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
           secondary: const Icon(Icons.lock_outline),
-          title: const Text('App lock'),
-          subtitle: const Text('Require a PIN or biometrics to open the app'),
+          title: Text(context.l10n.appLock),
+          subtitle: Text(context.l10n.appLockSub),
           value: lock.enabled,
           onChanged: (on) async {
             if (on) {
@@ -1265,14 +1316,14 @@ class _AppLockSection extends ConsumerWidget {
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             secondary: const Icon(Icons.fingerprint),
-            title: const Text('Unlock with biometrics'),
+            title: Text(context.l10n.unlockWithBiometrics),
             value: lock.biometric,
             onChanged: notifier.setBiometric,
           ),
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.password_outlined),
-            title: const Text('Change PIN'),
+            title: Text(context.l10n.changePin),
             onTap: () async {
               final pin = await _promptNewPin(context);
               if (pin != null) await notifier.changePin(pin);

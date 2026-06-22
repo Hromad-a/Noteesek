@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../l10n/l10n.dart';
 import '../../providers.dart';
 
 /// One-time first-run intro (mobile). Three slides covering the offline-first
@@ -17,32 +18,30 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   final _controller = PageController();
   int _page = 0;
 
-  static const _slides = [
-    (
-      icon: Icons.bolt_outlined,
-      title: 'Works offline, instantly',
-      body: 'Your notes live on this device and are always available — no '
-          'account needed to get started.',
-    ),
-    (
-      icon: Icons.sync_outlined,
-      title: 'Sync when you want',
-      body: 'Connect your own server to back up and sync across devices. '
-          'Optional, and entirely yours.',
-    ),
-    (
-      icon: Icons.group_outlined,
-      title: 'Share notebooks',
-      body: 'With a server connected, share a notebook with other people — '
-          'everyone can view and edit its notes together, in real time.',
-    ),
-    (
-      icon: Icons.checklist_outlined,
-      title: 'Notes, your way',
-      body: 'Text and checklists, labels and colors, notebooks, images, '
-          'search, and an app lock to keep them private.',
-    ),
-  ];
+  static List<({IconData icon, String title, String body})> _slidesFor(
+          AppLocalizations l10n) =>
+      [
+        (
+          icon: Icons.bolt_outlined,
+          title: l10n.onboardOfflineTitle,
+          body: l10n.onboardOfflineBody,
+        ),
+        (
+          icon: Icons.sync_outlined,
+          title: l10n.onboardSyncTitle,
+          body: l10n.onboardSyncBody,
+        ),
+        (
+          icon: Icons.group_outlined,
+          title: l10n.onboardShareTitle,
+          body: l10n.onboardShareBody,
+        ),
+        (
+          icon: Icons.checklist_outlined,
+          title: l10n.onboardNotesTitle,
+          body: l10n.onboardNotesBody,
+        ),
+      ];
 
   @override
   void dispose() {
@@ -55,22 +54,23 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isLast = _page == _slides.length - 1;
+    final slides = _slidesFor(context.l10n);
+    final isLast = _page == slides.length - 1;
     return Scaffold(
       body: SafeArea(
         child: Column(
           children: [
             Align(
               alignment: Alignment.centerRight,
-              child: TextButton(onPressed: _finish, child: const Text('Skip')),
+              child: TextButton(onPressed: _finish, child: Text(context.l10n.onboardSkip)),
             ),
             Expanded(
               child: PageView.builder(
                 controller: _controller,
-                itemCount: _slides.length,
+                itemCount: slides.length,
                 onPageChanged: (i) => setState(() => _page = i),
                 itemBuilder: (context, i) {
-                  final s = _slides[i];
+                  final s = slides[i];
                   return Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 32),
                     child: Column(
@@ -94,7 +94,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                for (var i = 0; i < _slides.length; i++)
+                for (var i = 0; i < slides.length; i++)
                   Container(
                     width: 8,
                     height: 8,
@@ -119,7 +119,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                             duration: const Duration(milliseconds: 250),
                             curve: Curves.easeOut,
                           ),
-                  child: Text(isLast ? 'Get started' : 'Next'),
+                  child: Text(isLast ? context.l10n.onboardGetStarted : context.l10n.onboardNext),
                 ),
               ),
             ),

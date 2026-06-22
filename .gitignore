@@ -18,6 +18,8 @@ app/ios/Flutter/flutter_export_environment.sh
 # Generated Dart code (drift, json_serializable, etc.)
 app/**/*.g.dart
 app/**/*.freezed.dart
+# Generated localizations (flutter gen-l10n, from lib/l10n/*.arb)
+app/lib/l10n/app_localizations*.dart
 
 # Local config / secrets
 *.local

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../l10n/l10n.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 
@@ -23,10 +24,10 @@ class ArchiveScreen extends ConsumerWidget {
     final notesAsync = ref.watch(archivedNotesProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Archive')),
+      appBar: AppBar(title: Text(context.l10n.archiveTitle)),
       body: notesAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
+        error: (e, _) => Center(child: Text(context.l10n.errorWithDetail('$e'))),
         data: (notes) {
           if (notes.isEmpty) return const _EmptyArchive();
           return SafeArea(
@@ -65,7 +66,7 @@ class _EmptyArchive extends StatelessWidget {
           Icon(Icons.archive_outlined,
               size: 64, color: Theme.of(context).disabledColor),
           const SizedBox(height: 12),
-          const Text('No archived notes'),
+          Text(context.l10n.noArchivedNotes),
         ],
       ),
     );

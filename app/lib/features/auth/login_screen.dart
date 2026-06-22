@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import '../../l10n/l10n.dart';
 import 'package:flutter/services.dart' show TextInput;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pocketbase/pocketbase.dart';
@@ -49,6 +50,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+    final l10n = context.l10n; // capture before awaits
     setState(() {
       _busy = true;
       _error = null;
@@ -112,7 +114,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       }
       return;
     } on ClientException catch (e) {
-      setState(() => _error = _humanizeError(e));
+      setState(() => _error = _humanizeError(l10n, e));
     } catch (e) {
       setState(() => _error = e.toString());
     } finally {
@@ -120,19 +122,20 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     }
   }
 
-  String _humanizeError(ClientException e) {
+  String _humanizeError(AppLocalizations l10n, ClientException e) {
     final msg = e.response['message'] as String?;
     if (msg != null && msg.isNotEmpty) return msg;
-    if (e.statusCode == 0) return 'Cannot reach the server. Check the URL.';
-    return 'Request failed (${e.statusCode}).';
+    if (e.statusCode == 0) return l10n.cannotReachServerCheckUrl;
+    return l10n.requestFailed(e.statusCode);
   }
 
   /// Sends a password-reset email, then opens the confirm screen so the user can
   /// enter the emailed code and a new password. Requires a reachable server URL.
   Future<void> _forgotPassword() async {
+    final l10n = context.l10n; // capture before awaits
     if ((_serverCtrl.text.trim().isEmpty) ||
         !(Uri.tryParse(_serverCtrl.text.trim())?.isAbsolute ?? false)) {
-      setState(() => _error = 'Enter your server URL first.');
+      setState(() => _error = l10n.enterServerUrlFirst);
       return;
     }
 
@@ -148,26 +151,25 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         }
 
         return AlertDialog(
-          title: const Text('Reset password'),
+          title: Text(context.l10n.resetPasswordTitle),
           content: Form(
             key: formKey,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text(
-                    "Enter your account email and we'll send a reset link."),
+                Text(context.l10n.forgotPasswordEmailPrompt),
                 const SizedBox(height: 12),
                 TextFormField(
                   controller: emailCtrl,
                   autofocus: true,
                   keyboardType: TextInputType.emailAddress,
                   autocorrect: false,
-                  decoration: const InputDecoration(
-                    labelText: 'Email',
+                  decoration: InputDecoration(
+                    labelText: context.l10n.emailLabel,
                     prefixIcon: Icon(Icons.email_outlined),
                   ),
                   validator: (v) =>
-                      (v?.contains('@') ?? false) ? null : 'Enter your email',
+                      (v?.contains('@') ?? false) ? null : context.l10n.enterYourEmail,
                   onFieldSubmitted: (_) => submit(),
                 ),
               ],
@@ -176,11 +178,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel'),
+              child: Text(context.l10n.cancel),
             ),
             FilledButton(
               onPressed: submit,
-              child: const Text('Send reset email'),
+              child: Text(context.l10n.sendResetEmail),
             ),
           ],
         );
@@ -203,15 +205,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
-        ..showSnackBar(const SnackBar(
-          content: Text('If that email has an account, a reset link is on its '
-              'way. Enter the code on the next screen.'),
+        ..showSnackBar(SnackBar(
+          content: Text(l10n.resetEmailSentBody),
         ));
       await Navigator.of(context).push(MaterialPageRoute(
         builder: (_) => const PasswordResetScreen(),
       ));
     } on ClientException catch (e) {
-      setState(() => _error = _humanizeError(e));
+      setState(() => _error = _humanizeError(l10n, e));
     } catch (e) {
       setState(() => _error = e.toString());
     } finally {
@@ -224,7 +225,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     return Scaffold(
       // On mobile this is pushed (a back arrow appears); on web it's the gate.
       appBar: AppBar(
-        title: Text(kIsWeb ? 'Noteesek' : 'Connect to server'),
+        title: Text(kIsWeb ? 'Noteesek' : context.l10n.connectToServer),
         automaticallyImplyLeading: !kIsWeb,
       ),
       body: Center(
@@ -241,26 +242,22 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 children: [
                   Text(
                     _registerMode
-                        ? 'Create an account to sync'
-                        : 'Sign in to sync',
+                        ? context.l10n.createAccountToSync
+                        : context.l10n.signInToSync,
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    kIsWeb
-                        ? 'Your notes are stored on your server and kept in '
-                            'sync in real time.'
-                        : 'Your notes stay on this device and also sync to '
-                            'your server.',
+                    kIsWeb ? context.l10n.loginBlurbWeb : context.l10n.loginBlurbMobile,
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                   const SizedBox(height: 24),
                   TextFormField(
                     controller: _serverCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Server URL',
+                    decoration: InputDecoration(
+                      labelText: context.l10n.serverUrlLabel,
                       hintText: 'http://localhost:8090',
                       prefixIcon: Icon(Icons.dns_outlined),
                     ),
@@ -268,10 +265,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     autocorrect: false,
                     validator: (v) {
                       final t = v?.trim() ?? '';
-                      if (t.isEmpty) return 'Server URL is required';
+                      if (t.isEmpty) return context.l10n.serverUrlRequired;
                       final uri = Uri.tryParse(t);
                       if (uri == null || !uri.isAbsolute) {
-                        return 'Enter a valid URL';
+                        return context.l10n.enterValidUrl;
                       }
                       return null;
                     },
@@ -279,8 +276,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   const SizedBox(height: 12),
                   TextFormField(
                     controller: _emailCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Email',
+                    decoration: InputDecoration(
+                      labelText: context.l10n.emailLabel,
                       prefixIcon: Icon(Icons.email_outlined),
                     ),
                     keyboardType: TextInputType.emailAddress,
@@ -292,13 +289,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     ],
                     textInputAction: TextInputAction.next,
                     validator: (v) =>
-                        (v?.contains('@') ?? false) ? null : 'Enter your email',
+                        (v?.contains('@') ?? false) ? null : context.l10n.enterYourEmail,
                   ),
                   const SizedBox(height: 12),
                   TextFormField(
                     controller: _passwordCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Password',
+                    decoration: InputDecoration(
+                      labelText: context.l10n.passwordLabel,
                       prefixIcon: Icon(Icons.lock_outline),
                     ),
                     obscureText: true,
@@ -313,7 +310,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     onFieldSubmitted: (_) => _submit(),
                     validator: (v) => (v != null && v.length >= 8)
                         ? null
-                        : 'At least 8 characters',
+                        : context.l10n.atLeast8Chars,
                   ),
                   if (_error != null) ...[
                     const SizedBox(height: 16),
@@ -335,7 +332,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                               child:
                                   CircularProgressIndicator(strokeWidth: 2),
                             )
-                          : Text(_registerMode ? 'Create account' : 'Sign in'),
+                          : Text(_registerMode ? context.l10n.createAccount : context.l10n.signIn),
                     ),
                   ),
                   TextButton(
@@ -346,13 +343,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                               _error = null;
                             }),
                     child: Text(_registerMode
-                        ? 'Have an account? Sign in'
-                        : 'New here? Create an account'),
+                        ? context.l10n.haveAccountSignIn
+                        : context.l10n.newHereCreate),
                   ),
                   if (!_registerMode)
                     TextButton(
                       onPressed: _busy ? null : _forgotPassword,
-                      child: const Text('Forgot password?'),
+                      child: Text(context.l10n.forgotPassword),
                     ),
                 ],
                 ),

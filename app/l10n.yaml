@@ -1,0 +1,9 @@
+# Flutter gen-l10n configuration. Runs on `flutter pub get` / `flutter run`
+# (generate: true in pubspec). Each locale is one ARB file in arb-dir; app_en is
+# the template (source of truth for keys). Generated AppLocalizations is reached
+# via context.l10n (see lib/l10n/l10n.dart).
+arb-dir: lib/l10n
+template-arb-file: app_en.arb
+output-localization-file: app_localizations.dart
+output-class: AppLocalizations
+nullable-getters: false

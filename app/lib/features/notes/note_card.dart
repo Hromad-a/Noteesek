@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import '../../l10n/l10n.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:markdown_widget/markdown_widget.dart';
 
@@ -254,7 +255,7 @@ class _ChecklistPreview extends ConsumerWidget {
     return itemsAsync.maybeWhen(
       data: (items) {
         if (items.isEmpty) {
-          return Text('No items',
+          return Text(context.l10n.noItems,
               style: Theme.of(context)
                   .textTheme
                   .bodyMedium
@@ -305,7 +306,7 @@ class _ChecklistPreview extends ConsumerWidget {
             if (items.length > preview.length)
               Padding(
                 padding: const EdgeInsets.only(top: 2),
-                child: Text('+${items.length - preview.length} more',
+                child: Text(context.l10n.moreItems(items.length - preview.length),
                     style: Theme.of(context).textTheme.bodySmall),
               ),
           ],
@@ -382,7 +383,7 @@ class _SharedBadge extends ConsumerWidget {
     return IconButton(
       visualDensity: VisualDensity.compact,
       iconSize: 18,
-      tooltip: 'Shared notebook — tap to see members',
+      tooltip: context.l10n.sharedNotebookTapMembers,
       icon: const Icon(Icons.group_outlined),
       onPressed: () => showNotebookShareSheet(context, ref, nb.id),
     );
@@ -414,7 +415,7 @@ class _CardFooter extends ConsumerWidget {
             IconButton(
               visualDensity: VisualDensity.compact,
               iconSize: 18,
-              tooltip: note.archived ? 'Unarchive' : 'Archive',
+              tooltip: note.archived ? context.l10n.unarchive : context.l10n.archive,
               icon: Icon(note.archived
                   ? Icons.unarchive_outlined
                   : Icons.archive_outlined),
@@ -423,7 +424,7 @@ class _CardFooter extends ConsumerWidget {
             IconButton(
               visualDensity: VisualDensity.compact,
               iconSize: 18,
-              tooltip: 'Delete',
+              tooltip: context.l10n.delete,
               icon: const Icon(Icons.delete_outline),
               onPressed: () => repo.softDelete(note.id),
             ),

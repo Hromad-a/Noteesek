@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import '../../../l10n/l10n.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/notes_repository.dart';
@@ -24,7 +25,7 @@ class BackupRestoreScreen extends ConsumerStatefulWidget {
     super.key,
     required this.bytes,
     required this.sourceLabel,
-    this.title = 'Restore a backup',
+    this.title,
     this.copiesOnly = false,
   });
 
@@ -32,7 +33,8 @@ class BackupRestoreScreen extends ConsumerStatefulWidget {
   final String sourceLabel;
 
   /// App-bar title (e.g. "Import notes" when the source is a Markdown import).
-  final String title;
+  /// Null falls back to a localized "Restore a backup".
+  final String? title;
 
   /// When true the source is a copy-only import (e.g. Markdown): notes come in
   /// as new copies into a chosen notebook. When false (a backup file) restore is
@@ -96,6 +98,7 @@ class _BackupRestoreScreenState extends ConsumerState<BackupRestoreScreen> {
       });
 
   Future<void> _add() async {
+    final l10n = context.l10n;
     setState(() => _busy = true);
     try {
       final n = await addNotesFromBackup(
@@ -104,30 +107,28 @@ class _BackupRestoreScreenState extends ConsumerState<BackupRestoreScreen> {
         selectedNoteIds: _selected,
         targetNotebookName: _targetNotebook,
       );
-      _done(n, 'Added');
+      _done(l10n.addedNotesCount(n));
     } catch (e) {
       if (mounted) setState(() => _busy = false);
-      _snack('Import failed: $e');
+      _snack(l10n.importFailed('$e'));
     }
   }
 
   /// Restore only the selected notes, by id (no duplicates).
   Future<void> _restoreSelected() async {
+    final l10n = context.l10n;
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('Restore ${_selected.length} '
-            '${_selected.length == 1 ? 'note' : 'notes'}?'),
-        content: const Text(
-            'The selected notes will be replaced with the version from this '
-            'backup. Your other notes are left untouched.'),
+        title: Text(l10n.restoreSelectedTitle(_selected.length)),
+        content: Text(l10n.restoreSelectedBody),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel')),
+              child: Text(l10n.cancel)),
           FilledButton(
               onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Restore')),
+              child: Text(l10n.restore)),
         ],
       ),
     );
@@ -140,15 +141,16 @@ class _BackupRestoreScreenState extends ConsumerState<BackupRestoreScreen> {
           : await backup.BackupService(ref.read(databaseProvider)).importV2(
               widget.bytes, ref.read(activeOwnerProvider),
               selectedNoteIds: _selected);
-      _done(n, 'Restored');
+      _done(l10n.restoredNotesCount(n));
     } catch (e) {
       if (mounted) setState(() => _busy = false);
-      _snack('Restore failed: $e');
+      _snack(l10n.restoreFailed('$e'));
     }
   }
 
   /// Make the account match the whole backup (by id; absent notes → Trash).
   Future<void> _replace() async {
+    final l10n = context.l10n;
     final ok = await _confirmReplace();
     if (ok != true) return;
     setState(() => _busy = true);
@@ -159,20 +161,19 @@ class _BackupRestoreScreenState extends ConsumerState<BackupRestoreScreen> {
           : await backup.BackupService(ref.read(databaseProvider)).importV2(
               widget.bytes, ref.read(activeOwnerProvider),
               mirror: true);
-      _done(n, 'Restored');
+      _done(l10n.restoredNotesCount(n));
     } catch (e) {
       if (mounted) setState(() => _busy = false);
-      _snack('Restore failed: $e');
+      _snack(l10n.restoreFailed('$e'));
     }
   }
 
-  void _done(int n, String verb) {
+  void _done(String message) {
     if (!mounted) return;
     Navigator.of(context).pop(true);
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(
-          SnackBar(content: Text('$verb $n note${n == 1 ? '' : 's'}')));
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   void _snack(String m) {
@@ -188,21 +189,20 @@ class _BackupRestoreScreenState extends ConsumerState<BackupRestoreScreen> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setLocal) => AlertDialog(
-          title: const Text('Replace everything?'),
+          title: Text(context.l10n.replaceEverythingTitle),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('Your notes will become exactly this backup. Notes '
-                  'not in it move to Trash. This cannot be undone.'),
+              Text(context.l10n.replaceEverythingBody),
               const SizedBox(height: 12),
               TextField(
                 controller: ctrl,
                 autocorrect: false,
                 textCapitalization: TextCapitalization.characters,
-                decoration: const InputDecoration(
-                    border: OutlineInputBorder(),
-                    labelText: 'Type REPLACE to confirm'),
+                decoration: InputDecoration(
+                    border: const OutlineInputBorder(),
+                    labelText: context.l10n.typeReplaceToConfirm),
                 onChanged: (_) => setLocal(() {}),
               ),
             ],
@@ -210,12 +210,12 @@ class _BackupRestoreScreenState extends ConsumerState<BackupRestoreScreen> {
           actions: [
             TextButton(
                 onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('Cancel')),
+                child: Text(context.l10n.cancel)),
             FilledButton(
               onPressed: ctrl.text.trim().toUpperCase() == 'REPLACE'
                   ? () => Navigator.pop(ctx, true)
                   : null,
-              child: const Text('Replace'),
+              child: Text(context.l10n.replace),
             ),
           ],
         ),
@@ -228,11 +228,11 @@ class _BackupRestoreScreenState extends ConsumerState<BackupRestoreScreen> {
     final theme = Theme.of(context);
     if (_error != null) {
       return Scaffold(
-        appBar: AppBar(title: Text(widget.title)),
+        appBar: AppBar(title: Text(widget.title ?? context.l10n.restoreABackup)),
         body: Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
-            child: Text("This isn't a readable backup.\n$_error",
+            child: Text("${context.l10n.notReadableBackup}\n$_error",
                 textAlign: TextAlign.center),
           ),
         ),
@@ -243,7 +243,7 @@ class _BackupRestoreScreenState extends ConsumerState<BackupRestoreScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.title),
+        title: Text(widget.title ?? context.l10n.restoreABackup),
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(28),
           child: Padding(
@@ -251,8 +251,8 @@ class _BackupRestoreScreenState extends ConsumerState<BackupRestoreScreen> {
             child: Align(
               alignment: Alignment.centerLeft,
               child: Text(
-                '${widget.sourceLabel} · ${data.noteCount} notes · '
-                '${data.imageCount} images',
+                '${widget.sourceLabel} · '
+                '${context.l10n.backupCounts(data.noteCount, data.imageCount)}',
                 style: theme.textTheme.bodySmall,
               ),
             ),
@@ -337,7 +337,7 @@ class _Footer extends StatelessWidget {
         top: false,
         child: Padding(
           padding: const EdgeInsets.all(12),
-          child: copiesOnly ? _copies(context) : _restore(scheme),
+          child: copiesOnly ? _copies(context) : _restore(context, scheme),
         ),
       ),
     );
@@ -349,17 +349,15 @@ class _Footer extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Text('Add into', style: TextStyle(fontSize: 13)),
+              Text(context.l10n.addInto, style: const TextStyle(fontSize: 13)),
               const SizedBox(width: 8),
               Expanded(
                 child: DropdownButton<String?>(
                   isExpanded: true,
                   value: target,
                   items: [
-                    const DropdownMenuItem(
-                        value: null, child: Text('Keep original notebook')),
-                    const DropdownMenuItem(
-                        value: '', child: Text('No notebook')),
+                    DropdownMenuItem(value: null, child: Text(context.l10n.keepOriginalNotebook)),
+                    DropdownMenuItem(value: '', child: Text(context.l10n.noNotebook)),
                     for (final n in notebookNames)
                       DropdownMenuItem(value: n, child: Text(n)),
                   ],
@@ -373,26 +371,26 @@ class _Footer extends StatelessWidget {
             width: double.infinity,
             child: FilledButton.tonal(
               onPressed: onAdd,
-              child: Text(busy ? '…' : 'Add $selectedCount to my notes'),
+              child: Text(busy ? '…' : context.l10n.addCountToMyNotes(selectedCount)),
             ),
           ),
         ],
       );
 
   // Backup-file restore: by id (no duplicates) — selected, or the whole thing.
-  Widget _restore(ColorScheme scheme) => Row(
+  Widget _restore(BuildContext context, ColorScheme scheme) => Row(
         children: [
           Expanded(
             child: FilledButton.tonal(
               onPressed: onRestoreSelected,
-              child: Text(busy ? '…' : 'Restore $selectedCount selected'),
+              child: Text(busy ? '…' : context.l10n.restoreSelectedCount(selectedCount)),
             ),
           ),
           const SizedBox(width: 8),
           OutlinedButton(
             onPressed: onReplace,
             style: OutlinedButton.styleFrom(foregroundColor: scheme.error),
-            child: const Text('Replace all…'),
+            child: Text(context.l10n.replaceAll),
           ),
         ],
       );
