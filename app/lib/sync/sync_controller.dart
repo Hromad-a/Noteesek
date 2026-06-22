@@ -119,6 +119,7 @@ class SyncController extends Notifier<SyncStatus> {
       const collections = [
         'labels',
         'notebooks',
+        'backgrounds',
         'notes',
         'checklist_items',
         'attachments',

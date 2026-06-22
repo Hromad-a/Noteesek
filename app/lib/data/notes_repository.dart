@@ -209,6 +209,26 @@ abstract interface class NotesRepository {
   Future<String> addAttachment(String noteId, Uint8List bytes);
   Future<void> deleteAttachment(String id);
 
+  // Backgrounds — an owner-scoped library of image backgrounds (see the
+  // `backgrounds` collection). A note references one by id via [setNoteBackground].
+  Stream<List<BackgroundRow>> watchBackgrounds();
+  Future<String> addBackground(Uint8List bytes, {String name});
+  Future<void> updateBackground(
+    String id, {
+    String? name,
+    double? opacity,
+    String? overlayColor,
+    double? overlayOpacity,
+    String? fit,
+    String? repeat,
+    double? scale,
+  });
+  Future<void> deleteBackground(String id);
+
+  /// Set ('' = clear) a note's image background. Setting one clears the note's
+  /// color (the two are mutually exclusive).
+  Future<void> setNoteBackground(String noteId, String backgroundId);
+
   /// The ids of notes that currently have at least one (non-deleted)
   /// attachment. Drives the "has image" search filter.
   Stream<Set<String>> watchNoteIdsWithAttachments();
@@ -651,6 +671,11 @@ final attachmentsProvider =
 /// All of the user's (non-deleted) labels, ordered by name.
 final labelsProvider = StreamProvider<List<LabelRow>>((ref) {
   return ref.watch(notesRepositoryProvider).watchLabels();
+});
+
+/// The user's image-background library (non-deleted), oldest first.
+final backgroundsProvider = StreamProvider<List<BackgroundRow>>((ref) {
+  return ref.watch(notesRepositoryProvider).watchBackgrounds();
 });
 
 /// Active notes filtered to those carrying [labelId] (for the label view).

@@ -22,6 +22,7 @@ class RemoteNotesRepository implements NotesRepository {
   final Map<String, AttachmentRow> _attachments = {};
   final Map<String, LabelRow> _labels = {};
   final Map<String, NotebookRow> _notebooks = {};
+  final Map<String, BackgroundRow> _backgrounds = {};
 
   final _events = StreamController<void>.broadcast();
   final List<UnsubscribeFunc> _unsubs = [];
@@ -112,7 +113,25 @@ class RemoteNotesRepository implements NotesRepository {
     for (final r in notebooks) {
       _notebooks[r.id] = _notebookFrom(r);
     }
+    final backgrounds = await _pb.collection('backgrounds').getFullList();
+    for (final r in backgrounds) {
+      _backgrounds[r.id] = _backgroundFrom(r, await _downloadBytes(r));
+    }
 
+    _unsubs.add(await _pb.collection('backgrounds').subscribe('*', (e) async {
+      if (e.action == 'delete' || e.record == null) {
+        if (e.record != null) _backgrounds.remove(e.record!.id);
+      } else {
+        final r = e.record!;
+        final existing = _backgrounds[r.id];
+        // Re-download only when the file changed (or first seen).
+        final bytes = (existing != null && existing.file == r.getStringValue('file'))
+            ? existing.data
+            : await _downloadBytes(r);
+        _backgrounds[r.id] = _backgroundFrom(r, bytes);
+      }
+      _events.add(null);
+    }));
     _unsubs.add(await _pb.collection('notes').subscribe('*', (e) {
       _applyEvent(e, _notes, (r) => _noteFrom(r));
     }));
@@ -659,6 +678,85 @@ class RemoteNotesRepository implements NotesRepository {
       .map((a) => a.note)
       .toSet());
 
+  // ---- Backgrounds ----
+
+  @override
+  Stream<List<BackgroundRow>> watchBackgrounds() => _view(() {
+        final list = _backgrounds.values.where((b) => !b.deleted).toList()
+          ..sort((a, b) => (a.created ?? '').compareTo(b.created ?? ''));
+        return list;
+      });
+
+  @override
+  Future<String> addBackground(Uint8List bytes, {String name = ''}) =>
+      _guard(() async {
+        final r = await _pb.collection('backgrounds').create(
+          body: {
+            'name': name,
+            'deleted': false,
+            'opacity': 1,
+            'overlayOpacity': 0,
+            'fit': 'cover',
+            'repeat': 'none',
+            'scale': 1,
+          },
+          files: [
+            http.MultipartFile.fromBytes('file', bytes,
+                filename: 'background.jpg')
+          ],
+        );
+        _backgrounds[r.id] = _backgroundFrom(r, bytes);
+        _events.add(null);
+        return r.id;
+      }, '');
+
+  @override
+  Future<void> updateBackground(
+    String id, {
+    String? name,
+    double? opacity,
+    String? overlayColor,
+    double? overlayOpacity,
+    String? fit,
+    String? repeat,
+    double? scale,
+  }) =>
+      _guardVoid(() async {
+        final body = <String, dynamic>{};
+        if (name != null) body['name'] = name;
+        if (opacity != null) body['opacity'] = opacity;
+        if (overlayColor != null) body['overlayColor'] = overlayColor;
+        if (overlayOpacity != null) body['overlayOpacity'] = overlayOpacity;
+        if (fit != null) body['fit'] = fit;
+        if (repeat != null) body['repeat'] = repeat;
+        if (scale != null) body['scale'] = scale;
+        if (body.isEmpty) return;
+        final r = await _pb.collection('backgrounds').update(id, body: body);
+        _backgrounds[id] = _backgroundFrom(r, _backgrounds[id]?.data);
+        _events.add(null);
+      });
+
+  @override
+  Future<void> deleteBackground(String id) => _guardVoid(() async {
+        await _pb.collection('backgrounds').update(id, body: {'deleted': true});
+        _backgrounds.remove(id);
+        // Clear it off any note referencing it.
+        for (final n in _notes.values.where((n) => n.background == id).toList()) {
+          final r =
+              await _pb.collection('notes').update(n.id, body: {'background': ''});
+          _notes[n.id] = _noteFrom(r);
+        }
+        _events.add(null);
+      });
+
+  @override
+  Future<void> setNoteBackground(String noteId, String backgroundId) =>
+      _updateNote(
+          noteId,
+          backgroundId.isEmpty
+              ? {'background': ''}
+              : {'background': backgroundId, 'color': ''});
+
   Future<Uint8List?> _downloadBytes(RecordModel rec) async {
     final filename = rec.getStringValue('file');
     if (filename.isEmpty) return null;
@@ -683,6 +781,7 @@ class RemoteNotesRepository implements NotesRepository {
         pinned: r.getBoolValue('pinned'),
         archived: r.getBoolValue('archived'),
         color: r.getStringValue('color'),
+        background: r.getStringValue('background'),
         labels: encodeLabelIds(r.getListValue<String>('labels')),
         notebook: r.getStringValue('notebook'),
         lockedBy: r.getStringValue('lockedBy'),
@@ -739,6 +838,30 @@ class RemoteNotesRepository implements NotesRepository {
         updated: r.getStringValue('updated'),
         dirty: false,
       );
+
+  BackgroundRow _backgroundFrom(RecordModel r, Uint8List? bytes) => BackgroundRow(
+        id: r.id,
+        owner: r.getStringValue('owner'),
+        name: r.getStringValue('name'),
+        file: r.getStringValue('file'),
+        data: bytes,
+        opacity: _numOr(r, 'opacity', 1),
+        overlayColor: r.getStringValue('overlayColor'),
+        overlayOpacity: _numOr(r, 'overlayOpacity', 0),
+        fit: r.getStringValue('fit').isEmpty ? 'cover' : r.getStringValue('fit'),
+        repeat: r.getStringValue('repeat').isEmpty ? 'none' : r.getStringValue('repeat'),
+        scale: _numOr(r, 'scale', 1),
+        deleted: r.getBoolValue('deleted'),
+        created: r.getStringValue('created'),
+        updated: r.getStringValue('updated'),
+        dirty: false,
+      );
+
+  // PocketBase number fields read as num; fall back to a default when unset/0.
+  double _numOr(RecordModel r, String field, double fallback) {
+    final v = r.getDoubleValue(field);
+    return v == 0 ? fallback : v;
+  }
 
   void dispose() {
     for (final u in _unsubs) {
