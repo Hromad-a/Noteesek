@@ -24,7 +24,7 @@ class ArchiveScreen extends ConsumerWidget {
     final notesAsync = ref.watch(archivedNotesProvider);
 
     return Scaffold(
-      appBar: AppBar(title: Text(context.l10n.archive)),
+      appBar: AppBar(title: Text(context.l10n.archiveTitle)),
       body: notesAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text(context.l10n.errorWithDetail('$e'))),

@@ -415,7 +415,7 @@ class _CardFooter extends ConsumerWidget {
             IconButton(
               visualDensity: VisualDensity.compact,
               iconSize: 18,
-              tooltip: note.archived ? 'Unarchive' : context.l10n.archive,
+              tooltip: note.archived ? context.l10n.unarchive : context.l10n.archive,
               icon: Icon(note.archived
                   ? Icons.unarchive_outlined
                   : Icons.archive_outlined),

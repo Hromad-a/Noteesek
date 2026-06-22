@@ -934,7 +934,7 @@ class _AppDrawer extends ConsumerWidget {
                   ),
                   ListTile(
                     leading: const Icon(Icons.archive_outlined),
-                    title: Text(context.l10n.archive),
+                    title: Text(context.l10n.archiveTitle),
                     onTap: () => _push(context, const ArchiveScreen()),
                   ),
                   ListTile(

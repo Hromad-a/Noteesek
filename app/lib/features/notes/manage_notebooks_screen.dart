@@ -65,32 +65,62 @@ class _ManageNotebooksScreenState extends ConsumerState<ManageNotebooksScreen> {
   }
 
   Future<void> _delete(NotebookRow notebook) async {
-    // Three-way choice: move the notes out to "No notebook", delete them
-    // (to Trash), or cancel.
-    final choice = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(context.l10n.deleteEntityTitle(notebook.name)),
-        content: const Text(
-            'Choose what happens to the notes in this notebook.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text(context.l10n.cancel),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop('move'),
-            child: Text(context.l10n.keepNotes),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop('trash'),
-            child: Text(context.l10n.deleteNotes),
-          ),
-        ],
-      ),
-    );
-    if (choice == null) return;
-    await ref.read(notesRepositoryProvider).deleteNotebook(
+    final repo = ref.read(notesRepositoryProvider);
+    // Does the notebook hold any notes the move/delete choice would affect?
+    // (active + archived; trashed notes aren't part of the decision.)
+    final active = await repo.watchActive().first;
+    final archived = await repo.watchArchived().first;
+    final hasNotes = [...active, ...archived].any((n) => n.notebook == notebook.id);
+
+    final String choice;
+    if (!hasNotes) {
+      // No notes to decide on — just confirm the delete, no move/trash prompt.
+      if (!mounted) return;
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text(context.l10n.deleteEntityTitle(notebook.name)),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: Text(context.l10n.cancel)),
+            TextButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: Text(context.l10n.delete)),
+          ],
+        ),
+      );
+      if (ok != true) return;
+      choice = 'move'; // moot (nothing to move), but a valid arg
+    } else {
+      // Three-way choice: move the notes out to "No notebook", delete them
+      // (to Trash), or cancel.
+      if (!mounted) return;
+      final picked = await showDialog<String>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text(context.l10n.deleteEntityTitle(notebook.name)),
+          content: Text(context.l10n.deleteNotebookBody),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: Text(context.l10n.cancel),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop('move'),
+              child: Text(context.l10n.keepNotes),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop('trash'),
+              child: Text(context.l10n.deleteNotes),
+            ),
+          ],
+        ),
+      );
+      if (picked == null) return;
+      choice = picked;
+    }
+    await repo.deleteNotebook(
           notebook.id,
           moveNotesToDefault: choice == 'move',
         );
@@ -167,7 +197,7 @@ class _ManageNotebooksScreenState extends ConsumerState<ManageNotebooksScreen> {
         children: [
           if (canShare)
             IconButton(
-              tooltip: ownedByMe ? 'Share' : 'Members',
+              tooltip: ownedByMe ? context.l10n.shareAction : context.l10n.members,
               icon: Icon(shared ? Icons.group : Icons.person_add_alt_outlined),
               onPressed: () => showNotebookShareSheet(context, ref, nb.id),
             ),
@@ -176,8 +206,8 @@ class _ManageNotebooksScreenState extends ConsumerState<ManageNotebooksScreen> {
           if (!ownedByMe)
             IconButton(
               tooltip: locallyHidden.contains(nb.id)
-                  ? 'Hidden from your All notes'
-                  : 'Shown in your All notes',
+                  ? context.l10n.hiddenFromYourAllNotes
+                  : context.l10n.shownInYourAllNotes,
               icon: Icon(locallyHidden.contains(nb.id)
                   ? Icons.visibility_off_outlined
                   : Icons.visibility_outlined),
@@ -188,8 +218,8 @@ class _ManageNotebooksScreenState extends ConsumerState<ManageNotebooksScreen> {
           if (ownedByMe) ...[
             IconButton(
               tooltip: nb.hiddenFromAll
-                  ? 'Hidden from All notes'
-                  : 'Shown in All notes',
+                  ? context.l10n.hiddenFromAllNotes
+                  : context.l10n.shownInAllNotes,
               icon: Icon(nb.hiddenFromAll
                   ? Icons.visibility_off_outlined
                   : Icons.visibility_outlined),
