@@ -21,6 +21,7 @@ import '../backup/v2/backup_v2_import.dart';
 import '../../ui/web_centered.dart';
 import '../backup/snapshots_screen.dart';
 import '../lock/app_lock.dart';
+import '../notes/manage_backgrounds_screen.dart';
 import 'login_screen.dart';
 import '../../providers.dart';
 import '../../sync/sync_controller.dart';
@@ -730,6 +731,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           _SectionHeader(context.l10n.sectionAppearance),
           _ThemeModeSelector(),
           const _LanguageSelector(),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.image_outlined),
+            title: Text(context.l10n.backgroundsTitle),
+            subtitle: Text(context.l10n.backgroundsSub),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => const ManageBackgroundsScreen(),
+            )),
+          ),
           Consumer(builder: (context, ref, _) {
             final on = ref.watch(markdownEnabledProvider);
             return SwitchListTile(
