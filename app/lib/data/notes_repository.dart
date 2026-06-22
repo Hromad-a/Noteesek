@@ -211,7 +211,12 @@ abstract interface class NotesRepository {
 
   // Backgrounds — an owner-scoped library of image backgrounds (see the
   // `backgrounds` collection). A note references one by id via [setNoteBackground].
+  /// The user's own library (owner-scoped) — for Settings + the note picker.
   Stream<List<BackgroundRow>> watchBackgrounds();
+
+  /// Every locally-known background (own **and** foreign ones fetched for shared
+  /// notes) — for *rendering* a note's background by id. Not the library.
+  Stream<List<BackgroundRow>> watchAllBackgrounds();
   Future<String> addBackground(Uint8List bytes, {String name});
   Future<void> updateBackground(
     String id, {
@@ -673,9 +678,15 @@ final labelsProvider = StreamProvider<List<LabelRow>>((ref) {
   return ref.watch(notesRepositoryProvider).watchLabels();
 });
 
-/// The user's image-background library (non-deleted), oldest first.
+/// The user's image-background library (non-deleted), oldest first. For the
+/// Settings library + the note picker.
 final backgroundsProvider = StreamProvider<List<BackgroundRow>>((ref) {
   return ref.watch(notesRepositoryProvider).watchBackgrounds();
+});
+
+/// Every locally-known background (own + foreign), for rendering by id.
+final allBackgroundsProvider = StreamProvider<List<BackgroundRow>>((ref) {
+  return ref.watch(notesRepositoryProvider).watchAllBackgrounds();
 });
 
 /// Active notes filtered to those carrying [labelId] (for the label view).

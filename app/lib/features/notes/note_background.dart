@@ -41,11 +41,12 @@ Color? parseHexColor(String hex) {
 String colorToHex(Color c) =>
     '#${(c.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0')}';
 
-/// Looks up a single background by id from the user's library.
+/// Looks up a single background by id for *rendering* — from the full local
+/// pool (own library + foreign backgrounds fetched for shared notes).
 final backgroundByIdProvider =
     Provider.family<BackgroundRow?, String>((ref, id) {
   if (id.isEmpty) return null;
-  final list = ref.watch(backgroundsProvider).asData?.value ?? const [];
+  final list = ref.watch(allBackgroundsProvider).asData?.value ?? const [];
   for (final b in list) {
     if (b.id == id) return b;
   }

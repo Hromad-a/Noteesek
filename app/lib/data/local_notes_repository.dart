@@ -665,6 +665,16 @@ class LocalNotesRepository implements NotesRepository {
 
   @override
   Stream<List<BackgroundRow>> watchBackgrounds() {
+    // The library: the device's own backgrounds (foreign ones fetched for shared
+    // notes are excluded so they don't pollute Settings / the picker).
+    return (_db.select(_db.backgrounds)
+          ..where((t) => t.deleted.equals(false) & t.owner.equals(_ownerId))
+          ..orderBy([(t) => OrderingTerm(expression: t.created)]))
+        .watch();
+  }
+
+  @override
+  Stream<List<BackgroundRow>> watchAllBackgrounds() {
     return (_db.select(_db.backgrounds)
           ..where((t) => t.deleted.equals(false))
           ..orderBy([(t) => OrderingTerm(expression: t.created)]))

@@ -64,6 +64,18 @@ class OnlineSharedNoteRepository extends LocalNotesRepository {
     }
   }
 
+  /// A shared note's background change goes straight to the server (clearing the
+  /// color — they're mutually exclusive) so other members see it promptly. The
+  /// referenced background record itself syncs through the normal library push.
+  @override
+  Future<void> setNoteBackground(String noteId, String backgroundId) async {
+    await _pb.collection('notes').update(
+        noteId,
+        body: backgroundId.isEmpty
+            ? {'background': ''}
+            : {'background': backgroundId, 'color': ''});
+  }
+
   /// Take a shared note out into a notebook I own, claiming ownership. Done in a
   /// single server-direct write *while still a member* so it can't be rejected
   /// by a racing unshare; the change comes back into drift via realtime (I keep

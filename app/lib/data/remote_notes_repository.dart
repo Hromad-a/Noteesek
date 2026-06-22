@@ -117,6 +117,10 @@ class RemoteNotesRepository implements NotesRepository {
     for (final r in backgrounds) {
       _backgrounds[r.id] = _backgroundFrom(r, await _downloadBytes(r));
     }
+    // Foreign backgrounds referenced by shared notes (not in our own library).
+    for (final n in _notes.values) {
+      await _ensureBackground(n.background);
+    }
 
     _unsubs.add(await _pb.collection('backgrounds').subscribe('*', (e) async {
       if (e.action == 'delete' || e.record == null) {
@@ -132,8 +136,13 @@ class RemoteNotesRepository implements NotesRepository {
       }
       _events.add(null);
     }));
-    _unsubs.add(await _pb.collection('notes').subscribe('*', (e) {
+    _unsubs.add(await _pb.collection('notes').subscribe('*', (e) async {
       _applyEvent(e, _notes, (r) => _noteFrom(r));
+      // Fetch a foreign background a (shared) note newly references.
+      final r = e.record;
+      if (r != null && e.action != 'delete') {
+        await _ensureBackground(r.getStringValue('background'));
+      }
     }));
     _unsubs.add(await _pb.collection('labels').subscribe('*', (e) {
       _applyEvent(e, _labels, (r) => _labelFrom(r));
@@ -682,10 +691,28 @@ class RemoteNotesRepository implements NotesRepository {
 
   @override
   Stream<List<BackgroundRow>> watchBackgrounds() => _view(() {
-        final list = _backgrounds.values.where((b) => !b.deleted).toList()
+        final list = _backgrounds.values
+            .where((b) => !b.deleted && b.owner == _ownerId)
+            .toList()
           ..sort((a, b) => (a.created ?? '').compareTo(b.created ?? ''));
         return list;
       });
+
+  @override
+  Stream<List<BackgroundRow>> watchAllBackgrounds() => _view(() =>
+      _backgrounds.values.where((b) => !b.deleted).toList()
+        ..sort((a, b) => (a.created ?? '').compareTo(b.created ?? '')));
+
+  /// Fetch a background by id if we don't have it (e.g. a foreign one a shared
+  /// note references). view rule = any signed-in user, so members can read it.
+  Future<void> _ensureBackground(String id) async {
+    if (id.isEmpty || _backgrounds.containsKey(id)) return;
+    try {
+      final r = await _pb.collection('backgrounds').getOne(id);
+      _backgrounds[r.id] = _backgroundFrom(r, await _downloadBytes(r));
+      _events.add(null);
+    } catch (_) {/* gone / unreachable — render nothing */}
+  }
 
   @override
   Future<String> addBackground(Uint8List bytes, {String name = ''}) =>

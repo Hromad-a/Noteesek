@@ -66,6 +66,9 @@ class SyncEngine {
           // (independent of the pull cursor).
           ('bytes', _attachments),
           ('bytes', _backgrounds),
+          // Fetch foreign backgrounds that shared notes reference (our own
+          // library pull is owner-scoped, so these arrive only by id).
+          ('refbg', _backgrounds),
           // Drop shared notebooks (+ their notes) that were unshared from me,
           // and individual notes I've lost access to (e.g. a member claimed one
           // out of a shared notebook, taking its ownership).
@@ -96,6 +99,7 @@ class SyncEngine {
           ? _downloadPendingBackgroundBytes()
           : _downloadPendingAttachmentBytes();
     }
+    if (phase == 'refbg') return _fetchReferencedBackgrounds();
     if (phase == 'reconcile') {
       return collection == _notes
           ? _reconcileSharedNotes()
@@ -339,6 +343,30 @@ class SyncEngine {
         }
       } on ClientException catch (e) {
         if (e.statusCode == 404) continue;
+        rethrow;
+      }
+    }
+  }
+
+  /// Fetch backgrounds that local notes reference but we don't have yet —
+  /// foreign ones used on shared notes (our own pull is owner-scoped). The
+  /// backgrounds `viewRule` lets any signed-in user read one by id. Fetch-once:
+  /// a row already present is left as-is.
+  Future<void> _fetchReferencedBackgrounds() async {
+    final notes = await _db.select(_db.notes).get();
+    final referenced = <String>{
+      for (final n in notes)
+        if (n.background.isNotEmpty) n.background,
+    };
+    if (referenced.isEmpty) return;
+    final have = {for (final b in await _db.select(_db.backgrounds).get()) b.id};
+    for (final id in referenced) {
+      if (have.contains(id)) continue;
+      try {
+        final rec = await _pb.collection(_backgrounds).getOne(id);
+        await _applyRecord(_backgrounds, rec); // inserts + downloads bytes
+      } on ClientException catch (e) {
+        if (e.statusCode == 404) continue; // background gone
         rethrow;
       }
     }
