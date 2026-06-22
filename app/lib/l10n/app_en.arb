@@ -154,5 +154,116 @@
   "heading": "Heading",
   "bulletList": "Bullet list",
   "checkbox": "Checkbox",
-  "quote": "Quote"
+  "quote": "Quote",
+
+  "save": "Save",
+  "restore": "Restore",
+  "wipe": "Wipe",
+  "notConnected": "Not connected",
+  "signedIn": "Signed in",
+  "sectionAccount": "Account",
+  "sectionChangePassword": "Change password",
+  "sectionSecurity": "Security",
+  "sectionServer": "Server",
+  "sectionExport": "Export",
+  "sectionImport": "Import",
+  "sectionDangerZone": "Danger zone",
+  "sectionAbout": "About",
+  "passwordChanged": "Password changed",
+  "signOutAllTitle": "Sign out of all devices?",
+  "signOutAllBody": "Every other device signed into this account is signed out immediately. This device stays signed in.",
+  "signOutAllDevices": "Sign out of all devices",
+  "signOutOthers": "Sign out others",
+  "signOut": "Sign out",
+  "signedOutOthers": "Signed out of all other devices",
+  "failedWithDetail": "Failed: {detail}",
+  "@failedWithDetail": {
+    "placeholders": { "detail": { "type": "String" } }
+  },
+  "importMdTitle": "Markdown export or .md files",
+  "importMdSub": "A Noteesek export .zip or a single .md",
+  "importKeepTitle": "Google Keep (Takeout)",
+  "importKeepSub": "The Keep .zip from Google Takeout",
+  "importNotes": "Import notes",
+  "restoreBackupTitle": "Restore backup?",
+  "restoreBodyAccount": "Notes from the backup are added to your account; where ids match, the backup version wins. This cannot be undone.",
+  "restoreBodyDevice": "Notes from the backup are merged into this device; where ids match, the backup version wins. This cannot be undone.",
+  "importTakeoutZip": "Takeout zip",
+  "wipeData": "Wipe data",
+  "wipeBodySelected": "This permanently deletes the selected data. It cannot be undone.",
+  "wipeBodyServer": "This permanently deletes your notes on the server (only your account — other users are unaffected). It cannot be undone.",
+  "wipeBodyDevice": "This permanently deletes all notes on this device. It cannot be undone.",
+  "wipeThisDevice": "This device",
+  "wipeLocalDb": "Local notes database",
+  "wipeOnServer": "On the server",
+  "typeToConfirm": "Type \"{phrase}\" to confirm",
+  "@typeToConfirm": {
+    "placeholders": { "phrase": { "type": "String" } }
+  },
+  "currentPassword": "Current password",
+  "newPassword": "New password",
+  "confirmNewPassword": "Confirm new password",
+  "changePassword": "Change password",
+  "markdownFormatting": "Markdown formatting",
+  "testConnection": "Test connection",
+  "versionHistory": "Version history",
+  "markdown": "Markdown",
+  "exportMdSub": "Readable files for other apps",
+  "backupFile": "Backup file",
+  "exportBackupSub": "An exact copy you can restore later",
+  "importNotesSub": "Markdown or Google Keep · adds copies",
+  "importBackupSub": "Restore everything, or merge selected",
+  "syncNow": "Sync now",
+  "appVersion": "App version",
+  "serverVersion": "Server version",
+  "setAPin": "Set a PIN",
+  "pinLabel": "PIN",
+  "confirmPin": "Confirm PIN",
+  "appLock": "App lock",
+  "appLockSub": "Require a PIN or biometrics to open the app",
+  "unlockWithBiometrics": "Unlock with biometrics",
+  "changePin": "Change PIN",
+  "enterValidUrl": "Enter a valid URL",
+  "serverReachable": "Server is reachable",
+  "cannotReachServer": "Cannot reach the server",
+  "cannotReachServerCheckUrl": "Cannot reach the server. Check the URL.",
+  "requestFailed": "Request failed ({code}).",
+  "@requestFailed": {
+    "placeholders": { "code": { "type": "int" } }
+  },
+  "preparingExport": "Preparing export…",
+  "noNotesToExport": "No notes to export",
+  "exportFailed": "Export failed: {detail}",
+  "@exportFailed": {
+    "placeholders": { "detail": { "type": "String" } }
+  },
+  "couldNotReadFile": "Could not read that file: {detail}",
+  "@couldNotReadFile": {
+    "placeholders": { "detail": { "type": "String" } }
+  },
+  "nothingToImport": "Nothing to import",
+  "preparingBackup": "Preparing backup…",
+  "backupSavedTo": "Backup saved to {where}",
+  "@backupSavedTo": {
+    "placeholders": { "where": { "type": "String" } }
+  },
+  "backupFailed": "Backup failed: {detail}",
+  "@backupFailed": {
+    "placeholders": { "detail": { "type": "String" } }
+  },
+  "restoring": "Restoring…",
+  "restoredCount": "Restored {n} note(s)",
+  "@restoredCount": {
+    "placeholders": { "n": { "type": "int" } }
+  },
+  "restoreFailed": "Restore failed: {detail}",
+  "@restoreFailed": {
+    "placeholders": { "detail": { "type": "String" } }
+  },
+  "wiping": "Wiping…",
+  "dataWiped": "Data wiped",
+  "wipeFailed": "Wipe failed: {detail}",
+  "@wipeFailed": {
+    "placeholders": { "detail": { "type": "String" } }
+  }
 }

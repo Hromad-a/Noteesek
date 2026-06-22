@@ -2,6 +2,8 @@ import 'package:flutter/widgets.dart';
 
 import 'app_localizations.dart';
 
+export 'app_localizations.dart' show AppLocalizations;
+
 /// Shorthand for the generated [AppLocalizations] of the current context, so
 /// widgets can read translated strings as `context.l10n.someKey`.
 extension AppLocalizationsX on BuildContext {
