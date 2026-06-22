@@ -265,5 +265,65 @@
   "wipeFailed": "Wipe failed: {detail}",
   "@wipeFailed": {
     "placeholders": { "detail": { "type": "String" } }
+  },
+
+  "rename": "Rename",
+  "renameNotebook": "Rename notebook",
+  "renameLabel": "Rename label",
+  "deleteEntityTitle": "Delete \"{name}\"?",
+  "@deleteEntityTitle": {
+    "placeholders": { "name": { "type": "String" } }
+  },
+  "keepNotes": "Keep notes",
+  "deleteNotes": "Delete notes",
+  "createNewNotebook": "Create new notebook",
+  "noNotebooksYet": "No notebooks yet",
+  "sharedWithYou": "Shared with you",
+  "labelName": "Label name",
+  "labelColor": "Label color",
+  "noNotesWithLabel": "No notes with this label",
+  "noArchivedNotes": "No archived notes",
+  "emptyAction": "Empty",
+  "deleteForever": "Delete forever",
+  "trashIsEmpty": "Trash is empty",
+  "noItems": "No items",
+  "moreItems": "+{count} more",
+  "@moreItems": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "sharedNotebookTapMembers": "Shared notebook — tap to see members",
+  "sharingNotebookTitle": "Sharing a notebook",
+  "gotIt": "Got it",
+  "couldNotUpdateSharing": "Could not update sharing: {detail}",
+  "@couldNotUpdateSharing": {
+    "placeholders": { "detail": { "type": "String" } }
+  },
+  "notebookNotFound": "Notebook not found.",
+  "searchPeopleByEmail": "Search people by email",
+  "noOtherUsers": "No other users are registered on this server yet.",
+  "couldNotLoadMembers": "Could not load members",
+  "couldNotLoadUsers": "Could not load users",
+  "versionMismatchShareMsg": "This app and your server are running different versions. Update Noteesek on this device or your server so they match, then try again.",
+  "shareNotebookTitle": "Share \"{name}\"",
+  "@shareNotebookTitle": {
+    "placeholders": { "name": { "type": "String" } }
+  },
+  "sharedNotebookHeader": "Shared · {name}",
+  "@sharedNotebookHeader": {
+    "placeholders": { "name": { "type": "String" } }
+  },
+  "shareIntroEdit": "Everyone you add can view and edit every note in this notebook.",
+  "shareIntroLock": "One person edits a note at a time — others see it live, read-only, until it's free.",
+  "shareIntroOnline": "Shared notes are online-only: editing needs a connection to your server.",
+  "shareIntroOwner": "Only you, the owner, control who it's shared with.",
+  "shareOwnerDesc": "Members can view and edit every note in this notebook. Only you can change who it's shared with.",
+  "shareMemberDesc": "You're a member of this shared notebook. Only the owner can change sharing.",
+  "ownerSuffix": "{email} · owner",
+  "@ownerSuffix": {
+    "placeholders": { "email": { "type": "String" } }
+  },
+  "youSuffix": "{email} (you)",
+  "@youSuffix": {
+    "placeholders": { "email": { "type": "String" } }
   }
 }

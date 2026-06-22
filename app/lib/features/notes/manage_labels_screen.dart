@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../l10n/l10n.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/local/database.dart';
@@ -35,21 +36,21 @@ class _ManageLabelsScreenState extends ConsumerState<ManageLabelsScreen> {
     final name = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Rename label'),
+        title: Text(context.l10n.renameLabel),
         content: TextField(
           controller: ctrl,
           autofocus: true,
-          decoration: const InputDecoration(labelText: 'Label name'),
+          decoration: InputDecoration(labelText: context.l10n.labelName),
           onSubmitted: (v) => Navigator.of(ctx).pop(v.trim()),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel'),
+            child: Text(context.l10n.cancel),
           ),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(ctrl.text.trim()),
-            child: const Text('Save'),
+            child: Text(context.l10n.save),
           ),
         ],
       ),
@@ -71,7 +72,7 @@ class _ManageLabelsScreenState extends ConsumerState<ManageLabelsScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Label color',
+              Text(context.l10n.labelColor,
                   style: Theme.of(sheetContext).textTheme.titleMedium),
               const SizedBox(height: 16),
               Wrap(
@@ -113,18 +114,18 @@ class _ManageLabelsScreenState extends ConsumerState<ManageLabelsScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('Delete "${label.name}"?'),
+        title: Text(context.l10n.deleteEntityTitle(label.name)),
         content: const Text(
             'This removes the label from all notes. The notes themselves are '
             'kept.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
+            child: Text(context.l10n.cancel),
           ),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Delete'),
+            child: Text(context.l10n.delete),
           ),
         ],
       ),
@@ -139,7 +140,7 @@ class _ManageLabelsScreenState extends ConsumerState<ManageLabelsScreen> {
     final labelsAsync = ref.watch(labelsProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Edit labels')),
+      appBar: AppBar(title: Text(context.l10n.editLabels)),
       body: Column(
         children: [
           Padding(
@@ -149,8 +150,8 @@ class _ManageLabelsScreenState extends ConsumerState<ManageLabelsScreen> {
                 Expanded(
                   child: TextField(
                     controller: _newCtrl,
-                    decoration: const InputDecoration(
-                      hintText: 'Create new label',
+                    decoration: InputDecoration(
+                      hintText: context.l10n.createNewLabel,
                       prefixIcon: Icon(Icons.add),
                       isDense: true,
                     ),
@@ -158,7 +159,7 @@ class _ManageLabelsScreenState extends ConsumerState<ManageLabelsScreen> {
                     onSubmitted: (_) => _create(),
                   ),
                 ),
-                TextButton(onPressed: _create, child: const Text('Add')),
+                TextButton(onPressed: _create, child: Text(context.l10n.add)),
               ],
             ),
           ),
@@ -166,10 +167,10 @@ class _ManageLabelsScreenState extends ConsumerState<ManageLabelsScreen> {
           Expanded(
             child: labelsAsync.when(
               loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Center(child: Text('Error: $e')),
+              error: (e, _) => Center(child: Text(context.l10n.errorWithDetail('$e'))),
               data: (labels) {
                 if (labels.isEmpty) {
-                  return const Center(child: Text('No labels yet'));
+                  return Center(child: Text(context.l10n.noLabelsYet));
                 }
                 return ListView(
                   children: [
@@ -194,12 +195,12 @@ class _ManageLabelsScreenState extends ConsumerState<ManageLabelsScreen> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             IconButton(
-                              tooltip: 'Rename',
+                              tooltip: context.l10n.rename,
                               icon: const Icon(Icons.edit_outlined),
                               onPressed: () => _rename(l),
                             ),
                             IconButton(
-                              tooltip: 'Delete',
+                              tooltip: context.l10n.delete,
                               icon: const Icon(Icons.delete_outline),
                               onPressed: () => _delete(l),
                             ),

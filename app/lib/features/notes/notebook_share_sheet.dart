@@ -6,6 +6,7 @@ import '../../config/app_config.dart';
 import '../../data/local/database.dart';
 import '../../data/notes_repository.dart';
 import '../../data/version_check.dart';
+import '../../l10n/l10n.dart';
 import '../../providers.dart';
 import '../../sync/sync_controller.dart';
 import 'sharing_service.dart';
@@ -13,7 +14,8 @@ import 'sharing_service.dart';
 /// Error display for a failed directory load. A client/server version mismatch
 /// is the likely culprit behind an otherwise-cryptic decode error here, so when
 /// one is detected we explain that instead of dumping the raw exception.
-Widget _loadError(WidgetRef ref, String prefix, Object error) {
+Widget _loadError(
+    BuildContext context, WidgetRef ref, String prefix, Object error) {
   final mismatch = ref.watch(versionStatusProvider).value?.mismatch ?? false;
   if (mismatch) {
     return Padding(
@@ -24,13 +26,7 @@ Widget _loadError(WidgetRef ref, String prefix, Object error) {
           Icon(Icons.warning_amber_rounded,
               color: Colors.orange.shade700, size: 20),
           const SizedBox(width: 12),
-          const Expanded(
-            child: Text(
-              'This app and your server are running different versions. Update '
-              'Noteesek on this device or your server so they match, then try '
-              'again.',
-            ),
-          ),
+          Expanded(child: Text(context.l10n.versionMismatchShareMsg)),
         ],
       ),
     );
@@ -79,26 +75,20 @@ Future<void> _showSharedNotebookIntro(BuildContext context) {
     context: context,
     builder: (ctx) => AlertDialog(
       icon: const Icon(Icons.group_outlined),
-      title: const Text('Sharing a notebook'),
+      title: Text(context.l10n.sharingNotebookTitle),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          point(Icons.edit_outlined,
-              'Everyone you add can view and edit every note in this notebook.'),
-          point(Icons.lock_outline,
-              'One person edits a note at a time — others see it live, read-only, '
-              'until it’s free.'),
-          point(Icons.cloud_outlined,
-              'Shared notes are online-only: editing needs a connection to your '
-              'server.'),
-          point(Icons.shield_outlined,
-              'Only you, the owner, control who it’s shared with.'),
+          point(Icons.edit_outlined, context.l10n.shareIntroEdit),
+          point(Icons.lock_outline, context.l10n.shareIntroLock),
+          point(Icons.cloud_outlined, context.l10n.shareIntroOnline),
+          point(Icons.shield_outlined, context.l10n.shareIntroOwner),
         ],
       ),
       actions: [
         FilledButton(
           onPressed: () => Navigator.of(ctx).pop(),
-          child: const Text('Got it'),
+          child: Text(context.l10n.gotIt),
         ),
       ],
     ),
@@ -130,7 +120,8 @@ class _ShareSheetState extends ConsumerState<_ShareSheet> {
       if (mounted) {
         ScaffoldMessenger.of(context)
           ..hideCurrentSnackBar()
-          ..showSnackBar(SnackBar(content: Text('Could not update sharing: $e')));
+          ..showSnackBar(SnackBar(
+              content: Text(context.l10n.couldNotUpdateSharing('$e'))));
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -146,8 +137,9 @@ class _ShareSheetState extends ConsumerState<_ShareSheet> {
     final me = ref.watch(authUserIdProvider);
 
     if (nb == null) {
-      return const Padding(
-        padding: EdgeInsets.all(24), child: Text('Notebook not found.'));
+      return Padding(
+        padding: const EdgeInsets.all(24),
+        child: Text(context.l10n.notebookNotFound));
     }
     final members = sharedWithIds(nb.sharedWith);
     final isOwner = nb.owner == me && me.isNotEmpty;
@@ -169,7 +161,9 @@ class _ShareSheetState extends ConsumerState<_ShareSheet> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    members.isEmpty ? 'Share "${nb.name}"' : 'Shared · ${nb.name}',
+                    members.isEmpty
+                        ? context.l10n.shareNotebookTitle(nb.name)
+                        : context.l10n.sharedNotebookHeader(nb.name),
                     style: Theme.of(context).textTheme.titleMedium,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -183,9 +177,7 @@ class _ShareSheetState extends ConsumerState<_ShareSheet> {
             ),
             const SizedBox(height: 8),
             Text(
-              isOwner
-                  ? 'Members can view and edit every note in this notebook. Only you can change who it’s shared with.'
-                  : 'You’re a member of this shared notebook. Only the owner can change sharing.',
+              isOwner ? context.l10n.shareOwnerDesc : context.l10n.shareMemberDesc,
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 12),
@@ -218,17 +210,19 @@ class _MemberList extends ConsumerWidget {
       loading: () => const Padding(
         padding: EdgeInsets.all(16),
         child: Center(child: CircularProgressIndicator())),
-      error: (e, _) => _loadError(ref, 'Could not load members', e),
+      error: (e, _) =>
+          _loadError(context, ref, context.l10n.couldNotLoadMembers, e),
       data: (users) {
         final byId = {for (final u in users) u.id: u.email};
         final me = ref.watch(authUserIdProvider);
-        String label(String id) =>
-            id == me ? '${byId[id] ?? 'You'} (you)' : (byId[id] ?? id);
+        String label(String id) => id == me
+            ? context.l10n.youSuffix(byId[id] ?? 'You')
+            : (byId[id] ?? id);
         return ListView(
           shrinkWrap: true,
           children: [
             _tile(context, Icons.star_outline,
-                '${byId[ownerId] ?? 'Owner'} · owner'),
+                context.l10n.ownerSuffix(byId[ownerId] ?? 'Owner')),
             for (final m in members)
               if (m != ownerId) _tile(context, Icons.person_outline, label(m)),
           ],
@@ -276,7 +270,8 @@ class _OwnerPickerState extends ConsumerState<_OwnerPicker> {
       loading: () => const Padding(
         padding: EdgeInsets.all(16),
         child: Center(child: CircularProgressIndicator())),
-      error: (e, _) => _loadError(ref, 'Could not load users', e),
+      error: (e, _) =>
+          _loadError(context, ref, context.l10n.couldNotLoadUsers, e),
       data: (users) {
         final q = _query.trim().toLowerCase();
         final shown = q.isEmpty
@@ -286,20 +281,20 @@ class _OwnerPickerState extends ConsumerState<_OwnerPicker> {
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 isDense: true,
-                prefixIcon: Icon(Icons.search),
-                hintText: 'Search people by email',
-                border: OutlineInputBorder(),
+                prefixIcon: const Icon(Icons.search),
+                hintText: context.l10n.searchPeopleByEmail,
+                border: const OutlineInputBorder(),
               ),
               onChanged: (v) => setState(() => _query = v),
             ),
             const SizedBox(height: 8),
             Flexible(
               child: users.isEmpty
-                  ? const Padding(
-                      padding: EdgeInsets.all(16),
-                      child: Text('No other users are registered on this server yet.'))
+                  ? Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Text(context.l10n.noOtherUsers))
                   : ListView(
                       shrinkWrap: true,
                       children: [

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../l10n/l10n.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/local/database.dart';
@@ -38,21 +39,21 @@ class _ManageNotebooksScreenState extends ConsumerState<ManageNotebooksScreen> {
     final name = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Rename notebook'),
+        title: Text(context.l10n.renameNotebook),
         content: TextField(
           controller: ctrl,
           autofocus: true,
-          decoration: const InputDecoration(labelText: 'Notebook name'),
+          decoration: InputDecoration(labelText: context.l10n.notebookName),
           onSubmitted: (v) => Navigator.of(ctx).pop(v.trim()),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel'),
+            child: Text(context.l10n.cancel),
           ),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(ctrl.text.trim()),
-            child: const Text('Save'),
+            child: Text(context.l10n.save),
           ),
         ],
       ),
@@ -69,21 +70,21 @@ class _ManageNotebooksScreenState extends ConsumerState<ManageNotebooksScreen> {
     final choice = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('Delete "${notebook.name}"?'),
+        title: Text(context.l10n.deleteEntityTitle(notebook.name)),
         content: const Text(
             'Choose what happens to the notes in this notebook.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel'),
+            child: Text(context.l10n.cancel),
           ),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop('move'),
-            child: const Text('Keep notes'),
+            child: Text(context.l10n.keepNotes),
           ),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop('trash'),
-            child: const Text('Delete notes'),
+            child: Text(context.l10n.deleteNotes),
           ),
         ],
       ),
@@ -100,7 +101,7 @@ class _ManageNotebooksScreenState extends ConsumerState<ManageNotebooksScreen> {
     final notebooksAsync = ref.watch(notebooksProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Manage notebooks')),
+      appBar: AppBar(title: Text(context.l10n.manageNotebooks)),
       body: Column(
         children: [
           Padding(
@@ -110,8 +111,8 @@ class _ManageNotebooksScreenState extends ConsumerState<ManageNotebooksScreen> {
                 Expanded(
                   child: TextField(
                     controller: _newCtrl,
-                    decoration: const InputDecoration(
-                      hintText: 'Create new notebook',
+                    decoration: InputDecoration(
+                      hintText: context.l10n.createNewNotebook,
                       prefixIcon: Icon(Icons.add),
                       isDense: true,
                     ),
@@ -119,7 +120,7 @@ class _ManageNotebooksScreenState extends ConsumerState<ManageNotebooksScreen> {
                     onSubmitted: (_) => _create(),
                   ),
                 ),
-                TextButton(onPressed: _create, child: const Text('Add')),
+                TextButton(onPressed: _create, child: Text(context.l10n.add)),
               ],
             ),
           ),
@@ -127,10 +128,10 @@ class _ManageNotebooksScreenState extends ConsumerState<ManageNotebooksScreen> {
           Expanded(
             child: notebooksAsync.when(
               loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Center(child: Text('Error: $e')),
+              error: (e, _) => Center(child: Text(context.l10n.errorWithDetail('$e'))),
               data: (notebooks) {
                 if (notebooks.isEmpty) {
-                  return const Center(child: Text('No notebooks yet'));
+                  return Center(child: Text(context.l10n.noNotebooksYet));
                 }
                 final me = ref.watch(authUserIdProvider);
                 final canShare = ref.watch(isAuthenticatedProvider);
@@ -160,7 +161,7 @@ class _ManageNotebooksScreenState extends ConsumerState<ManageNotebooksScreen> {
     return ListTile(
       leading: Icon(shared ? Icons.group_outlined : Icons.book_outlined),
       title: Text(nb.name),
-      subtitle: shared && !ownedByMe ? const Text('Shared with you') : null,
+      subtitle: shared && !ownedByMe ? Text(context.l10n.sharedWithYou) : null,
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -197,12 +198,12 @@ class _ManageNotebooksScreenState extends ConsumerState<ManageNotebooksScreen> {
                   .setNotebookVisibility(nb.id, !nb.hiddenFromAll),
             ),
             IconButton(
-              tooltip: 'Rename',
+              tooltip: context.l10n.rename,
               icon: const Icon(Icons.edit_outlined),
               onPressed: () => _rename(nb),
             ),
             IconButton(
-              tooltip: 'Delete',
+              tooltip: context.l10n.delete,
               icon: const Icon(Icons.delete_outline),
               onPressed: () => _delete(nb),
             ),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../l10n/l10n.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 
@@ -31,7 +32,7 @@ class LabelNotesScreen extends ConsumerWidget {
       appBar: AppBar(title: Text(labelName)),
       body: notesAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
+        error: (e, _) => Center(child: Text(context.l10n.errorWithDetail('$e'))),
         data: (notes) {
           if (notes.isEmpty) {
             return Center(
@@ -41,7 +42,7 @@ class LabelNotesScreen extends ConsumerWidget {
                   Icon(Icons.label_outline,
                       size: 56, color: Theme.of(context).disabledColor),
                   const SizedBox(height: 8),
-                  const Text('No notes with this label'),
+                  Text(context.l10n.noNotesWithLabel),
                 ],
               ),
             );
