@@ -32,6 +32,10 @@ class AppConfig {
   /// App theme: 'system' | 'light' | 'dark'. Drives MaterialApp.themeMode.
   static const String kThemeMode = 'theme_mode';
 
+  /// App language: a locale code ('en' | 'cs'), or absent/empty to follow the
+  /// device language. Drives MaterialApp.locale.
+  static const String kLocale = 'locale';
+
   /// Checklist editor: when true, checked items sink to a collapsible
   /// "completed" section at the bottom (Google Keep-style).
   static const String kChecklistAutoSort = 'checklist_auto_sort';

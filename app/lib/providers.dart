@@ -1,6 +1,6 @@
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:flutter/material.dart' show ThemeMode;
+import 'package:flutter/material.dart' show Locale, ThemeMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:pocketbase/pocketbase.dart';
@@ -203,6 +203,31 @@ class ThemeModeNotifier extends Notifier<ThemeMode> {
 
 final themeModeProvider =
     NotifierProvider<ThemeModeNotifier, ThemeMode>(ThemeModeNotifier.new);
+
+/// The app's language preference (persisted, global). `null` follows the device
+/// language; a non-null [Locale] forces that language. Drives
+/// [MaterialApp.locale]; only locales in `kSupportedLocales` are accepted.
+class LocaleNotifier extends Notifier<Locale?> {
+  @override
+  Locale? build() {
+    final code = ref.watch(sharedPreferencesProvider).getString(AppConfig.kLocale);
+    return (code == null || code.isEmpty) ? null : Locale(code);
+  }
+
+  /// Set the language. `null` clears the override and follows the device.
+  Future<void> set(Locale? locale) async {
+    final prefs = ref.read(sharedPreferencesProvider);
+    if (locale == null) {
+      await prefs.remove(AppConfig.kLocale);
+    } else {
+      await prefs.setString(AppConfig.kLocale, locale.languageCode);
+    }
+    state = locale;
+  }
+}
+
+final localeProvider =
+    NotifierProvider<LocaleNotifier, Locale?>(LocaleNotifier.new);
 
 /// Whether the one-time first-run intro has been shown (mobile). Persisted.
 class OnboardingSeenNotifier extends Notifier<bool> {

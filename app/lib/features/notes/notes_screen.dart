@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import '../../l10n/l10n.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import 'package:receive_sharing_intent/receive_sharing_intent.dart';
@@ -154,7 +155,7 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
         appBar: selectionMode
             ? const _SelectionAppBar()
             : AppBar(
-                title: const Text('Notes'),
+                title: Text(context.l10n.notesTitle),
                 actions: [
           IconButton(
             tooltip: viewMode == NoteViewMode.grid

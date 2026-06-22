@@ -1,0 +1,40 @@
+{
+  "@@locale": "en",
+  "appTitle": "Noteesek",
+  "@appTitle": {
+    "description": "The application name."
+  },
+  "notesTitle": "Notes",
+  "@notesTitle": {
+    "description": "Title of the main notes screen."
+  },
+  "settingsTitle": "Settings",
+  "@settingsTitle": {
+    "description": "Title of the Settings screen."
+  },
+  "sectionAppearance": "Appearance",
+  "@sectionAppearance": {
+    "description": "Settings section header for theme and language."
+  },
+  "themeLabel": "Theme",
+  "@themeLabel": {
+    "description": "Label for the light/dark/system theme setting."
+  },
+  "themeSystem": "System",
+  "themeLight": "Light",
+  "themeDark": "Dark",
+  "languageLabel": "Language",
+  "@languageLabel": {
+    "description": "Label for the app language setting."
+  },
+  "languageSystemDefault": "System default",
+  "@languageSystemDefault": {
+    "description": "Language option that follows the device language."
+  },
+  "languageEnglish": "English",
+  "languageCzech": "Čeština",
+  "@languageCzech": {
+    "description": "Czech, written as its own endonym."
+  },
+  "cancel": "Cancel"
+}

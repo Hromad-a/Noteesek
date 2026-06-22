@@ -1,6 +1,10 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import 'l10n/app_localizations.dart';
+import 'l10n/l10n.dart';
 
 import 'features/auth/login_screen.dart';
 import 'features/auth/password_reset_screen.dart';
@@ -119,6 +123,17 @@ class _NoteesekAppState extends ConsumerState<NoteesekApp>
         useMaterial3: true,
       ),
       themeMode: ref.watch(themeModeProvider),
+      // Language: an explicit override from the picker, else null = follow the
+      // device language. Only en/cs are supported; anything else falls back to
+      // the first supported locale (en).
+      locale: ref.watch(localeProvider),
+      supportedLocales: kSupportedLocales,
+      localizationsDelegates: const [
+        AppLocalizations.delegate,
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
       home: gatedHome,
     );
   }

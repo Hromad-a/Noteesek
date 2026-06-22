@@ -1,0 +1,16 @@
+{
+  "@@locale": "cs",
+  "appTitle": "Noteesek",
+  "notesTitle": "Poznámky",
+  "settingsTitle": "Nastavení",
+  "sectionAppearance": "Vzhled",
+  "themeLabel": "Motiv",
+  "themeSystem": "Systém",
+  "themeLight": "Světlý",
+  "themeDark": "Tmavý",
+  "languageLabel": "Jazyk",
+  "languageSystemDefault": "Výchozí systému",
+  "languageEnglish": "English",
+  "languageCzech": "Čeština",
+  "cancel": "Zrušit"
+}

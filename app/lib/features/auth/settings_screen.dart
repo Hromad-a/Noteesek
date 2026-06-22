@@ -12,6 +12,7 @@ import 'package:pocketbase/pocketbase.dart';
 
 import '../../config/app_config.dart';
 import '../../data/notes_repository.dart';
+import '../../l10n/l10n.dart';
 import '../../data/version_check.dart';
 import '../backup/backup_service.dart' as backup;
 import '../backup/remote_backup_service.dart';
@@ -615,7 +616,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Settings')),
+      appBar: AppBar(title: Text(context.l10n.settingsTitle)),
       body: WebCentered(
         child: ListView(
         padding: const EdgeInsets.all(16),
@@ -733,8 +734,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             const SizedBox(height: 24),
           ],
 
-          const _SectionHeader('Appearance'),
+          _SectionHeader(context.l10n.sectionAppearance),
           _ThemeModeSelector(),
+          const _LanguageSelector(),
           Consumer(builder: (context, ref, _) {
             final on = ref.watch(markdownEnabledProvider);
             return SwitchListTile(
@@ -1149,27 +1151,84 @@ class _ThemeModeSelector extends ConsumerWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: SegmentedButton<ThemeMode>(
-        segments: const [
+        segments: [
           ButtonSegment(
             value: ThemeMode.system,
-            label: Text('System'),
-            icon: Icon(Icons.brightness_auto_outlined),
+            label: Text(context.l10n.themeSystem),
+            icon: const Icon(Icons.brightness_auto_outlined),
           ),
           ButtonSegment(
             value: ThemeMode.light,
-            label: Text('Light'),
-            icon: Icon(Icons.light_mode_outlined),
+            label: Text(context.l10n.themeLight),
+            icon: const Icon(Icons.light_mode_outlined),
           ),
           ButtonSegment(
             value: ThemeMode.dark,
-            label: Text('Dark'),
-            icon: Icon(Icons.dark_mode_outlined),
+            label: Text(context.l10n.themeDark),
+            icon: const Icon(Icons.dark_mode_outlined),
           ),
         ],
         selected: {mode},
         showSelectedIcon: false,
         onSelectionChanged: (s) =>
             ref.read(themeModeProvider.notifier).set(s.first),
+      ),
+    );
+  }
+}
+
+/// Language picker bound to [localeProvider]. `null` = follow the device.
+/// Opens a simple radio dialog with System default / English / Čeština.
+class _LanguageSelector extends ConsumerWidget {
+  const _LanguageSelector();
+
+  String _label(BuildContext context, Locale? locale) => switch (locale?.languageCode) {
+        'en' => context.l10n.languageEnglish,
+        'cs' => context.l10n.languageCzech,
+        _ => context.l10n.languageSystemDefault,
+      };
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final current = ref.watch(localeProvider);
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: const Icon(Icons.translate_outlined),
+      title: Text(context.l10n.languageLabel),
+      subtitle: Text(_label(context, current)),
+      onTap: () => showDialog<void>(
+        context: context,
+        builder: (ctx) => SimpleDialog(
+          title: Text(context.l10n.languageLabel),
+          // Set straight from the radio (then close) so a dismiss changes
+          // nothing — a returned-value approach can't tell "System default"
+          // (null) apart from a barrier-dismiss (also null).
+          children: [
+            RadioGroup<String?>(
+              groupValue: current?.languageCode,
+              onChanged: (code) {
+                ref
+                    .read(localeProvider.notifier)
+                    .set(code == null ? null : Locale(code));
+                Navigator.of(ctx).pop();
+              },
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (final option in <Locale?>[
+                    null,
+                    const Locale('en'),
+                    const Locale('cs')
+                  ])
+                    RadioListTile<String?>(
+                      value: option?.languageCode,
+                      title: Text(_label(ctx, option)),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
