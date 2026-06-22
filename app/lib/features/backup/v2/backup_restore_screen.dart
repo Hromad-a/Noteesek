@@ -251,8 +251,8 @@ class _BackupRestoreScreenState extends ConsumerState<BackupRestoreScreen> {
             child: Align(
               alignment: Alignment.centerLeft,
               child: Text(
-                '${widget.sourceLabel} · ${data.noteCount} notes · '
-                '${data.imageCount} images',
+                '${widget.sourceLabel} · '
+                '${context.l10n.backupCounts(data.noteCount, data.imageCount)}',
                 style: theme.textTheme.bodySmall,
               ),
             ),

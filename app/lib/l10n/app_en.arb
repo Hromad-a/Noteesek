@@ -434,5 +434,26 @@
     "placeholders": { "notes": { "type": "int" }, "images": { "type": "int" } }
   },
   "addCountToMyNotes": "Add {count} to my notes",
-  "@addCountToMyNotes": { "placeholders": { "count": { "type": "int" } } }
+  "@addCountToMyNotes": { "placeholders": { "count": { "type": "int" } } },
+  "plainText": "Plain text",
+  "shareFailed": "Share failed: {detail}",
+  "@shareFailed": { "placeholders": { "detail": { "type": "String" } } },
+  "versionsDiffer": "App and server versions differ",
+  "couldNotSave": "Could not save: {detail}",
+  "@couldNotSave": { "placeholders": { "detail": { "type": "String" } } },
+  "backupCreated": "Backup created",
+  "deleteFailed": "Delete failed: {detail}",
+  "@deleteFailed": { "placeholders": { "detail": { "type": "String" } } },
+  "restoredOk": "Restored",
+  "snapReasonManual": "Manual",
+  "snapReasonBeforeRestore": "Before restore",
+  "snapReasonAuto": "Auto",
+  "notesAndSize": "{notes} notes · {size}",
+  "@notesAndSize": {
+    "placeholders": { "notes": { "type": "int" }, "size": { "type": "String" } }
+  },
+  "reconcileCounts": "{notebooks} notebooks · {notes} notes",
+  "@reconcileCounts": {
+    "placeholders": { "notebooks": { "type": "int" }, "notes": { "type": "int" } }
+  }
 }

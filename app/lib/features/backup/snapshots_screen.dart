@@ -169,22 +169,24 @@ class _ConfigEditorState extends ConsumerState<_ConfigEditor> {
   bool _busy = false;
 
   Future<void> _save(SnapshotConfig next) async {
+    final l10n = context.l10n;
     setState(() => _cfg = next);
     try {
       await ref.read(snapshotServiceProvider).saveConfig(next);
     } catch (e) {
-      if (mounted) showAppSnackBar('Could not save: $e');
+      if (mounted) showAppSnackBar(l10n.couldNotSave('$e'));
     }
   }
 
   Future<void> _backupNow() async {
+    final l10n = context.l10n;
     setState(() => _busy = true);
     try {
       await ref.read(snapshotServiceProvider).createNow();
       ref.invalidate(snapshotsListProvider);
-      showAppSnackBar('Backup created');
+      showAppSnackBar(l10n.backupCreated);
     } catch (e) {
-      showAppSnackBar('Backup failed: $e');
+      showAppSnackBar(l10n.backupFailed('$e'));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -270,19 +272,20 @@ class _SnapshotTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final reasonLabel = switch (snap.reason) {
-      'manual' => 'Manual',
-      'pre-restore' => 'Before restore',
-      _ => 'Auto',
+      'manual' => context.l10n.snapReasonManual,
+      'pre-restore' => context.l10n.snapReasonBeforeRestore,
+      _ => context.l10n.snapReasonAuto,
     };
     return ListTile(
       leading: const Icon(Icons.history),
       title: Text(_fmtDateTime(snap.createdAt)),
       subtitle: Text(
-          '$reasonLabel · ${snap.noteCount} notes · ${_fmtSize(snap.byteSize)}'),
+          '$reasonLabel · ${context.l10n.notesAndSize(snap.noteCount, _fmtSize(snap.byteSize))}'),
       trailing: IconButton(
         icon: const Icon(Icons.delete_outline),
         tooltip: context.l10n.deleteSnapshot,
         onPressed: () async {
+          final l10n = context.l10n;
           final yes = await showDialog<bool>(
             context: context,
             builder: (c) => AlertDialog(
@@ -303,7 +306,7 @@ class _SnapshotTile extends ConsumerWidget {
             await ref.read(snapshotServiceProvider).delete(snap.id);
             ref.invalidate(snapshotsListProvider);
           } catch (e) {
-            showAppSnackBar('Delete failed: $e');
+            showAppSnackBar(l10n.deleteFailed('$e'));
           }
         },
       ),
@@ -347,6 +350,7 @@ class _SnapshotPreviewScreenState
       });
 
   Future<void> _restore(String mode) async {
+    final l10n = context.l10n;
     final noteIds = _selected.toList();
     final confirm = await showDialog<bool>(
       context: context,
@@ -386,11 +390,11 @@ class _SnapshotPreviewScreenState
       }
       ref.invalidate(snapshotsListProvider);
       if (mounted) {
-        showAppSnackBar('Restored');
+        showAppSnackBar(l10n.restoredOk);
         Navigator.of(context).pop();
       }
     } catch (e) {
-      if (mounted) showAppSnackBar('Restore failed: $e');
+      if (mounted) showAppSnackBar(l10n.restoreFailed('$e'));
     } finally {
       if (mounted) setState(() => _restoring = false);
     }
@@ -410,7 +414,8 @@ class _SnapshotPreviewScreenState
             child: Align(
               alignment: Alignment.centerLeft,
               child: Text(
-                '${widget.snap.noteCount} notes · ${_fmtSize(widget.snap.byteSize)}',
+                context.l10n.notesAndSize(
+                    widget.snap.noteCount, _fmtSize(widget.snap.byteSize)),
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ),

@@ -630,7 +630,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   : context.l10n.signedIn),
               trailing: versionMismatch
                   ? Tooltip(
-                      message: 'App and server versions differ',
+                      message: context.l10n.versionsDiffer,
                       child: Icon(Icons.warning_amber_rounded,
                           color: Colors.orange.shade700),
                     )
@@ -1083,7 +1083,7 @@ class _AboutSectionState extends ConsumerState<_AboutSection> {
       }
       if (mismatch) {
         return Tooltip(
-          message: 'App and server versions differ',
+          message: context.l10n.versionsDiffer,
           child: Icon(Icons.warning_amber_rounded,
               color: Colors.orange.shade700),
         );

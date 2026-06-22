@@ -245,8 +245,7 @@ class _SummaryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     String line(int notebooks, int notes) =>
-        '$notebooks notebook${notebooks == 1 ? '' : 's'} · '
-        '$notes note${notes == 1 ? '' : 's'}';
+        context.l10n.reconcileCounts(notebooks, notes);
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),

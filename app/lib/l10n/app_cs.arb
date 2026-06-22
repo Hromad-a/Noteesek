@@ -311,5 +311,17 @@
   "restoreABackup": "Obnovit zálohu",
   "notReadableBackup": "Toto není čitelná záloha.",
   "backupCounts": "{notes} poznámek · {images} obrázků",
-  "addCountToMyNotes": "Přidat {count} do mých poznámek"
+  "addCountToMyNotes": "Přidat {count} do mých poznámek",
+  "plainText": "Prostý text",
+  "shareFailed": "Sdílení selhalo: {detail}",
+  "versionsDiffer": "Verze aplikace a serveru se liší",
+  "couldNotSave": "Nepodařilo se uložit: {detail}",
+  "backupCreated": "Záloha vytvořena",
+  "deleteFailed": "Mazání selhalo: {detail}",
+  "restoredOk": "Obnoveno",
+  "snapReasonManual": "Ručně",
+  "snapReasonBeforeRestore": "Před obnovením",
+  "snapReasonAuto": "Automaticky",
+  "notesAndSize": "{notes} poznámek · {size}",
+  "reconcileCounts": "{notebooks} zápisníků · {notes} poznámek"
 }
