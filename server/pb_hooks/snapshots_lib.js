@@ -90,6 +90,7 @@ function noteJson(n) {
     pinned: n.getBool("pinned"),
     archived: n.getBool("archived"),
     color: n.getString("color"),
+    background: n.getString("background"),
     labels: JSON.stringify(labels),
     notebook: n.getString("notebook"),
     deleted: n.getBool("deleted"),
@@ -372,6 +373,7 @@ function restoreNote(app, ownerId, m) {
   r.set("pinned", !!m.pinned);
   r.set("archived", !!m.archived);
   r.set("color", m.color || "");
+  r.set("background", m.background || "");
   let labels = [];
   try { labels = JSON.parse(m.labels || "[]"); } catch (_) { labels = []; }
   r.set("labels", labels);

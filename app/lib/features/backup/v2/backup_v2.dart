@@ -19,11 +19,13 @@ class BackupInput {
     required this.notes,
     required this.labels,
     required this.notebooks,
+    this.backgrounds = const [],
     this.app = '',
   });
   final List<BackupNoteInput> notes;
   final List<BackupLabelInput> labels;
   final List<BackupNotebookInput> notebooks;
+  final List<BackupBackgroundInput> backgrounds;
   final String app;
 }
 
@@ -42,6 +44,7 @@ class BackupNoteInput {
     this.updated,
     this.labelIds = const [],
     this.notebookId = '',
+    this.background = '',
     this.items = const [],
     this.attachments = const [],
   });
@@ -50,6 +53,7 @@ class BackupNoteInput {
   final String title;
   final String body;
   final String color;
+  final String background;
   final bool pinned;
   final bool archived;
   final bool deleted;
@@ -100,6 +104,41 @@ class BackupAttachmentInput {
 
   /// Raw image bytes. Null for a deleted attachment or one whose bytes couldn't
   /// be fetched — then no file is written, only metadata.
+  final Uint8List? bytes;
+}
+
+/// A background library entry (image + display options). Bytes are content-
+/// addressed like attachments.
+class BackupBackgroundInput {
+  BackupBackgroundInput({
+    required this.id,
+    this.name = '',
+    this.ext = 'jpg',
+    this.mime = 'image/jpeg',
+    this.opacity = 1,
+    this.overlayColor = '',
+    this.overlayOpacity = 0,
+    this.fit = 'cover',
+    this.repeat = 'none',
+    this.scale = 1,
+    this.deleted = false,
+    this.created,
+    this.updated,
+    this.bytes,
+  });
+  final String id;
+  final String name;
+  final String ext;
+  final String mime;
+  final double opacity;
+  final String overlayColor;
+  final double overlayOpacity;
+  final String fit;
+  final String repeat;
+  final double scale;
+  final bool deleted;
+  final String? created;
+  final String? updated;
   final Uint8List? bytes;
 }
 
@@ -196,6 +235,7 @@ Future<Uint8List> writeBackupV2(
       'updated': n.updated,
       'labelIds': n.labelIds,
       'notebookId': n.notebookId,
+      'background': n.background,
       'items': [
         for (final i in n.items)
           {
@@ -225,10 +265,42 @@ Future<Uint8List> writeBackupV2(
       'deleted': n.deleted,
       'labelIds': n.labelIds,
       'notebookId': n.notebookId,
+      'background': n.background,
       'created': n.created,
       'updated': n.updated,
       'attachments': idxAtt,
     });
+  }
+
+  // Backgrounds: content-address bytes (`backgrounds/<sha>.<ext>`), dedup, and
+  // record options + the hash in the manifest.
+  final bgSeen = <String>{};
+  final bgMeta = <Map<String, dynamic>>[];
+  for (final b in input.backgrounds) {
+    String? sha;
+    if (b.bytes != null && b.bytes!.isNotEmpty && !b.deleted) {
+      sha = _sha256Hex(b.bytes!);
+      if (bgSeen.add(sha)) {
+        addEntry('backgrounds/$sha.${b.ext}', b.bytes!, compress: false);
+      }
+    }
+    final meta = <String, dynamic>{
+      'id': b.id,
+      'name': b.name,
+      'ext': b.ext,
+      'mime': b.mime,
+      'opacity': b.opacity,
+      'overlayColor': b.overlayColor,
+      'overlayOpacity': b.overlayOpacity,
+      'fit': b.fit,
+      'repeat': b.repeat,
+      'scale': b.scale,
+      'deleted': b.deleted,
+      'created': b.created,
+      'updated': b.updated,
+    };
+    if (sha != null) meta['sha256'] = sha;
+    bgMeta.add(meta);
   }
 
   final manifest = <String, dynamic>{
@@ -240,6 +312,7 @@ Future<Uint8List> writeBackupV2(
       'attachments': blobsSeen.length,
       'labels': input.labels.length,
       'notebooks': input.notebooks.length,
+      'backgrounds': bgSeen.length,
     },
     'labels': [
       for (final l in input.labels)
@@ -262,6 +335,7 @@ Future<Uint8List> writeBackupV2(
           'updated': nb.updated,
         }
     ],
+    'backgrounds': bgMeta,
     'notes': noteIndex,
     'files': files,
   };
@@ -367,6 +441,11 @@ class BackupV2Reader {
           .map((e) => (e as Map).cast<String, dynamic>())
           .toList();
 
+  List<Map<String, dynamic>> get backgrounds =>
+      ((manifest['backgrounds'] as List?) ?? const [])
+          .map((e) => (e as Map).cast<String, dynamic>())
+          .toList();
+
   Uint8List? entryBytes(String path) {
     final f = _archive.findFile(path);
     return f == null ? null : Uint8List.fromList(f.content as List<int>);
@@ -399,6 +478,12 @@ class BackupV2Reader {
   /// Verified image bytes for a content hash, or null if missing/corrupt.
   Uint8List? attachmentBytes(String sha256, String ext) {
     final path = 'attachments/$sha256.$ext';
+    return verifyEntry(path) ? entryBytes(path) : null;
+  }
+
+  /// Verified background image bytes for a content hash, or null.
+  Uint8List? backgroundBytes(String sha256, String ext) {
+    final path = 'backgrounds/$sha256.$ext';
     return verifyEntry(path) ? entryBytes(path) : null;
   }
 }

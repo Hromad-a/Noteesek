@@ -114,6 +114,7 @@ class RemoteBackupService {
     final atts = await _pb.collection('attachments').getFullList(batch: 500);
     final labels = await _pb.collection('labels').getFullList(batch: 500);
     final notebooks = await _pb.collection('notebooks').getFullList(batch: 500);
+    final bgs = await _pb.collection('backgrounds').getFullList(batch: 500);
 
     final itemsByNote = <String, List<RecordModel>>{};
     for (final i in items) {
@@ -158,6 +159,25 @@ class RemoteBackupService {
               created: nb.getStringValue('created'),
               updated: nb.getStringValue('updated')),
       ],
+      backgrounds: [
+        for (final b in bgs)
+          BackupBackgroundInput(
+              id: b.id,
+              name: b.getStringValue('name'),
+              bytes: (b.getStringValue('file').isEmpty ||
+                      b.getBoolValue('deleted'))
+                  ? null
+                  : await _downloadFile(b, b.getStringValue('file')),
+              opacity: b.getDoubleValue('opacity'),
+              overlayColor: b.getStringValue('overlayColor'),
+              overlayOpacity: b.getDoubleValue('overlayOpacity'),
+              fit: b.getStringValue('fit'),
+              repeat: b.getStringValue('repeat'),
+              scale: b.getDoubleValue('scale'),
+              deleted: b.getBoolValue('deleted'),
+              created: b.getStringValue('created'),
+              updated: b.getStringValue('updated')),
+      ],
       notes: [
         for (final n in notes)
           BackupNoteInput(
@@ -174,6 +194,7 @@ class RemoteBackupService {
             updated: n.getStringValue('updated'),
             labelIds: n.getListValue<String>('labels'),
             notebookId: n.getStringValue('notebook'),
+            background: n.getStringValue('background'),
             items: [for (final i in (itemsByNote[n.id] ?? const [])) item(i)],
             attachments: [
               for (final a in (attByNote[n.id] ?? const []))
@@ -213,6 +234,13 @@ class RemoteBackupService {
         'deleted': l['deleted'] ?? false
       });
     }
+    final backupBgIds = <String>{};
+    for (final b in r.backgrounds) {
+      backupBgIds.add(b['id'] as String);
+      final sha = b['sha256'] as String?;
+      final ext = b['ext'] as String? ?? 'jpg';
+      await _putBackground(b, sha == null ? null : r.backgroundBytes(sha, ext));
+    }
     var count = 0;
     final backupNoteIds = <String>{};
     for (final idx in r.notes) {
@@ -228,6 +256,7 @@ class RemoteBackupService {
         'pinned': rec['pinned'] ?? false,
         'archived': rec['archived'] ?? false,
         'color': rec['color'] ?? '',
+        'background': rec['background'] ?? '',
         'labels': (rec['labelIds'] as List?)?.cast<String>() ?? const [],
         'notebook': rec['notebookId'] ?? '',
         'deleted': rec['deleted'] ?? false,
@@ -277,8 +306,43 @@ class RemoteBackupService {
           await _upsert('labels', e.id, {'deleted': true});
         }
       }
+      final existingBgs = await _pb.collection('backgrounds').getFullList(
+          batch: 500, fields: 'id', filter: 'deleted = false');
+      for (final e in existingBgs) {
+        if (!backupBgIds.contains(e.id)) {
+          await _upsert('backgrounds', e.id, {'deleted': true});
+        }
+      }
     }
     return count;
+  }
+
+  /// Upsert one background from raw bytes (v2): update options, else create with
+  /// a multipart upload.
+  Future<void> _putBackground(Map<String, dynamic> b, Uint8List? data) async {
+    final id = b['id'] as String;
+    final options = {
+      'name': b['name'] ?? '',
+      'opacity': (b['opacity'] as num?)?.toDouble() ?? 1,
+      'overlayColor': b['overlayColor'] ?? '',
+      'overlayOpacity': (b['overlayOpacity'] as num?)?.toDouble() ?? 0,
+      'fit': b['fit'] ?? 'cover',
+      'repeat': b['repeat'] ?? 'none',
+      'scale': (b['scale'] as num?)?.toDouble() ?? 1,
+      'deleted': b['deleted'] ?? false,
+    };
+    try {
+      await _pb.collection('backgrounds').update(id, body: options);
+    } on ClientException catch (e) {
+      if (e.statusCode != 404) rethrow;
+      if (data == null) return; // missing/damaged bytes — skip
+      await _pb.collection('backgrounds').create(
+        body: {'id': id, ...options},
+        files: [
+          http.MultipartFile.fromBytes('file', data, filename: 'bg_$id.jpg'),
+        ],
+      );
+    }
   }
 
   /// Upsert one attachment from raw bytes (v2): update metadata, else create
