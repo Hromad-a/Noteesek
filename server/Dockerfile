@@ -23,7 +23,7 @@ COPY app/ ./
 # generated AppLocalizations — so it must exist before build_runner runs.
 RUN flutter gen-l10n \
     && dart run build_runner build --delete-conflicting-outputs \
-    && flutter build web --release --pwa-strategy=none
+    && flutter build web --release --pwa-strategy=none --no-tree-shake-icons
 
 # --- Stage 2: PocketBase serving the web app ----------------------------------
 # Single static binary on a small Alpine base. This stage IS arch-specific (the
