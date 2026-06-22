@@ -5,36 +5,154 @@
     "description": "The application name."
   },
   "notesTitle": "Notes",
-  "@notesTitle": {
-    "description": "Title of the main notes screen."
-  },
   "settingsTitle": "Settings",
-  "@settingsTitle": {
-    "description": "Title of the Settings screen."
-  },
   "sectionAppearance": "Appearance",
-  "@sectionAppearance": {
-    "description": "Settings section header for theme and language."
-  },
   "themeLabel": "Theme",
-  "@themeLabel": {
-    "description": "Label for the light/dark/system theme setting."
-  },
   "themeSystem": "System",
   "themeLight": "Light",
   "themeDark": "Dark",
   "languageLabel": "Language",
-  "@languageLabel": {
-    "description": "Label for the app language setting."
-  },
   "languageSystemDefault": "System default",
-  "@languageSystemDefault": {
-    "description": "Language option that follows the device language."
-  },
   "languageEnglish": "English",
   "languageCzech": "Čeština",
-  "@languageCzech": {
-    "description": "Czech, written as its own endonym."
+
+  "cancel": "Cancel",
+  "delete": "Delete",
+  "add": "Add",
+  "remove": "Remove",
+  "apply": "Apply",
+  "create": "Create",
+  "clear": "Clear",
+  "clearAll": "Clear all",
+  "color": "Color",
+  "labels": "Labels",
+  "archive": "Archive",
+  "unarchive": "Unarchive",
+  "trash": "Trash",
+  "pin": "Pin",
+  "unpin": "Unpin",
+  "edit": "Edit",
+  "preview": "Preview",
+  "moveToNotebook": "Move to notebook",
+  "noNotebook": "No notebook",
+  "newNotebook": "New notebook",
+  "manageNotebooks": "Manage notebooks",
+  "shareExport": "Share / export",
+  "errorWithDetail": "Error: {detail}",
+  "@errorWithDetail": {
+    "description": "Generic error message with details.",
+    "placeholders": {
+      "detail": {
+        "type": "String"
+      }
+    }
   },
-  "cancel": "Cancel"
+
+  "syncConnectToSync": "Connect a server to sync",
+  "syncOfflineRetry": "Offline — tap to retry",
+  "syncPendingTapToSync": "Changes not synced yet — tap to sync now",
+  "syncSyncedTapToSync": "Synced — tap to sync now",
+  "snackSynced": "Synced",
+  "snackSyncInProgress": "Sync already in progress",
+  "snackServerNotResponding": "Server not responding — your notes are saved on this device",
+  "snackSyncFailed": "Sync failed",
+
+  "selectedCount": "{count} selected",
+  "@selectedCount": {
+    "description": "Count of selected notes in the selection app bar.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "notebookName": "Notebook name",
+  "switchNotebook": "Switch notebook",
+  "applyLabels": "Apply labels",
+  "noLabelsYet": "No labels yet",
+  "sortNotes": "Sort notes",
+  "editLabels": "Edit labels",
+  "connectToServer": "Connect to server",
+  "enableSyncAcrossDevices": "Enable sync across devices",
+  "searchNotes": "Search notes",
+  "filter": "Filter",
+  "filters": "Filters",
+  "current": "Current",
+  "allNotebooks": "All notebooks",
+  "allNotes": "All notes",
+  "filterNotebook": "Notebook",
+  "filterType": "Type",
+  "typeText": "Text",
+  "typeChecklist": "Checklist",
+  "hasImage": "Has image",
+  "noMatchingNotes": "No matching notes",
+  "noNotesYet": "No notes yet",
+  "singleColumnView": "Single-column view",
+  "gridView": "Grid view",
+  "noteMovedToTrash": "Note moved to Trash",
+  "notesMovedToTrashCount": "{count} notes moved to Trash",
+  "@notesMovedToTrashCount": {
+    "description": "Snackbar after sending multiple notes to Trash.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "customOrder": "Custom order",
+  "dateEdited": "Date edited",
+  "dateCreated": "Date created",
+  "ascending": "Ascending",
+  "descending": "Descending",
+  "newChecklist": "New checklist",
+  "newNote": "New note",
+
+  "sharedNotebookMembers": "Shared notebook — members",
+  "addImage": "Add image",
+  "removeImage": "Remove image",
+  "sortCheckedToBottom": "Sort checked to bottom",
+  "convertToText": "Convert to text",
+  "convertToChecklist": "Convert to checklist",
+  "titleHint": "Title",
+  "noteHint": "Note",
+  "saveAndClose": "Save & close",
+  "createdAt": "Created {date}",
+  "@createdAt": {
+    "description": "Note creation timestamp.",
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "editedAt": "Edited {date}",
+  "@editedAt": {
+    "description": "Note last-edited timestamp.",
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "createNewLabel": "Create new label",
+  "listItemHint": "List item",
+  "addItem": "Add item",
+  "completedCount": "{count} completed",
+  "@completedCount": {
+    "description": "Count of completed checklist items.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "nothingToPreview": "Nothing to preview",
+  "undo": "Undo",
+  "redo": "Redo",
+  "bold": "Bold",
+  "italic": "Italic",
+  "heading": "Heading",
+  "bulletList": "Bullet list",
+  "checkbox": "Checkbox",
+  "quote": "Quote"
 }

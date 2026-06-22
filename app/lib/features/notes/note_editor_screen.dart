@@ -9,6 +9,7 @@ import 'package:markdown_widget/markdown_widget.dart';
 import '../../data/local/database.dart';
 import '../../data/notes_repository.dart';
 import '../../data/online_shared_repository.dart';
+import '../../l10n/l10n.dart';
 import '../../providers.dart';
 import '../../sync/sync_controller.dart';
 import '../../ui/app_messenger.dart';
@@ -211,7 +212,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Color', style: Theme.of(sheetContext).textTheme.titleMedium),
+              Text(context.l10n.color, style: Theme.of(sheetContext).textTheme.titleMedium),
               const SizedBox(height: 16),
               Wrap(
                 spacing: 14,
@@ -263,7 +264,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-              child: Text('Move to notebook',
+              child: Text(context.l10n.moveToNotebook,
                   style: Theme.of(sheetContext).textTheme.titleMedium),
             ),
             Flexible(
@@ -274,7 +275,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
                     leading: Icon(current.isEmpty
                         ? Icons.check
                         : Icons.label_off_outlined),
-                    title: const Text('No notebook'),
+                    title: Text(context.l10n.noNotebook),
                     onTap: () => Navigator.of(sheetContext).pop(''),
                   ),
                   for (final nb in notebooks)
@@ -350,7 +351,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
       ),
       error: (e, _) => Scaffold(
         appBar: AppBar(),
-        body: Center(child: Text('Error: $e')),
+        body: Center(child: Text(context.l10n.errorWithDetail('$e'))),
       ),
       data: (note) {
         if (note == null || note.deleted) {
@@ -405,7 +406,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
               actions: [
                 if (shared)
                   IconButton(
-                    tooltip: 'Shared notebook — members',
+                    tooltip: context.l10n.sharedNotebookMembers,
                     icon: const Icon(Icons.group_outlined),
                     onPressed: () =>
                         showNotebookShareSheet(context, ref, note.notebook),
@@ -416,29 +417,29 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
                   const SizedBox.shrink()
                 else ...[
                 IconButton(
-                  tooltip: 'Color',
+                  tooltip: context.l10n.color,
                   icon: const Icon(Icons.palette_outlined),
                   onPressed: () => _pickColor(note),
                 ),
                 IconButton(
-                  tooltip: 'Labels',
+                  tooltip: context.l10n.labels,
                   icon: const Icon(Icons.label_outline),
                   onPressed: () => _pickLabels(note.id),
                 ),
                 IconButton(
-                  tooltip: 'Add image',
+                  tooltip: context.l10n.addImage,
                   icon: const Icon(Icons.image_outlined),
                   onPressed: () => _pickImage(note.id),
                 ),
                 IconButton(
-                  tooltip: note.pinned ? 'Unpin' : 'Pin',
+                  tooltip: note.pinned ? context.l10n.unpin : context.l10n.pin,
                   icon: Icon(
                       note.pinned ? Icons.push_pin : Icons.push_pin_outlined),
                   onPressed: () => _repo.setPinned(note.id, !note.pinned),
                 ),
                 if (markdownOn && note.type == 'text')
                   IconButton(
-                    tooltip: _previewMarkdown ? 'Edit' : 'Preview',
+                    tooltip: _previewMarkdown ? context.l10n.edit : context.l10n.preview,
                     icon: Icon(_previewMarkdown
                         ? Icons.edit_outlined
                         : Icons.visibility_outlined),
@@ -447,6 +448,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
                   ),
                 PopupMenuButton<_OverflowAction>(
                   onSelected: (action) async {
+                    final l10n = context.l10n; // before any await
                     switch (action) {
                       case _OverflowAction.convert:
                         await _repo.convertNoteType(
@@ -467,7 +469,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
                         final repo = _repo;
                         await repo.softDelete(note.id);
                         showUndoSnackBar(
-                          message: 'Note moved to Trash',
+                          message: l10n.noteMovedToTrash,
                           onUndo: () => repo.restore(note.id),
                         );
                         if (context.mounted) Navigator.of(context).maybePop();
@@ -481,8 +483,8 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
                             ? Icons.notes_outlined
                             : Icons.checklist_outlined),
                         title: Text(note.type == 'checklist'
-                            ? 'Convert to text'
-                            : 'Convert to checklist'),
+                            ? context.l10n.convertToText
+                            : context.l10n.convertToChecklist),
                         contentPadding: EdgeInsets.zero,
                       ),
                     ),
@@ -493,23 +495,23 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
                           leading: Icon(ref.watch(checklistAutoSortProvider)
                               ? Icons.check_box_outlined
                               : Icons.check_box_outline_blank),
-                          title: const Text('Sort checked to bottom'),
+                          title: Text(context.l10n.sortCheckedToBottom),
                           contentPadding: EdgeInsets.zero,
                         ),
                       ),
-                    const PopupMenuItem(
+                    PopupMenuItem(
                       value: _OverflowAction.share,
                       child: ListTile(
                         leading: Icon(Icons.ios_share),
-                        title: Text('Share / export'),
+                        title: Text(context.l10n.shareExport),
                         contentPadding: EdgeInsets.zero,
                       ),
                     ),
-                    const PopupMenuItem(
+                    PopupMenuItem(
                       value: _OverflowAction.moveToNotebook,
                       child: ListTile(
                         leading: Icon(Icons.drive_file_move_outlined),
-                        title: Text('Move to notebook'),
+                        title: Text(context.l10n.moveToNotebook),
                         contentPadding: EdgeInsets.zero,
                       ),
                     ),
@@ -519,15 +521,15 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
                         leading: Icon(note.archived
                             ? Icons.unarchive_outlined
                             : Icons.archive_outlined),
-                        title: Text(note.archived ? 'Unarchive' : 'Archive'),
+                        title: Text(note.archived ? context.l10n.unarchive : context.l10n.archive),
                         contentPadding: EdgeInsets.zero,
                       ),
                     ),
                     PopupMenuItem(
                       value: _OverflowAction.delete,
-                      child: const ListTile(
+                      child: ListTile(
                         leading: Icon(Icons.delete_outline),
-                        title: Text('Delete'),
+                        title: Text(context.l10n.delete),
                         contentPadding: EdgeInsets.zero,
                       ),
                     ),
@@ -545,8 +547,8 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
                   child: TextField(
                     controller: _titleCtrl,
                     readOnly: readOnly,
-                    decoration: const InputDecoration(
-                      hintText: 'Title',
+                    decoration: InputDecoration(
+                      hintText: context.l10n.titleHint,
                       border: InputBorder.none,
                     ),
                     style: Theme.of(context).textTheme.titleLarge,
@@ -587,8 +589,8 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
                                         focusNode: _bodyFocus,
                                         readOnly: readOnly,
                                         undoController: _undoController,
-                                        decoration: const InputDecoration(
-                                          hintText: 'Note',
+                                        decoration: InputDecoration(
+                                          hintText: context.l10n.noteHint,
                                           border: InputBorder.none,
                                         ),
                                         expands: true,
@@ -635,7 +637,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
             floatingActionButton: showEditingBar
                 ? null
                 : FloatingActionButton(
-                    tooltip: 'Save & close',
+                    tooltip: context.l10n.saveAndClose,
                     onPressed: () => Navigator.of(context).maybePop(),
                     child: const Icon(Icons.check),
                   ),
@@ -727,8 +729,8 @@ class _TimestampBar extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (createdStr.isNotEmpty) Text('Created $createdStr', style: style),
-            if (updatedStr.isNotEmpty) Text('Edited $updatedStr', style: style),
+            if (createdStr.isNotEmpty) Text(context.l10n.createdAt(createdStr), style: style),
+            if (updatedStr.isNotEmpty) Text(context.l10n.editedAt(updatedStr), style: style),
           ],
         ),
       ),
@@ -821,7 +823,7 @@ class _LabelPickerSheetState extends ConsumerState<_LabelPickerSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Labels', style: Theme.of(context).textTheme.titleMedium),
+            Text(context.l10n.labels, style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 8),
             Flexible(
               child: ListView(
@@ -853,8 +855,8 @@ class _LabelPickerSheetState extends ConsumerState<_LabelPickerSheet> {
                 Expanded(
                   child: TextField(
                     controller: _newCtrl,
-                    decoration: const InputDecoration(
-                      hintText: 'Create new label',
+                    decoration: InputDecoration(
+                      hintText: context.l10n.createNewLabel,
                       prefixIcon: Icon(Icons.add),
                       isDense: true,
                     ),
@@ -864,7 +866,7 @@ class _LabelPickerSheetState extends ConsumerState<_LabelPickerSheet> {
                 ),
                 TextButton(
                   onPressed: () => _createAndAssign(assigned),
-                  child: const Text('Add'),
+                  child: Text(context.l10n.add),
                 ),
               ],
             ),
@@ -966,7 +968,7 @@ class _AttachmentsSection extends ConsumerWidget {
                         right: -4,
                         child: IconButton(
                           icon: const Icon(Icons.cancel),
-                          tooltip: 'Remove image',
+                          tooltip: context.l10n.removeImage,
                           color: Colors.black54,
                           onPressed: () => repo.deleteAttachment(a.id),
                         ),
@@ -1106,10 +1108,10 @@ class _ChecklistEditorState extends ConsumerState<_ChecklistEditor> {
             minLines: 1,
             maxLines: null,
             keyboardType: TextInputType.multiline,
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               isDense: true,
               border: InputBorder.none,
-              hintText: 'List item',
+              hintText: context.l10n.listItemHint,
               // Vertically pad a single line up to _lineHeight so its text
               // centres against the checkbox.
               contentPadding: EdgeInsets.symmetric(vertical: 9),
@@ -1129,7 +1131,7 @@ class _ChecklistEditorState extends ConsumerState<_ChecklistEditor> {
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                 icon: const Icon(Icons.close, size: 18),
-                tooltip: 'Remove',
+                tooltip: context.l10n.remove,
                 onPressed: () {
                   repo.deleteItem(it.id);
                   widget.onForgetController(it.id);
@@ -1153,7 +1155,7 @@ class _ChecklistEditorState extends ConsumerState<_ChecklistEditor> {
         padding: EdgeInsets.all(8),
         child: LinearProgressIndicator(),
       ),
-      error: (e, _) => Text('Error: $e'),
+      error: (e, _) => Text(context.l10n.errorWithDetail('$e')),
       data: (items) {
         // When a new item was just created via Enter, focus it once rendered.
         if (_pendingFocusId != null &&
@@ -1212,7 +1214,7 @@ class _ChecklistEditorState extends ConsumerState<_ChecklistEditor> {
                         alignment: Alignment.centerLeft,
                         child: TextButton.icon(
                           icon: const Icon(Icons.add),
-                          label: const Text('Add item'),
+                          label: Text(context.l10n.addItem),
                           onPressed: _addAndFocus,
                         ),
                       ),
@@ -1232,7 +1234,7 @@ class _ChecklistEditorState extends ConsumerState<_ChecklistEditor> {
                                 size: 20,
                               ),
                               const SizedBox(width: 4),
-                              Text('${completed.length} completed',
+                              Text(context.l10n.completedCount(completed.length),
                                   style: Theme.of(context).textTheme.labelLarge),
                             ],
                           ),
@@ -1272,7 +1274,7 @@ class _MarkdownPreview extends StatelessWidget {
     if (text.trim().isEmpty) {
       return Padding(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-        child: Text('Nothing to preview',
+        child: Text(context.l10n.nothingToPreview,
             style: TextStyle(color: Theme.of(context).disabledColor)),
       );
     }
@@ -1353,9 +1355,9 @@ class _MarkdownToolbar extends StatelessWidget {
       builder: (context, value, _) => Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          btn(Icons.undo, 'Undo',
+          btn(Icons.undo, context.l10n.undo,
               value.canUndo ? undoController.undo : null),
-          btn(Icons.redo, 'Redo',
+          btn(Icons.redo, context.l10n.redo,
               value.canRedo ? undoController.redo : null),
         ],
       ),
@@ -1367,14 +1369,14 @@ class _MarkdownToolbar extends StatelessWidget {
               scrollDirection: Axis.horizontal,
               child: Row(
                 children: [
-                  btn(Icons.format_bold, 'Bold', () => _wrap('**', '**')),
-                  btn(Icons.format_italic, 'Italic', () => _wrap('*', '*')),
-                  btn(Icons.title, 'Heading', () => _linePrefix('# ')),
-                  btn(Icons.format_list_bulleted, 'Bullet list',
+                  btn(Icons.format_bold, context.l10n.bold, () => _wrap('**', '**')),
+                  btn(Icons.format_italic, context.l10n.italic, () => _wrap('*', '*')),
+                  btn(Icons.title, context.l10n.heading, () => _linePrefix('# ')),
+                  btn(Icons.format_list_bulleted, context.l10n.bulletList,
                       () => _linePrefix('- ')),
-                  btn(Icons.checklist, 'Checkbox',
+                  btn(Icons.checklist, context.l10n.checkbox,
                       () => _linePrefix('- [ ] ')),
-                  btn(Icons.format_quote, 'Quote', () => _linePrefix('> ')),
+                  btn(Icons.format_quote, context.l10n.quote, () => _linePrefix('> ')),
                   btn(Icons.code, 'Code', () => _wrap('`', '`')),
                   btn(Icons.link, 'Link', () => _wrap('[', '](url)')),
                 ],
