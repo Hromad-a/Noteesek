@@ -32,6 +32,10 @@ class Notes extends Table {
   /// Background color key (see note_colors.dart). Empty = default surface.
   TextColumn get color => text().withDefault(const Constant(''))();
 
+  /// Image background id ([Backgrounds.id]) for this note, or empty for none.
+  /// Mutually exclusive with [color] in the UI. Rides this note's LWW sync.
+  TextColumn get background => text().withDefault(const Constant(''))();
+
   /// Assigned label ids as a JSON array string (e.g. '["id1","id2"]').
   /// Membership rides this note's last-write-wins sync.
   TextColumn get labels => text().withDefault(const Constant('[]'))();
@@ -159,6 +163,37 @@ class Notebooks extends Table {
   Set<Column> get primaryKey => {id};
 }
 
+@DataClassName('BackgroundRow')
+class Backgrounds extends Table {
+  TextColumn get id => text()();
+  TextColumn get owner => text()();
+  TextColumn get name => text().withDefault(const Constant(''))();
+
+  /// Server-side stored filename (within the backgrounds record). Empty until
+  /// the local image has been uploaded.
+  TextColumn get file => text().withDefault(const Constant(''))();
+
+  /// The image bytes, kept locally so backgrounds render offline and on every
+  /// platform. Populated on add, and on pull after download.
+  BlobColumn get data => blob().nullable()();
+
+  // Display options (applied wherever this background is used).
+  RealColumn get opacity => real().withDefault(const Constant(1.0))();
+  TextColumn get overlayColor => text().withDefault(const Constant(''))();
+  RealColumn get overlayOpacity => real().withDefault(const Constant(0.0))();
+  TextColumn get fit => text().withDefault(const Constant('cover'))();
+  TextColumn get repeat => text().withDefault(const Constant('none'))();
+  RealColumn get scale => real().withDefault(const Constant(1.0))();
+
+  BoolColumn get deleted => boolean().withDefault(const Constant(false))();
+  TextColumn get created => text().nullable()();
+  TextColumn get updated => text().withDefault(const Constant(''))();
+  BoolColumn get dirty => boolean().withDefault(const Constant(false))();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
 /// Per-collection pull cursor: the newest server `updated` seen on last pull.
 class SyncCursors extends Table {
   TextColumn get collection => text()();
@@ -168,8 +203,15 @@ class SyncCursors extends Table {
   Set<Column> get primaryKey => {collection};
 }
 
-@DriftDatabase(
-    tables: [Notes, ChecklistItems, Attachments, Labels, Notebooks, SyncCursors])
+@DriftDatabase(tables: [
+  Notes,
+  ChecklistItems,
+  Attachments,
+  Labels,
+  Notebooks,
+  Backgrounds,
+  SyncCursors
+])
 class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor])
       : super(executor ??
@@ -184,7 +226,7 @@ class AppDatabase extends _$AppDatabase {
             ));
 
   @override
-  int get schemaVersion => 10;
+  int get schemaVersion => 11;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -238,6 +280,11 @@ class AppDatabase extends _$AppDatabase {
             await m.addColumn(notes, notes.lockedBy);
             await m.addColumn(notes, notes.lockedAt);
           }
+          if (from < 11) {
+            // Image backgrounds: a per-account library + a note's chosen one.
+            await m.createTable(backgrounds);
+            await m.addColumn(notes, notes.background);
+          }
         },
       );
 
@@ -253,8 +300,16 @@ class AppDatabase extends _$AppDatabase {
       '  UNION ALL SELECT 1 FROM attachments WHERE dirty = 1'
       '  UNION ALL SELECT 1 FROM labels WHERE dirty = 1'
       '  UNION ALL SELECT 1 FROM notebooks WHERE dirty = 1'
+      '  UNION ALL SELECT 1 FROM backgrounds WHERE dirty = 1'
       ') AS has_pending',
-      readsFrom: {notes, checklistItems, attachments, labels, notebooks},
+      readsFrom: {
+        notes,
+        checklistItems,
+        attachments,
+        labels,
+        notebooks,
+        backgrounds
+      },
     ).watchSingle().map((row) => row.read<int>('has_pending') == 1);
   }
 
@@ -270,6 +325,7 @@ class AppDatabase extends _$AppDatabase {
       await delete(notes).go();
       await delete(labels).go();
       await delete(notebooks).go();
+      await delete(backgrounds).go();
       await delete(syncCursors).go();
     });
   }

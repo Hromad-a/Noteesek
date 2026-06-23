@@ -6,6 +6,7 @@ import 'package:markdown_widget/markdown_widget.dart';
 
 import '../../data/local/database.dart';
 import '../../data/notes_repository.dart';
+import 'note_background.dart';
 import 'note_colors.dart';
 import 'note_markdown_config.dart';
 import 'note_selection.dart';
@@ -61,6 +62,8 @@ class _NoteCardState extends ConsumerState<NoteCard> {
     final hasTitle = note.title.trim().isNotEmpty;
     final markdownOn = ref.watch(markdownEnabledProvider);
 
+    final bg = ref.watch(backgroundByIdProvider(note.background));
+
     final selectionMode =
         widget.selectable && ref.watch(selectionModeProvider);
     final selected = widget.selectable &&
@@ -81,7 +84,9 @@ class _NoteCardState extends ConsumerState<NoteCard> {
           : null,
       child: InkWell(
         onTap: selectionMode ? () => selection.toggle(note.id) : widget.onTap,
-        child: Column(
+        child: NoteBackground(
+          bg: bg,
+          child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -127,7 +132,7 @@ class _NoteCardState extends ConsumerState<NoteCard> {
                           ))
                   else if (!hasTitle)
                     Text(
-                      'Empty note',
+                      context.l10n.emptyNote,
                       style: theme.textTheme.bodyMedium
                           ?.copyWith(color: theme.disabledColor),
                     ),
@@ -137,7 +142,7 @@ class _NoteCardState extends ConsumerState<NoteCard> {
               ),
             ),
           ],
-        ),
+        )),
       ),
     );
 

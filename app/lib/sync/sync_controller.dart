@@ -116,9 +116,11 @@ class SyncController extends Notifier<SyncStatus> {
       if (!ref.read(isAuthenticatedProvider)) return;
       final pb = ref.read(pocketBaseProvider);
       final engine = ref.read(syncEngineProvider);
+      final myId = pb.authStore.record?.id ?? '';
       const collections = [
         'labels',
         'notebooks',
+        'backgrounds',
         'notes',
         'checklist_items',
         'attachments',
@@ -126,8 +128,17 @@ class SyncController extends Notifier<SyncStatus> {
       for (final c in collections) {
         final unsub = await pb.collection(c).subscribe('*', (e) {
           final rec = e.record;
-          if (rec != null) {
-            engine.applyRealtimeRecord(c, rec, e.action);
+          if (rec == null) return;
+          engine.applyRealtimeRecord(c, rec, e.action);
+          // A shared notebook (owner != me) just changed — most likely it was
+          // shared with me. Its notes may carry an `updated` older than my pull
+          // cursor, so realtime alone won't deliver them; kick a (debounced)
+          // sync to run the shared-notebook full-fetch.
+          if (c == 'notebooks' &&
+              e.action != 'delete' &&
+              rec.getStringValue('owner') != myId) {
+            _debounce?.cancel();
+            _debounce = Timer(const Duration(seconds: 1), () => syncNow());
           }
         });
         _rtUnsubs.add(unsub);

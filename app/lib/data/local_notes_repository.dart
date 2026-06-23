@@ -661,6 +661,100 @@ class LocalNotesRepository implements NotesRepository {
     );
   }
 
+  // ---- Backgrounds (image-background library) ----
+
+  @override
+  Stream<List<BackgroundRow>> watchBackgrounds() {
+    // The library: the device's own backgrounds (foreign ones fetched for shared
+    // notes are excluded so they don't pollute Settings / the picker).
+    return (_db.select(_db.backgrounds)
+          ..where((t) => t.deleted.equals(false) & t.owner.equals(_ownerId))
+          ..orderBy([(t) => OrderingTerm(expression: t.created)]))
+        .watch();
+  }
+
+  @override
+  Stream<List<BackgroundRow>> watchAllBackgrounds() {
+    return (_db.select(_db.backgrounds)
+          ..where((t) => t.deleted.equals(false))
+          ..orderBy([(t) => OrderingTerm(expression: t.created)]))
+        .watch();
+  }
+
+  @override
+  Future<String> addBackground(Uint8List bytes, {String name = ''}) async {
+    final id = newPbId();
+    final now = pbNow();
+    await _db.into(_db.backgrounds).insert(BackgroundsCompanion.insert(
+          id: id,
+          owner: _ownerId,
+          name: Value(name),
+          data: Value(bytes),
+          created: Value(now),
+          updated: Value(now),
+          dirty: const Value(true),
+        ));
+    return id;
+  }
+
+  @override
+  Future<void> updateBackground(
+    String id, {
+    String? name,
+    double? opacity,
+    String? overlayColor,
+    double? overlayOpacity,
+    String? fit,
+    String? repeat,
+    double? scale,
+  }) async {
+    await (_db.update(_db.backgrounds)..where((t) => t.id.equals(id))).write(
+      BackgroundsCompanion(
+        name: name == null ? const Value.absent() : Value(name),
+        opacity: opacity == null ? const Value.absent() : Value(opacity),
+        overlayColor:
+            overlayColor == null ? const Value.absent() : Value(overlayColor),
+        overlayOpacity: overlayOpacity == null
+            ? const Value.absent()
+            : Value(overlayOpacity),
+        fit: fit == null ? const Value.absent() : Value(fit),
+        repeat: repeat == null ? const Value.absent() : Value(repeat),
+        scale: scale == null ? const Value.absent() : Value(scale),
+        updated: Value(pbNow()),
+        dirty: const Value(true),
+      ),
+    );
+  }
+
+  @override
+  Future<void> deleteBackground(String id) async {
+    await (_db.update(_db.backgrounds)..where((t) => t.id.equals(id))).write(
+      BackgroundsCompanion(
+        deleted: const Value(true),
+        updated: Value(pbNow()),
+        dirty: const Value(true),
+      ),
+    );
+    // Clear it off any note that referenced it so nothing dangles.
+    await (_db.update(_db.notes)..where((t) => t.background.equals(id))).write(
+      NotesCompanion(
+        background: const Value(''),
+        updated: Value(pbNow()),
+        dirty: const Value(true),
+      ),
+    );
+  }
+
+  @override
+  Future<void> setNoteBackground(String noteId, String backgroundId) => _patch(
+        noteId,
+        NotesCompanion(
+          background: Value(backgroundId),
+          // Mutually exclusive with the note color.
+          color: backgroundId.isEmpty ? const Value.absent() : const Value(''),
+        ),
+      );
+
   @override
   Stream<Set<String>> watchNoteIdsWithAttachments() {
     return (_db.selectOnly(_db.attachments, distinct: true)

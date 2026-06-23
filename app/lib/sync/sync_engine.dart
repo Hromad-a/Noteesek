@@ -24,6 +24,7 @@ class SyncEngine {
   static const _attachments = 'attachments';
   static const _labels = 'labels';
   static const _notebooks = 'notebooks';
+  static const _backgrounds = 'backgrounds';
 
   bool _running = false;
 
@@ -50,18 +51,29 @@ class SyncEngine {
       final steps = <(String, String)>[
         ('push', _labels),
         ('push', _notebooks),
+        ('push', _backgrounds),
         ('push', _notes),
         ('push', _items),
         ('push', _attachments),
         if (!pushOnly) ...[
           ('pull', _labels),
           ('pull', _notebooks),
+          ('pull', _backgrounds),
           ('pull', _notes),
           ('pull', _items),
           ('pull', _attachments),
-          // Retry any attachment whose bytes haven't downloaded yet (independent
-          // of the pull cursor).
+          // Retry any attachment / background whose bytes haven't downloaded yet
+          // (independent of the pull cursor).
           ('bytes', _attachments),
+          ('bytes', _backgrounds),
+          // Fetch foreign backgrounds that shared notes reference (our own
+          // library pull is owner-scoped, so these arrive only by id).
+          ('refbg', _backgrounds),
+          // Fully fetch shared-with-me notebooks' content (cursor-independent):
+          // a note granted access later (e.g. a notebook (re)shared, or restored
+          // notes) can have an `updated` older than our pull cursor, so the
+          // incremental pull above would miss it.
+          ('sharedpull', _notebooks),
           // Drop shared notebooks (+ their notes) that were unshared from me,
           // and individual notes I've lost access to (e.g. a member claimed one
           // out of a shared notebook, taking its ownership).
@@ -87,7 +99,13 @@ class SyncEngine {
   }
 
   Future<void> _runStep(String phase, String collection) {
-    if (phase == 'bytes') return _downloadPendingAttachmentBytes();
+    if (phase == 'bytes') {
+      return collection == _backgrounds
+          ? _downloadPendingBackgroundBytes()
+          : _downloadPendingAttachmentBytes();
+    }
+    if (phase == 'refbg') return _fetchReferencedBackgrounds();
+    if (phase == 'sharedpull') return _pullSharedNotebookContent();
     if (phase == 'reconcile') {
       return collection == _notes
           ? _reconcileSharedNotes()
@@ -97,6 +115,7 @@ class SyncEngine {
     return switch (collection) {
       _labels => push ? _pushLabels() : _pullLabels(),
       _notebooks => push ? _pushNotebooks() : _pullNotebooks(),
+      _backgrounds => push ? _pushBackgrounds() : _pullBackgrounds(),
       _notes => push ? _pushNotes() : _pullNotes(),
       _items => push ? _pushItems() : _pullItems(),
       _attachments => push ? _pushAttachments() : _pullAttachments(),
@@ -242,6 +261,123 @@ class SyncEngine {
     }
   }
 
+  Future<void> _pushBackgrounds() async {
+    final dirty = await (_db.select(_db.backgrounds)
+          ..where((t) => t.dirty.equals(true)))
+        .get();
+    for (final b in dirty) {
+      try {
+        RecordModel saved;
+        if (b.file.isEmpty && b.data != null && !b.deleted) {
+          // First upload: create with the image bytes + options (multipart).
+          saved = await _pb.collection(_backgrounds).create(
+            body: {
+              'id': b.id,
+              'owner': b.owner,
+              'name': b.name,
+              'opacity': b.opacity,
+              'overlayColor': b.overlayColor,
+              'overlayOpacity': b.overlayOpacity,
+              'fit': b.fit,
+              'repeat': b.repeat,
+              'scale': b.scale,
+              'deleted': false,
+            },
+            files: [
+              http.MultipartFile.fromBytes('file', b.data!,
+                  filename: 'bg_${b.id}.jpg'),
+            ],
+          );
+        } else {
+          // Options / soft-delete change on an existing record.
+          saved = await _pb.collection(_backgrounds).update(b.id, body: {
+            'name': b.name,
+            'opacity': b.opacity,
+            'overlayColor': b.overlayColor,
+            'overlayOpacity': b.overlayOpacity,
+            'fit': b.fit,
+            'repeat': b.repeat,
+            'scale': b.scale,
+            'deleted': b.deleted,
+          });
+        }
+        await (_db.update(_db.backgrounds)..where((t) => t.id.equals(b.id)))
+            .write(BackgroundsCompanion(
+          file: Value(saved.getStringValue('file')),
+          created: Value(saved.getStringValue('created')),
+          updated: Value(saved.getStringValue('updated')),
+          dirty: const Value(false),
+        ));
+      } on ClientException catch (e) {
+        if (e.statusCode == 404 && b.deleted) {
+          await (_db.update(_db.backgrounds)..where((t) => t.id.equals(b.id)))
+              .write(const BackgroundsCompanion(dirty: Value(false)));
+        }
+        // else: transient — leave dirty, retry next cycle.
+      }
+    }
+  }
+
+  Future<void> _pullBackgrounds() async {
+    await _pull(_backgrounds, (rec) => _applyRecord(_backgrounds, rec),
+        _localBackgroundUpdated);
+  }
+
+  Future<({String updated, bool dirty})?> _localBackgroundUpdated(
+      String id) async {
+    final row = await (_db.select(_db.backgrounds)..where((t) => t.id.equals(id)))
+        .getSingleOrNull();
+    return row == null ? null : (updated: row.updated, dirty: row.dirty);
+  }
+
+  Future<void> _downloadPendingBackgroundBytes() async {
+    final pending = await (_db.select(_db.backgrounds)
+          ..where((t) =>
+              t.deleted.equals(false) &
+              t.file.equals('').not() &
+              t.data.isNull()))
+        .get();
+    for (final b in pending) {
+      try {
+        final rec = await _pb.collection(_backgrounds).getOne(b.id);
+        final filename = rec.getStringValue('file');
+        if (filename.isEmpty || rec.getBoolValue('deleted')) continue;
+        final bytes = await _downloadFile(rec, filename);
+        if (bytes != null) {
+          await (_db.update(_db.backgrounds)..where((t) => t.id.equals(b.id)))
+              .write(BackgroundsCompanion(data: Value(bytes)));
+        }
+      } on ClientException catch (e) {
+        if (e.statusCode == 404) continue;
+        rethrow;
+      }
+    }
+  }
+
+  /// Fetch backgrounds that local notes reference but we don't have yet —
+  /// foreign ones used on shared notes (our own pull is owner-scoped). The
+  /// backgrounds `viewRule` lets any signed-in user read one by id. Fetch-once:
+  /// a row already present is left as-is.
+  Future<void> _fetchReferencedBackgrounds() async {
+    final notes = await _db.select(_db.notes).get();
+    final referenced = <String>{
+      for (final n in notes)
+        if (n.background.isNotEmpty) n.background,
+    };
+    if (referenced.isEmpty) return;
+    final have = {for (final b in await _db.select(_db.backgrounds).get()) b.id};
+    for (final id in referenced) {
+      if (have.contains(id)) continue;
+      try {
+        final rec = await _pb.collection(_backgrounds).getOne(id);
+        await _applyRecord(_backgrounds, rec); // inserts + downloads bytes
+      } on ClientException catch (e) {
+        if (e.statusCode == 404) continue; // background gone
+        rethrow;
+      }
+    }
+  }
+
   Future<void> _pushNotes() async {
     final dirty =
         await (_db.select(_db.notes)..where((t) => t.dirty.equals(true))).get();
@@ -254,6 +390,7 @@ class SyncEngine {
         'pinned': n.pinned,
         'archived': n.archived,
         'color': n.color,
+        'background': n.background,
         'labels': _decodeIds(n.labels),
         'notebook': n.notebook,
         'lockedBy': n.lockedBy,
@@ -395,6 +532,7 @@ class SyncEngine {
       _notes => _localNoteUpdated(id),
       _items => _localItemUpdated(id),
       _attachments => _localAttachmentUpdated(id),
+      _backgrounds => _localBackgroundUpdated(id),
       _ => Future.value(null),
     };
   }
@@ -412,6 +550,8 @@ class SyncEngine {
             .go();
       case _attachments:
         await (_db.delete(_db.attachments)..where((t) => t.id.equals(id))).go();
+      case _backgrounds:
+        await (_db.delete(_db.backgrounds)..where((t) => t.id.equals(id))).go();
     }
   }
 
@@ -453,6 +593,7 @@ class SyncEngine {
               pinned: Value(rec.getBoolValue('pinned')),
               archived: Value(rec.getBoolValue('archived')),
               color: Value(rec.getStringValue('color')),
+              background: Value(rec.getStringValue('background')),
               labels: Value(jsonEncode(rec.getListValue<String>('labels'))),
               notebook: Value(rec.getStringValue('notebook')),
               lockedBy: Value(rec.getStringValue('lockedBy')),
@@ -499,7 +640,48 @@ class SyncEngine {
           await (_db.update(_db.attachments)..where((t) => t.id.equals(rec.id)))
               .write(AttachmentsCompanion(data: Value(bytes)));
         }
+      case _backgrounds:
+        await _db
+            .into(_db.backgrounds)
+            .insertOnConflictUpdate(BackgroundsCompanion(
+              id: Value(rec.id),
+              owner: Value(rec.getStringValue('owner')),
+              name: Value(rec.getStringValue('name')),
+              file: Value(rec.getStringValue('file')),
+              opacity: Value(_numField(rec, 'opacity', 1)),
+              overlayColor: Value(rec.getStringValue('overlayColor')),
+              overlayOpacity: Value(_numField(rec, 'overlayOpacity', 0)),
+              fit: Value(rec.getStringValue('fit').isEmpty
+                  ? 'cover'
+                  : rec.getStringValue('fit')),
+              repeat: Value(rec.getStringValue('repeat').isEmpty
+                  ? 'none'
+                  : rec.getStringValue('repeat')),
+              scale: Value(_numField(rec, 'scale', 1)),
+              deleted: Value(rec.getBoolValue('deleted')),
+              created: Value(rec.getStringValue('created')),
+              updated: Value(rec.getStringValue('updated')),
+              dirty: const Value(false),
+            ));
+        final bgFile = rec.getStringValue('file');
+        if (bgFile.isEmpty || rec.getBoolValue('deleted')) return;
+        final existingBg = await (_db.select(_db.backgrounds)
+              ..where((t) => t.id.equals(rec.id)))
+            .getSingleOrNull();
+        if (existingBg?.data != null) return;
+        final bgBytes = await _downloadFile(rec, bgFile);
+        if (bgBytes != null) {
+          await (_db.update(_db.backgrounds)..where((t) => t.id.equals(rec.id)))
+              .write(BackgroundsCompanion(data: Value(bgBytes)));
+        }
     }
+  }
+
+  /// A PocketBase number field as a double, falling back when it reads 0
+  /// (unset). opacity/scale fall back to 1; overlayOpacity to 0.
+  double _numField(RecordModel rec, String field, double fallback) {
+    final v = rec.getDoubleValue(field);
+    return v == 0 ? fallback : v;
   }
 
   Future<void> _pullNotebooks() async {
@@ -539,6 +721,37 @@ class SyncEngine {
         await (_db.delete(_db.notes)..where((t) => t.id.equals(n.id))).go();
       }
       await (_db.delete(_db.notebooks)..where((t) => t.id.equals(nb.id))).go();
+    }
+  }
+
+  /// Full-fetch the content of every notebook shared *with* me (foreign-owned,
+  /// present locally). The incremental notes/items/attachments pulls are
+  /// cursor-based, so a record that becomes accessible *after* its `updated`
+  /// (a notebook (re)shared later, or restored notes carrying an old timestamp)
+  /// would never reappear in the cursor window. Re-applying the full set by
+  /// notebook closes that gap; LWW in [_applyRecord] never clobbers local dirty
+  /// edits, and already-current rows are cheap no-ops.
+  Future<void> _pullSharedNotebookContent() async {
+    final myId = _pb.authStore.record?.id ?? '';
+    if (myId.isEmpty) return;
+    for (final nb in await _db.select(_db.notebooks).get()) {
+      final foreign = nb.owner != myId && nb.owner != AppConfig.localOwner;
+      if (!foreign || nb.deleted) continue;
+      final nbId = nb.id.replaceAll("'", "");
+      for (final rec
+          in await _pb.collection(_notes).getFullList(batch: 200, filter: "notebook = '$nbId'")) {
+        await _applyRecord(_notes, rec);
+      }
+      for (final rec in await _pb
+          .collection(_items)
+          .getFullList(batch: 500, filter: "note.notebook = '$nbId'")) {
+        await _applyRecord(_items, rec);
+      }
+      for (final rec in await _pb
+          .collection(_attachments)
+          .getFullList(batch: 200, filter: "note.notebook = '$nbId'")) {
+        await _applyRecord(_attachments, rec);
+      }
     }
   }
 

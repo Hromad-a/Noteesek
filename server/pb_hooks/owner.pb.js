@@ -18,7 +18,7 @@
 // the createRule BEFORE this hook, so with a stricter `owner = @request.auth.id`
 // rule a create with a wrong owner would be rejected before the hook could fix
 // it. list/view/update/delete rules remain owner-scoped.
-["notes", "labels", "notebooks"].forEach((name) => {
+["notes", "labels", "notebooks", "backgrounds"].forEach((name) => {
   onRecordCreateRequest((e) => {
     if (e.auth) {
       e.record.set("owner", e.auth.id);

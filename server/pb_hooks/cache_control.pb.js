@@ -23,7 +23,12 @@ routerUse((e) => {
   // Coerce to a primitive JS string — the JSVM exposes the path as a Go-wrapped
   // value that won't match plain object keys otherwise.
   const path = String(e.request.url.path);
-  if (noCache[path]) {
+  // Fonts (e.g. the Material icon font) live at a STABLE filename but their
+  // bytes change between builds when icons are added, so a heuristically-cached
+  // browser keeps serving a stale font missing newly-used glyphs. Force them to
+  // revalidate (cheap 304 when unchanged) so new icons always render.
+  const isFont = path.indexOf("/assets/fonts/") === 0;
+  if (noCache[path] || isFont) {
     e.response.header().set("Cache-Control", "no-cache");
   }
   return e.next();

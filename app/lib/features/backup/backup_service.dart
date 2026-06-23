@@ -114,6 +114,22 @@ class BackupService {
               created: l.created,
               updated: l.updated),
       ],
+      backgrounds: [
+        for (final b in await _db.select(_db.backgrounds).get())
+          BackupBackgroundInput(
+              id: b.id,
+              name: b.name,
+              bytes: b.data,
+              opacity: b.opacity,
+              overlayColor: b.overlayColor,
+              overlayOpacity: b.overlayOpacity,
+              fit: b.fit,
+              repeat: b.repeat,
+              scale: b.scale,
+              deleted: b.deleted,
+              created: b.created,
+              updated: b.updated),
+      ],
       notebooks: [
         for (final nb in await _db.select(_db.notebooks).get())
           BackupNotebookInput(
@@ -139,6 +155,7 @@ class BackupService {
             updated: n.updated,
             labelIds: _ids(n.labels),
             notebookId: n.notebook,
+            background: n.background,
             items: [
               for (final i in (itemsByNote[n.id] ?? const []))
                 BackupItemInput(
@@ -203,6 +220,33 @@ class BackupService {
             updated: Value(l['updated'] as String? ?? ''),
             dirty: const Value(true)));
       }
+      final backupBgIds = <String>{};
+      for (final b in r.backgrounds) {
+        backupBgIds.add(b['id'] as String);
+        final sha = b['sha256'] as String?;
+        final ext = b['ext'] as String? ?? 'jpg';
+        final deleted = b['deleted'] as bool? ?? false;
+        final data = sha == null ? null : r.backgroundBytes(sha, ext);
+        if (data == null && !deleted) continue; // missing/damaged bytes
+        await _db.into(_db.backgrounds).insertOnConflictUpdate(
+            BackgroundsCompanion.insert(
+                id: b['id'] as String,
+                owner: owner,
+                name: Value(b['name'] as String? ?? ''),
+                file: const Value(''),
+                data: Value(data),
+                opacity: Value((b['opacity'] as num?)?.toDouble() ?? 1),
+                overlayColor: Value(b['overlayColor'] as String? ?? ''),
+                overlayOpacity:
+                    Value((b['overlayOpacity'] as num?)?.toDouble() ?? 0),
+                fit: Value(b['fit'] as String? ?? 'cover'),
+                repeat: Value(b['repeat'] as String? ?? 'none'),
+                scale: Value((b['scale'] as num?)?.toDouble() ?? 1),
+                deleted: Value(deleted),
+                created: Value(b['created'] as String?),
+                updated: Value(b['updated'] as String? ?? ''),
+                dirty: const Value(true)));
+      }
       final backupNoteIds = <String>{};
       for (final idx in r.notes) {
         final id = idx['id'] as String;
@@ -219,6 +263,7 @@ class BackupService {
             pinned: Value(rec['pinned'] as bool? ?? false),
             archived: Value(rec['archived'] as bool? ?? false),
             color: Value(rec['color'] as String? ?? ''),
+            background: Value(rec['background'] as String? ?? ''),
             labels: Value(jsonEncode((rec['labelIds'] as List?) ?? const [])),
             notebook: Value(rec['notebookId'] as String? ?? ''),
             deleted: Value(rec['deleted'] as bool? ?? false),
@@ -285,6 +330,15 @@ class BackupService {
           if (!backupLabelIds.contains(l.id) && !l.deleted) {
             await (_db.update(_db.labels)..where((t) => t.id.equals(l.id)))
                 .write(LabelsCompanion(
+                    deleted: const Value(true),
+                    updated: Value(pbNow()),
+                    dirty: const Value(true)));
+          }
+        }
+        for (final b in await _db.select(_db.backgrounds).get()) {
+          if (!backupBgIds.contains(b.id) && !b.deleted) {
+            await (_db.update(_db.backgrounds)..where((t) => t.id.equals(b.id)))
+                .write(BackgroundsCompanion(
                     deleted: const Value(true),
                     updated: Value(pbNow()),
                     dirty: const Value(true)));
@@ -365,6 +419,7 @@ class BackupService {
         pinned: Value(m['pinned'] as bool? ?? false),
         archived: Value(m['archived'] as bool? ?? false),
         color: Value(m['color'] as String? ?? ''),
+        background: Value(m['background'] as String? ?? ''),
         labels: Value(m['labels'] as String? ?? '[]'),
         notebook: Value(m['notebook'] as String? ?? ''),
         deleted: Value(m['deleted'] as bool? ?? false),

@@ -1,107 +1,89 @@
 # Noteesek
 
+A self-hosted, Google Keep–style notes app you run on your own server. Your
+notes live entirely on **your** server — no third-party cloud.
+
 > ⚠️ **Heads up — this is a "vibecoded" project.** It was built largely through
 > AI-assisted, exploratory coding rather than rigorous engineering. It works for
-> my own use, but expect rough edges, untested paths, and bugs. There are **no
-> guarantees** — use it at your own risk, keep backups of your data, and review
-> the code before trusting it with anything important. Issues/PRs welcome, but
-> support is best-effort.
+> my own use, but expect rough edges and bugs. **No guarantees** — use it at your
+> own risk and keep backups of your data. Issues/PRs welcome; support is
+> best-effort.
 
-A self-hosted, Google Keep–style notes app. One Flutter codebase, two clients,
-backed by a self-hosted [PocketBase](https://pocketbase.io) server. Multi-user.
+One Flutter codebase gives you two clients, backed by a single
+[PocketBase](https://pocketbase.io) server (one small Docker container):
 
-- **Android** — **local-first**: works fully offline with no account; an
-  optional server connection enables last-write-wins sync.
-- **Web** — **online**: login-gated, reads/writes notes directly on the server
-  with live realtime updates. Served by the server itself.
+- **📱 Android** — *local-first.* Works fully offline with no account. Connect
+  your server to sync across devices (last-write-wins).
+- **🌐 Web** — *online.* Login-gated, live realtime updates, served by the server
+  itself. Just open your server's URL in a browser.
 
-See [CLAUDE.md](CLAUDE.md) for the current architecture and [PLAN.md](PLAN.md)
-for the original design narrative.
+## Features
 
-## Layout
+- Text & checklist notes — pin, archive, trash (restore / delete-forever)
+- Note **colors** and **image backgrounds** (upload your own, set opacity /
+  overlay / fit)
+- **Labels** (with colors) and **notebooks** to organize
+- **Shared notebooks** — share a notebook with other users; everyone edits its
+  notes together, live
+- Image attachments, search, and filters (notebook / label / color / type / image)
+- Markdown rendering + a formatting toolbar
+- **Version history** — scheduled, server-side snapshots you can restore from
+- Full backup & restore, plus Markdown / plain-text / PDF export and import
+  (Markdown, Google Keep Takeout)
+- Light / dark / system theme · **English & Czech**
+- App lock (PIN + biometrics), quick capture (Android share-to-Noteesek)
 
-```
-Noteesek/
-├── CLAUDE.md          # current architecture (source of truth)
-├── PLAN.md            # original design & decisions
-├── server/            # PocketBase backend (Docker; also serves the web app)
-├── app/               # Flutter client (Android local-first + web online)
-└── docs/              # sync protocol & notes
-```
+## Get started
 
-## Run with Docker
+### 1. Run the server (Docker)
 
-One container bundles the web app, the PocketBase server, and the schema; the
-only external state is `./pb_data` next to the compose file (back it up by
-copying that folder).
-
-**Deploy a published release** — [`docker-compose.yml`](docker-compose.yml) pulls
-a prebuilt multi-arch image (amd64 + arm64) from `ghcr.io/hromad-a/noteesek`:
+Everything — the web app, the server, and the database schema — ships in one
+container. The only state to back up is the `./pb_data` folder next to the
+compose file.
 
 ```bash
 docker compose pull && docker compose up -d
 ```
 
-**Build & run from source** (development) — adds the build config on top via
-[`docker-compose.build.yml`](docker-compose.build.yml):
+Then open:
+
+- **Web app:** <http://localhost:8090/>
+- **Admin UI:** <http://localhost:8090/_/>
+
+To pin a version, change the port, bootstrap an admin, or configure password-
+reset email, copy [`.env.example`](.env.example) to `.env` and edit it (all
+optional). To build the image from source instead of pulling it:
 
 ```bash
 docker compose -f docker-compose.build.yml up -d --build
 ```
 
-Then open:
+### 2. Use it
 
-- Web app: <http://localhost:8090/>
-- Admin UI: <http://localhost:8090/_/>
+- **On the web:** open your server's URL and register / sign in.
+- **On Android:** grab the latest `noteesek-<version>.apk` from the repo's
+  [**Releases**](../../releases) page and install it. The app works offline right
+  away; open **Settings → Account** to connect it to your server and sync.
 
-To pin a version, change the port, bootstrap an admin, or configure SMTP, copy
-[`.env.example`](.env.example) to `.env` and edit it (all optional).
+## Your data
 
-## Releasing
+Your notes never leave your server. Back up by copying the `pb_data/` folder, or
+use the in-app **Settings → Data & storage → Back up to file** (a full,
+restorable backup). Version history adds automatic, scheduled snapshots on the
+server.
 
-Images are published automatically by
-[`.github/workflows/docker-publish.yml`](.github/workflows/docker-publish.yml)
-when a semver tag is pushed:
+## Development
+
+The app is Flutter (Android + web) and the backend is PocketBase. Architecture
+and conventions live in [CLAUDE.md](CLAUDE.md); the original design narrative is
+in [PLAN.md](PLAN.md).
 
 ```bash
-git tag v0.2.0
-git push origin v0.2.0
+cd app
+flutter pub get
+flutter run -d chrome     # web
+flutter run -d <android>  # mobile
 ```
 
-That builds and pushes `ghcr.io/hromad-a/noteesek` tagged `0.2.0`, `0.2`, `0`,
-and `latest`. Use full `vX.Y.Z` tags so the version tags are derived correctly.
-
-The same tag also triggers
-[`.github/workflows/release-apk.yml`](.github/workflows/release-apk.yml), which
-builds the Android APK and attaches it to the tag's GitHub Release as
-`noteesek-<version>.apk` — downloadable from the repo's **Releases** page.
-
-**APK signing.** Bump the build number in `app/pubspec.yaml`
-(`version: 1.0.0+N`) before each release so Android treats it as an update. For
-in-place updates (no uninstall), builds must use one **stable** release keystore
-— see [app/android/key.properties.example](app/android/key.properties.example).
-Locally, copy it to `android/key.properties` and fill it in. In CI, add repo
-secrets `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`,
-`ANDROID_KEY_PASSWORD`, `ANDROID_KEY_ALIAS`. Without a keystore the build falls
-back to debug signing (installable, but each build then needs an uninstall to
-update).
-
-## Status
-
-Feature-complete and verified against a live backend (APK + web image build):
-
-- [x] Multi-user auth
-- [x] Android local-first; optional server with last-write-wins sync
-- [x] Web online client (login-gated, realtime, served by the server)
-- [x] Text + checklist notes; pin / archive / trash (restore · delete-forever · empty)
-- [x] Image attachments (server-side **protected** files)
-- [x] Note search (title / body / checklist text) + filters (notebook / label / color / type / image)
-- [x] Note colors, labels (per-label colors), and **notebooks** (optional —
-      notes can be uncategorized; "All notes" / "No notebook" scopes)
-- [x] Export (bulk + single-note Markdown / plain text / PDF) and import
-      (Markdown, Google Keep Takeout); optional in-app Markdown rendering
-- [x] Light / dark / system theme (softly lavender light theme)
-- [x] App lock (biometric + PIN), full JSON backup/restore, quick capture,
-      sign-in reconciliation (merge / keep-local / keep-server)
-
-Next: FTS5 search, reminders, release-signed APK, HTTPS.
+Pushing a `vX.Y.Z` tag publishes the Docker image and attaches a built APK to the
+GitHub Release automatically.

@@ -121,6 +121,43 @@ void main() {
     final notAZip = Uint8List.fromList(utf8.encode('{"format":1}'));
     expect(() => BackupV2Reader.read(notAZip), throwsA(anything));
   });
+
+  test('image backgrounds round-trip: bytes, options, and note reference',
+      () async {
+    final zip = await writeBackupV2(BackupInput(
+      labels: const [],
+      notebooks: const [],
+      backgrounds: [
+        BackupBackgroundInput(
+          id: 'bg1',
+          name: 'Beach',
+          bytes: _bytes([9, 8, 7, 6]),
+          opacity: 0.8,
+          overlayColor: '#000000',
+          overlayOpacity: 0.3,
+          fit: 'contain',
+          repeat: 'repeatX',
+          scale: 1.5,
+        ),
+      ],
+      notes: [
+        BackupNoteInput(id: 'n1', type: 'text', background: 'bg1'),
+      ],
+    ));
+    final r = BackupV2Reader.read(zip);
+
+    expect(r.noteRecord('n1')!['background'], 'bg1');
+
+    final bg = r.backgrounds.single;
+    expect(bg['id'], 'bg1');
+    expect(bg['opacity'], 0.8);
+    expect(bg['overlayColor'], '#000000');
+    expect(bg['fit'], 'contain');
+    expect(bg['repeat'], 'repeatX');
+    expect(bg['scale'], 1.5);
+    expect(r.backgroundBytes(bg['sha256'] as String, bg['ext'] as String),
+        _bytes([9, 8, 7, 6]));
+  });
 }
 
 List<int> _asList(ArchiveFile f) => List<int>.from(f.content as List<int>);

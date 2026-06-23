@@ -11,6 +11,7 @@ import '../../data/notes_repository.dart';
 import '../../data/online_shared_repository.dart';
 import '../../l10n/l10n.dart';
 import '../../providers.dart';
+import 'note_background.dart';
 import '../../sync/sync_controller.dart';
 import '../../ui/app_messenger.dart';
 import '../export/share_note_sheet.dart';
@@ -245,6 +246,60 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
     );
   }
 
+  /// Pick an image background for the note from the library, or "None".
+  Future<void> _pickBackground(NoteRow note) async {
+    final repo = _repo;
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (sheetContext) => SafeArea(
+        child: Consumer(
+          builder: (ctx, ref, _) {
+            final list =
+                ref.watch(backgroundsProvider).asData?.value ?? const [];
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(ctx.l10n.background,
+                      style: Theme.of(ctx).textTheme.titleMedium),
+                  const SizedBox(height: 16),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
+                    children: [
+                      _BgChoice(
+                        selected: note.background.isEmpty,
+                        onTap: () {
+                          repo.setNoteBackground(note.id, '');
+                          Navigator.of(sheetContext).pop();
+                        },
+                        child: const Icon(Icons.block),
+                      ),
+                      for (final bg in list)
+                        _BgChoice(
+                          selected: bg.id == note.background,
+                          onTap: () {
+                            repo.setNoteBackground(note.id, bg.id);
+                            Navigator.of(sheetContext).pop();
+                          },
+                          child: NoteBackground(
+                              bg: bg, child: const SizedBox.expand()),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
   Future<void> _moveToNotebook(NoteRow note) async {
     final notebooks = ref.read(notebooksProvider).asData?.value ?? const [];
     final known = {for (final n in notebooks) n.id};
@@ -363,6 +418,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
         }
         _seed(note);
         final bg = noteColorFor(context, note.color);
+        final noteBg = ref.watch(backgroundByIdProvider(note.background));
         final markdownOn = ref.watch(markdownEnabledProvider);
 
         // Shared-notebook concurrency: read-only is decided by the server-backed
@@ -420,6 +476,11 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
                   tooltip: context.l10n.color,
                   icon: const Icon(Icons.palette_outlined),
                   onPressed: () => _pickColor(note),
+                ),
+                IconButton(
+                  tooltip: context.l10n.background,
+                  icon: const Icon(Icons.wallpaper_outlined),
+                  onPressed: () => _pickBackground(note),
                 ),
                 IconButton(
                   tooltip: context.l10n.labels,
@@ -538,7 +599,9 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
                 ],
               ],
             ),
-            body: Column(
+            body: NoteBackground(
+              bg: noteBg,
+              child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 if (readOnly) _LockBanner(holderId: _lock?.otherHolder),
@@ -622,7 +685,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
                             ),
                 ),
               ],
-            ),
+            )),
             // While editing, the toolbar (in the body) replaces this; when not
             // editing, show the timestamps.
             bottomNavigationBar: showEditingBar
@@ -878,6 +941,37 @@ class _LabelPickerSheetState extends ConsumerState<_LabelPickerSheet> {
 }
 
 /// A circular color swatch in the editor's palette sheet. The default color
+/// A 64×64 tile in the background picker (the "None" option or a library image),
+/// with a selection ring.
+class _BgChoice extends StatelessWidget {
+  const _BgChoice(
+      {required this.selected, required this.onTap, required this.child});
+  final bool selected;
+  final VoidCallback onTap;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 64,
+        height: 64,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: selected ? scheme.primary : scheme.outline,
+            width: selected ? 3 : 1,
+          ),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Center(child: child),
+      ),
+    );
+  }
+}
+
 /// (empty key) is drawn as a "no color" outline with a reset icon.
 class _ColorSwatch extends StatelessWidget {
   const _ColorSwatch({

@@ -16,6 +16,7 @@ NoteRow _note({
       pinned: false,
       archived: false,
       color: '',
+      background: '',
       labels: '[]',
       notebook: '',
       lockedBy: '',

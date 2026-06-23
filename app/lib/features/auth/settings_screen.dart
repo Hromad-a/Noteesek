@@ -2,13 +2,15 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:file_selector/file_selector.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart'
+    show kIsWeb, kDebugMode, kProfileMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show FilteringTextInputFormatter;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:pocketbase/pocketbase.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../config/app_config.dart';
 import '../../data/notes_repository.dart';
@@ -21,6 +23,7 @@ import '../backup/v2/backup_v2_import.dart';
 import '../../ui/web_centered.dart';
 import '../backup/snapshots_screen.dart';
 import '../lock/app_lock.dart';
+import '../notes/manage_backgrounds_screen.dart';
 import 'login_screen.dart';
 import '../../providers.dart';
 import '../../sync/sync_controller.dart';
@@ -30,6 +33,16 @@ import '../export/save_delivery.dart';
 import '../import/import_models.dart';
 import '../import/keep_import.dart';
 import '../import/markdown_import.dart';
+
+/// Set to `ci` by the GitHub Actions release builds via
+/// `--dart-define=BUILD_SOURCE=ci`. Empty for local builds, so Settings → About
+/// can tell an official release apart from a developer build.
+const String _kBuildSource = String.fromEnvironment('BUILD_SOURCE');
+
+/// Per-build identifiers injected at build time (`--dart-define`): the short git
+/// commit and the build date. Empty when not provided. Shown under the version.
+const String _kGitSha = String.fromEnvironment('GIT_SHA');
+const String _kBuildDate = String.fromEnvironment('BUILD_DATE');
 
 /// App settings, organised into sections: Account (change password, sign out),
 /// Server (connection URL), and Data & storage (wipe). Reached from the drawer:
@@ -730,6 +743,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           _SectionHeader(context.l10n.sectionAppearance),
           _ThemeModeSelector(),
           const _LanguageSelector(),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.image_outlined),
+            title: Text(context.l10n.backgroundsTitle),
+            subtitle: Text(context.l10n.backgroundsSub),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => const ManageBackgroundsScreen(),
+            )),
+          ),
           Consumer(builder: (context, ref, _) {
             final on = ref.watch(markdownEnabledProvider);
             return SwitchListTile(
@@ -1006,6 +1029,7 @@ class _AboutSectionState extends ConsumerState<_AboutSection> {
   _VersionInfo? _server;
   bool _serverLoading = false;
   bool _serverFailed = false;
+  String? _installerStore; // Android: who installed the app (Play vs sideload)
 
   @override
   void initState() {
@@ -1017,7 +1041,10 @@ class _AboutSectionState extends ConsumerState<_AboutSection> {
     if (!kIsWeb) {
       final info = await PackageInfo.fromPlatform();
       if (mounted) {
-        setState(() => _app = _VersionInfo(info.version, info.buildNumber));
+        setState(() {
+          _app = _VersionInfo(info.version, info.buildNumber);
+          _installerStore = info.installerStore;
+        });
       }
     }
     // Fetch the server version when there's a server to ask: always on web
@@ -1092,6 +1119,21 @@ class _AboutSectionState extends ConsumerState<_AboutSection> {
       return _server!.display;
     }
 
+    // How this build was produced / distributed.
+    String buildChannel() {
+      if (kIsWeb) return context.l10n.buildWeb;
+      if (kDebugMode) return context.l10n.buildDebug;
+      if (kProfileMode) return context.l10n.buildProfile;
+      if (_installerStore == 'com.android.vending') {
+        return context.l10n.buildGooglePlay;
+      }
+      // A release APK installed outside Play: an official CI build (marked via
+      // BUILD_SOURCE) vs one built locally on a dev machine.
+      return _kBuildSource == 'ci'
+          ? context.l10n.buildReleaseOfficial
+          : context.l10n.buildReleaseLocal;
+    }
+
     return Column(
       children: [
         // App version: mobile only (on web the app *is* the server build).
@@ -1100,7 +1142,13 @@ class _AboutSectionState extends ConsumerState<_AboutSection> {
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.smartphone_outlined),
             title: Text(context.l10n.appVersion),
-            subtitle: Text(_app?.display ?? '…'),
+            // version (build) · <git sha> · <build date> — the latter two only
+            // when injected at build time (--dart-define).
+            subtitle: Text([
+              _app?.display ?? '…',
+              if (_kGitSha.isNotEmpty) _kGitSha,
+              if (_kBuildDate.isNotEmpty) _kBuildDate,
+            ].join(' · ')),
           ),
         // Server version: on web always; on mobile only when connected.
         if (kIsWeb || widget.signedIn)
@@ -1111,6 +1159,13 @@ class _AboutSectionState extends ConsumerState<_AboutSection> {
             subtitle: Text(serverSubtitle()),
             trailing: serverTrailing(),
           ),
+        // How this build was produced (developer / release / Google Play / web).
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.build_outlined),
+          title: Text(context.l10n.buildChannelLabel),
+          subtitle: Text(buildChannel()),
+        ),
         if (mismatch)
           Padding(
             padding: const EdgeInsets.only(top: 4),
@@ -1130,6 +1185,22 @@ class _AboutSectionState extends ConsumerState<_AboutSection> {
               ],
             ),
           ),
+        // Self-hosting blurb + source link.
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.cloud_outlined),
+          title: Text(context.l10n.selfHosted),
+          subtitle: Text(context.l10n.selfHostedDesc),
+        ),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.code),
+          title: Text(context.l10n.sourceCode),
+          subtitle: Text(context.l10n.viewOnGitHub),
+          trailing: const Icon(Icons.open_in_new),
+          onTap: () => launchUrl(Uri.parse(AppConfig.githubUrl),
+              mode: LaunchMode.externalApplication),
+        ),
       ],
     );
   }
