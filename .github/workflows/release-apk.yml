@@ -73,7 +73,9 @@ jobs:
         run: |
           flutter pub get
           dart run build_runner build --delete-conflicting-outputs
-          flutter build apk --release
+          # BUILD_SOURCE=ci marks this as an official release in Settings → About
+          # (a local `flutter build apk` leaves it empty → "Local build").
+          flutter build apk --release --dart-define=BUILD_SOURCE=ci
 
       - name: Stage APK with versioned name
         run: |

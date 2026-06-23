@@ -34,6 +34,11 @@ import '../import/import_models.dart';
 import '../import/keep_import.dart';
 import '../import/markdown_import.dart';
 
+/// Set to `ci` by the GitHub Actions release builds via
+/// `--dart-define=BUILD_SOURCE=ci`. Empty for local builds, so Settings → About
+/// can tell an official release apart from a developer build.
+const String _kBuildSource = String.fromEnvironment('BUILD_SOURCE');
+
 /// App settings, organised into sections: Account (change password, sign out),
 /// Server (connection URL), and Data & storage (wipe). Reached from the drawer:
 /// always on mobile, and on web (which is always signed in).
@@ -1114,9 +1119,14 @@ class _AboutSectionState extends ConsumerState<_AboutSection> {
       if (kIsWeb) return context.l10n.buildWeb;
       if (kDebugMode) return context.l10n.buildDebug;
       if (kProfileMode) return context.l10n.buildProfile;
-      return _installerStore == 'com.android.vending'
-          ? context.l10n.buildGooglePlay
-          : context.l10n.buildSideloaded;
+      if (_installerStore == 'com.android.vending') {
+        return context.l10n.buildGooglePlay;
+      }
+      // A release APK installed outside Play: an official CI build (marked via
+      // BUILD_SOURCE) vs one built locally on a dev machine.
+      return _kBuildSource == 'ci'
+          ? context.l10n.buildReleaseOfficial
+          : context.l10n.buildReleaseLocal;
     }
 
     return Column(
