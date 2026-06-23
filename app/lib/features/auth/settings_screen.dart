@@ -2,7 +2,8 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:file_selector/file_selector.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart'
+    show kIsWeb, kDebugMode, kProfileMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show FilteringTextInputFormatter;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -1018,6 +1019,7 @@ class _AboutSectionState extends ConsumerState<_AboutSection> {
   _VersionInfo? _server;
   bool _serverLoading = false;
   bool _serverFailed = false;
+  String? _installerStore; // Android: who installed the app (Play vs sideload)
 
   @override
   void initState() {
@@ -1029,7 +1031,10 @@ class _AboutSectionState extends ConsumerState<_AboutSection> {
     if (!kIsWeb) {
       final info = await PackageInfo.fromPlatform();
       if (mounted) {
-        setState(() => _app = _VersionInfo(info.version, info.buildNumber));
+        setState(() {
+          _app = _VersionInfo(info.version, info.buildNumber);
+          _installerStore = info.installerStore;
+        });
       }
     }
     // Fetch the server version when there's a server to ask: always on web
@@ -1104,6 +1109,16 @@ class _AboutSectionState extends ConsumerState<_AboutSection> {
       return _server!.display;
     }
 
+    // How this build was produced / distributed.
+    String buildChannel() {
+      if (kIsWeb) return context.l10n.buildWeb;
+      if (kDebugMode) return context.l10n.buildDebug;
+      if (kProfileMode) return context.l10n.buildProfile;
+      return _installerStore == 'com.android.vending'
+          ? context.l10n.buildGooglePlay
+          : context.l10n.buildSideloaded;
+    }
+
     return Column(
       children: [
         // App version: mobile only (on web the app *is* the server build).
@@ -1123,6 +1138,13 @@ class _AboutSectionState extends ConsumerState<_AboutSection> {
             subtitle: Text(serverSubtitle()),
             trailing: serverTrailing(),
           ),
+        // How this build was produced (developer / release / Google Play / web).
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.build_outlined),
+          title: Text(context.l10n.buildChannelLabel),
+          subtitle: Text(buildChannel()),
+        ),
         if (mismatch)
           Padding(
             padding: const EdgeInsets.only(top: 4),
