@@ -89,6 +89,7 @@
   "noNotesYet": "No notes yet",
   "singleColumnView": "Single-column view",
   "gridView": "Grid view",
+  "carouselView": "Carousel view",
   "noteMovedToTrash": "Note moved to Trash",
   "notesMovedToTrashCount": "{count} notes moved to Trash",
   "@notesMovedToTrashCount": {

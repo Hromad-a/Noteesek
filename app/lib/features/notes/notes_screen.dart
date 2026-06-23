@@ -158,12 +158,17 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
                 title: Text(context.l10n.notesTitle),
                 actions: [
           IconButton(
-            tooltip: viewMode == NoteViewMode.grid
-                ? context.l10n.singleColumnView
-                : context.l10n.gridView,
-            icon: Icon(viewMode == NoteViewMode.grid
-                ? Icons.view_agenda_outlined
-                : Icons.grid_view_outlined),
+            // Shows the current layout; tapping cycles grid → column → carousel.
+            tooltip: switch (viewMode) {
+              NoteViewMode.grid => context.l10n.gridView,
+              NoteViewMode.column => context.l10n.singleColumnView,
+              NoteViewMode.carousel => context.l10n.carouselView,
+            },
+            icon: Icon(switch (viewMode) {
+              NoteViewMode.grid => Icons.grid_view_outlined,
+              NoteViewMode.column => Icons.view_agenda_outlined,
+              NoteViewMode.carousel => Icons.view_carousel_outlined,
+            }),
             onPressed: () => ref.read(noteViewModeProvider.notifier).toggle(),
           ),
           _SortMenu(sort: sort),
@@ -217,8 +222,11 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
             Expanded(
               // Pull-to-refresh forces a sync (mobile only — web is realtime).
               child: _SyncRefresh(
-                onRefresh:
-                    kIsWeb ? null : () => _manualSync(context, ref),
+                // Carousel paging is horizontal, so pull-to-refresh would fight
+                // the swipe — disable it there (the app-bar sync button stays).
+                onRefresh: kIsWeb || viewMode == NoteViewMode.carousel
+                    ? null
+                    : () => _manualSync(context, ref),
                 child: notesAsync.when(
                 loading: () =>
                     const Center(child: CircularProgressIndicator()),
@@ -264,6 +272,12 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
                     );
                   }
 
+                  if (viewMode == NoteViewMode.carousel) {
+                    return _NoteCarousel(
+                      notes: notes,
+                      onOpen: (id) => _open(context, id),
+                    );
+                  }
                   return Padding(
                     padding: const EdgeInsets.all(8),
                     child: viewMode == NoteViewMode.column
@@ -1273,6 +1287,95 @@ class _ScrollableFill extends StatelessWidget {
           child: child,
         ),
       ),
+    );
+  }
+}
+
+/// Carousel layout: one note per page, swiped left/right (like onboarding).
+/// Chevron buttons below give the same paging for pointer devices, plus a
+/// "current / total" counter.
+class _NoteCarousel extends StatefulWidget {
+  const _NoteCarousel({required this.notes, required this.onOpen});
+
+  final List<NoteRow> notes;
+  final void Function(String id) onOpen;
+
+  @override
+  State<_NoteCarousel> createState() => _NoteCarouselState();
+}
+
+class _NoteCarouselState extends State<_NoteCarousel> {
+  final _controller = PageController();
+  int _page = 0;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _go(int delta) {
+    final target = (_page + delta).clamp(0, widget.notes.length - 1);
+    if (target != _page) {
+      _controller.animateToPage(target,
+          duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final notes = widget.notes;
+    // Keep the index valid if the list shrank (e.g. the shown note was deleted).
+    final page = notes.isEmpty ? 0 : _page.clamp(0, notes.length - 1);
+    return Column(
+      children: [
+        Expanded(
+          child: PageView.builder(
+            controller: _controller,
+            itemCount: notes.length,
+            onPageChanged: (i) => setState(() => _page = i),
+            itemBuilder: (context, i) {
+              final note = notes[i];
+              // Stretch the card to fill the page (color + background fill the
+              // whole canvas). Content sits at the top; a note taller than the
+              // screen is clipped to the card — tap to open it in full.
+              return Padding(
+                padding: const EdgeInsets.all(8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(
+                      child: NoteCard(
+                        note: note,
+                        onTap: () => widget.onOpen(note.id),
+                        selectable: true,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.only(bottom: 4),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.chevron_left),
+                onPressed: page > 0 ? () => _go(-1) : null,
+              ),
+              Text('${page + 1} / ${notes.length}',
+                  style: Theme.of(context).textTheme.labelLarge),
+              IconButton(
+                icon: const Icon(Icons.chevron_right),
+                onPressed: page < notes.length - 1 ? () => _go(1) : null,
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

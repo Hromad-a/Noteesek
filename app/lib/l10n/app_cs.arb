@@ -70,6 +70,7 @@
   "noNotesYet": "Zatím žádné poznámky",
   "singleColumnView": "Jednosloupcové zobrazení",
   "gridView": "Mřížkové zobrazení",
+  "carouselView": "Zobrazení po jedné",
   "noteMovedToTrash": "Poznámka přesunuta do koše",
   "notesMovedToTrashCount": "Přesunuto do koše: {count}",
   "customOrder": "Vlastní pořadí",
