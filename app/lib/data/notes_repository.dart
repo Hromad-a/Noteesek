@@ -442,21 +442,24 @@ final locallyHiddenNotebooksProvider =
     NotifierProvider<LocallyHiddenNotebooksNotifier, Set<String>>(
         LocallyHiddenNotebooksNotifier.new);
 
-/// How the notes grid is laid out.
-enum NoteViewMode { grid, column }
+/// How the notes grid is laid out. `carousel` shows one note at a time, swiped
+/// left/right.
+enum NoteViewMode { grid, column, carousel }
 
-/// The grid layout mode (persisted, global). Toggled from the app bar.
+/// The grid layout mode (persisted, global). Cycled from the app bar.
 class NoteViewModeNotifier extends Notifier<NoteViewMode> {
   @override
   NoteViewMode build() {
     final prefs = ref.watch(sharedPreferencesProvider);
-    return prefs.getString(AppConfig.kNoteViewMode) == 'column'
-        ? NoteViewMode.column
-        : NoteViewMode.grid;
+    return NoteViewMode.values.firstWhere(
+      (m) => m.name == prefs.getString(AppConfig.kNoteViewMode),
+      orElse: () => NoteViewMode.grid,
+    );
   }
 
-  Future<void> toggle() => set(
-      state == NoteViewMode.grid ? NoteViewMode.column : NoteViewMode.grid);
+  /// Advances grid → column → carousel → grid.
+  Future<void> toggle() => set(NoteViewMode
+      .values[(state.index + 1) % NoteViewMode.values.length]);
 
   Future<void> set(NoteViewMode mode) async {
     final prefs = ref.read(sharedPreferencesProvider);
