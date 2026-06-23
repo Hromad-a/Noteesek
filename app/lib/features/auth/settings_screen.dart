@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:pocketbase/pocketbase.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../config/app_config.dart';
 import '../../data/notes_repository.dart';
@@ -1141,6 +1142,22 @@ class _AboutSectionState extends ConsumerState<_AboutSection> {
               ],
             ),
           ),
+        // Self-hosting blurb + source link.
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.cloud_outlined),
+          title: Text(context.l10n.selfHosted),
+          subtitle: Text(context.l10n.selfHostedDesc),
+        ),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.code),
+          title: Text(context.l10n.sourceCode),
+          subtitle: Text(context.l10n.viewOnGitHub),
+          trailing: const Icon(Icons.open_in_new),
+          onTap: () => launchUrl(Uri.parse(AppConfig.githubUrl),
+              mode: LaunchMode.externalApplication),
+        ),
       ],
     );
   }

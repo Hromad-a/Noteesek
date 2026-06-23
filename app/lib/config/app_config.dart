@@ -13,6 +13,9 @@ class AppConfig {
   /// "claimed" (reassigned to the account) when the user connects.
   static const String localOwner = 'local';
 
+  /// The project's source repository (shown in Settings → About).
+  static const String githubUrl = 'https://github.com/Hromad-a/Noteesek';
+
   // shared_preferences keys
   static const String kServerUrl = 'server_url';
   static const String kPbAuth = 'pb_auth';
