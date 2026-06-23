@@ -329,4 +329,33 @@ class AppDatabase extends _$AppDatabase {
       await delete(syncCursors).go();
     });
   }
+
+  /// Deletes only the device's **own** content — rows owned by [ownerId] or the
+  /// offline `local` sentinel, plus their children — leaving content shared
+  /// *with* you (foreign-owned, e.g. a notebook someone shared) intact. Used by
+  /// the Settings wipe so it mirrors the server-side wipe (you can't delete
+  /// what you don't own). Cursors are left as-is (foreign content stays current).
+  Future<void> wipeOwnedLocal(String ownerId) async {
+    await transaction(() async {
+      // Children of own notes (subquery avoids an unbounded IN-list of ids).
+      const ownNotes =
+          "SELECT id FROM notes WHERE owner = ? OR owner = 'local'";
+      await customStatement(
+          'DELETE FROM checklist_items WHERE note IN ($ownNotes)', [ownerId]);
+      await customStatement(
+          'DELETE FROM attachments WHERE note IN ($ownNotes)', [ownerId]);
+      await (delete(notes)
+            ..where((t) => t.owner.equals(ownerId) | t.owner.equals('local')))
+          .go();
+      await (delete(labels)
+            ..where((t) => t.owner.equals(ownerId) | t.owner.equals('local')))
+          .go();
+      await (delete(notebooks)
+            ..where((t) => t.owner.equals(ownerId) | t.owner.equals('local')))
+          .go();
+      await (delete(backgrounds)
+            ..where((t) => t.owner.equals(ownerId) | t.owner.equals('local')))
+          .go();
+    });
+  }
 }
