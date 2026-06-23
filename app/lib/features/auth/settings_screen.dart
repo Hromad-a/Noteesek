@@ -547,7 +547,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         await _wipeServerData(pb);
       }
       if (wipeLocal) {
-        await ref.read(databaseProvider).wipeAllLocal();
+        final myId = pb.authStore.record?.id ?? '';
+        // Signed in: delete only your own content, leaving notebooks shared
+        // *with* you intact (mirrors the server wipe — you can't delete what
+        // you don't own). Signed out: a plain device reset.
+        if (myId.isNotEmpty) {
+          await ref.read(databaseProvider).wipeOwnedLocal(myId);
+        } else {
+          await ref.read(databaseProvider).wipeAllLocal();
+        }
       }
       // Sign out unless BOTH sides were wiped. A one-sided wipe leaves the other
       // copy populated, so staying connected would just re-sync it back (the
@@ -574,18 +582,32 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   /// records — other users are never touched. Children are swept before their
   /// parents so we don't depend on server-side cascade configuration.
   Future<void> _wipeServerData(PocketBase pb) async {
-    Future<void> purge(String collection) async {
-      final records = await pb.collection(collection).getFullList();
+    final myId = pb.authStore.record?.id ?? '';
+
+    // Only ever delete records *I own* — `getFullList()` would also return
+    // content shared with me (a notebook owned by someone else, and its
+    // notes/items/attachments), which I can't delete (the server 404s on the
+    // delete rule), aborting the whole wipe. Filter to my own; tolerate a record
+    // that's already gone.
+    Future<void> purge(String collection, String filter) async {
+      final records = await pb.collection(collection).getFullList(filter: filter);
       for (final r in records) {
-        await pb.collection(collection).delete(r.id);
+        try {
+          await pb.collection(collection).delete(r.id);
+        } on ClientException catch (e) {
+          if (e.statusCode != 404) rethrow; // already deleted — ignore
+        }
       }
     }
 
-    await purge('attachments');
-    await purge('checklist_items');
-    await purge('notes');
-    await purge('labels');
-    await purge('notebooks');
+    final mine = "owner = '$myId'";
+    final mineChild = "note.owner = '$myId'";
+    await purge('attachments', mineChild);
+    await purge('checklist_items', mineChild);
+    await purge('notes', mine);
+    await purge('labels', mine);
+    await purge('notebooks', mine);
+    await purge('backgrounds', mine);
   }
 
   /// The status icon shown in the server URL field's "Test connection" button.
