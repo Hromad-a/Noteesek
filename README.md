@@ -61,9 +61,11 @@ docker compose -f docker-compose.build.yml up -d --build
 ### 2. Use it
 
 - **On the web:** open your server's URL and register / sign in.
-- **On Android:** grab the latest `noteesek-<version>.apk` from the repo's
-  [**Releases**](../../releases) page and install it. The app works offline right
-  away; open **Settings → Account** to connect it to your server and sync.
+- **On Android:** install from
+  [**Google Play**](https://play.google.com/store/apps/details?id=com.noteesek.app),
+  or grab the latest `noteesek-<version>.apk` from the repo's
+  [**Releases**](../../releases) page. The app works offline right away; open
+  **Settings → Account** to connect it to your server and sync.
 
 ## Your data
 
