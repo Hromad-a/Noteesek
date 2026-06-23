@@ -147,8 +147,17 @@ class RemoteNotesRepository implements NotesRepository {
     _unsubs.add(await _pb.collection('labels').subscribe('*', (e) {
       _applyEvent(e, _labels, (r) => _labelFrom(r));
     }));
-    _unsubs.add(await _pb.collection('notebooks').subscribe('*', (e) {
+    _unsubs.add(await _pb.collection('notebooks').subscribe('*', (e) async {
       _applyEvent(e, _notebooks, (r) => _notebookFrom(r));
+      // A notebook shared *with* me mid-session (owner != me): its notes were
+      // filtered out at load (then inaccessible) and realtime only delivers
+      // *changed* notes, so fetch this notebook's content now.
+      final r = e.record;
+      if (r != null &&
+          e.action != 'delete' &&
+          r.getStringValue('owner') != _ownerId) {
+        await _ensureSharedNotebookContent(r.id);
+      }
     }));
     _unsubs.add(await _pb.collection('checklist_items').subscribe('*', (e) {
       _applyEvent(e, _items, (r) => _itemFrom(r));
@@ -712,6 +721,32 @@ class RemoteNotesRepository implements NotesRepository {
       _backgrounds[r.id] = _backgroundFrom(r, await _downloadBytes(r));
       _events.add(null);
     } catch (_) {/* gone / unreachable — render nothing */}
+  }
+
+  /// Fetch a (just-shared) notebook's notes/items/attachments into the live maps
+  /// — for content that became accessible mid-session and so wasn't loaded.
+  Future<void> _ensureSharedNotebookContent(String notebookId) async {
+    final nb = notebookId.replaceAll("'", "");
+    try {
+      for (final r in await _pb
+          .collection('notes')
+          .getFullList(filter: "notebook = '$nb'")) {
+        _notes[r.id] = _noteFrom(r);
+        await _ensureBackground(r.getStringValue('background'));
+      }
+      for (final r in await _pb
+          .collection('checklist_items')
+          .getFullList(filter: "note.notebook = '$nb'")) {
+        _items[r.id] = _itemFrom(r);
+      }
+      for (final r in await _pb
+          .collection('attachments')
+          .getFullList(filter: "note.notebook = '$nb'")) {
+        _attachments[r.id] =
+            _attachmentFrom(r, _attachments[r.id]?.data ?? await _downloadBytes(r));
+      }
+      _events.add(null);
+    } catch (_) {/* unreachable — the user can reload */}
   }
 
   @override
