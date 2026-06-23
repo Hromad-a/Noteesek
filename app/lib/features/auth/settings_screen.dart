@@ -39,6 +39,11 @@ import '../import/markdown_import.dart';
 /// can tell an official release apart from a developer build.
 const String _kBuildSource = String.fromEnvironment('BUILD_SOURCE');
 
+/// Per-build identifiers injected at build time (`--dart-define`): the short git
+/// commit and the build date. Empty when not provided. Shown under the version.
+const String _kGitSha = String.fromEnvironment('GIT_SHA');
+const String _kBuildDate = String.fromEnvironment('BUILD_DATE');
+
 /// App settings, organised into sections: Account (change password, sign out),
 /// Server (connection URL), and Data & storage (wipe). Reached from the drawer:
 /// always on mobile, and on web (which is always signed in).
@@ -1137,7 +1142,13 @@ class _AboutSectionState extends ConsumerState<_AboutSection> {
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.smartphone_outlined),
             title: Text(context.l10n.appVersion),
-            subtitle: Text(_app?.display ?? '…'),
+            // version (build) · <git sha> · <build date> — the latter two only
+            // when injected at build time (--dart-define).
+            subtitle: Text([
+              _app?.display ?? '…',
+              if (_kGitSha.isNotEmpty) _kGitSha,
+              if (_kBuildDate.isNotEmpty) _kBuildDate,
+            ].join(' · ')),
           ),
         // Server version: on web always; on mobile only when connected.
         if (kIsWeb || widget.signedIn)

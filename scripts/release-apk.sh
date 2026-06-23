@@ -24,7 +24,11 @@ gh auth status >/dev/null 2>&1 || { echo "error: gh not authenticated. Run: gh a
 # --- build (arm64-v8a split) --------------------------------------------------
 echo "==> Building release APK (arm64-v8a)..."
 cd "$APP_DIR"
-flutter build apk --release --split-per-abi --target-platform android-arm64
+# Stamp the build with its commit + date (shown in Settings → About). No
+# BUILD_SOURCE: this is a local sideload build, so About reads "Local build".
+flutter build apk --release --split-per-abi --target-platform android-arm64 \
+  --dart-define=GIT_SHA="$(git rev-parse --short HEAD 2>/dev/null || echo '')" \
+  --dart-define=BUILD_DATE="$(date -u +%Y-%m-%d)"
 
 APK_SRC="$APP_DIR/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk"
 [ -f "$APK_SRC" ] || { echo "error: expected APK not found at $APK_SRC" >&2; exit 1; }

@@ -75,7 +75,11 @@ jobs:
           dart run build_runner build --delete-conflicting-outputs
           # BUILD_SOURCE=ci marks this as an official release in Settings → About
           # (a local `flutter build apk` leaves it empty → "Local build").
-          flutter build apk --release --dart-define=BUILD_SOURCE=ci
+          # GIT_SHA + BUILD_DATE are shown under the version.
+          flutter build apk --release \
+            --dart-define=BUILD_SOURCE=ci \
+            --dart-define=GIT_SHA="$(git rev-parse --short HEAD)" \
+            --dart-define=BUILD_DATE="$(date -u +%Y-%m-%d)"
 
       - name: Stage APK with versioned name
         run: |
