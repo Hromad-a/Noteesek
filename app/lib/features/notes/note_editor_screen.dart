@@ -46,6 +46,23 @@ String _fmtTimestamp(String? iso) {
   return '${dt.day} ${_months[dt.month - 1]} ${dt.year}, $h:$m';
 }
 
+/// The ids of the *trailing* blank checklist items — the contiguous run of
+/// empties at the end of the list, stopping at the first non-blank from the end.
+/// A blank line in the middle is deliberately kept. [textOf] returns the live
+/// text for an id (falling back to the row's stored content) so a not-yet-saved
+/// last keystroke still counts. Order of [items] is the display order.
+List<String> trailingBlankChecklistIds(
+  List<ChecklistItemRow> items,
+  String Function(ChecklistItemRow) textOf,
+) {
+  final ids = <String>[];
+  for (var i = items.length - 1; i >= 0; i--) {
+    if (textOf(items[i]).trim().isNotEmpty) break;
+    ids.add(items[i].id);
+  }
+  return ids;
+}
+
 /// Create/edit a single note. Edits autosave to the local database (which marks
 /// the row dirty for the next sync). Controllers are seeded once from the note
 /// so live DB updates don't reset the cursor.
@@ -179,6 +196,26 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
     if (_seededType != note.type) {
       _seededType = note.type;
       if (note.type != 'checklist') _bodyCtrl.text = note.body;
+    }
+  }
+
+  /// On leaving the editor, drop the *trailing* blank checklist items — the
+  /// in-editor blur cleanup can't run when the whole route pops with the cursor
+  /// still sitting in the empty "add" line. Only removes empties at the end of
+  /// the list (a blank line in the middle is left as the user put it there).
+  /// Skipped while read-only (shared note locked by someone else): we shouldn't
+  /// touch their in-progress items.
+  void _pruneBlankChecklistItems(NoteRow note) {
+    if (note.type != 'checklist') return;
+    if (_isShared(note) && (_lock?.readOnly ?? true)) return;
+    final items =
+        ref.read(checklistItemsProvider(note.id)).asData?.value ?? const [];
+    // Prefer the live controller text — the stream snapshot can lag a beat
+    // behind the last keystroke.
+    final ids = trailingBlankChecklistIds(
+        items, (it) => _itemCtrls[it.id]?.text ?? it.content);
+    for (final id in ids) {
+      unawaited(_repo.deleteItem(id));
     }
   }
 
@@ -453,7 +490,10 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
         return PopScope(
           canPop: true,
           onPopInvokedWithResult: (didPop, _) {
-            if (didPop) _discardIfEmpty(note);
+            if (didPop) {
+              _pruneBlankChecklistItems(note);
+              _discardIfEmpty(note);
+            }
           },
           child: Scaffold(
             backgroundColor: bg,
@@ -1107,6 +1147,44 @@ class _ChecklistEditorState extends ConsumerState<_ChecklistEditor> {
   FocusNode _focusNodeFor(String id) =>
       _focusNodes.putIfAbsent(id, () => FocusNode());
 
+  /// The trailing blank item only exists while the user is typing in it — once
+  /// it loses focus (keyboard dismissed, tap elsewhere) with nothing written,
+  /// remove it so an abandoned "add item" line doesn't linger. Only the *last*
+  /// item is pruned this way: a blank line in the middle is left as the user
+  /// put it there.
+  FocusNode _focusNodeForItem(ChecklistItemRow item) =>
+      _focusNodes.putIfAbsent(item.id, () {
+        final node = FocusNode();
+        node.addListener(() {
+          if (!node.hasFocus) _removeIfBlankTrailing(item);
+        });
+        return node;
+      });
+
+  void _removeIfBlankTrailing(ChecklistItemRow item) {
+    // Route teardown blurs everything; the editor screen prunes on pop instead.
+    if (!mounted) return;
+    if (widget.readOnly) return;
+    if (widget.controllerFor(item).text.trim().isNotEmpty) return;
+    // Only the last item is a throwaway "add" line; keep middle blanks.
+    final items =
+        ref.read(checklistItemsProvider(widget.noteId)).asData?.value ?? const [];
+    if (items.isEmpty || items.last.id != item.id) return;
+    // Belt-and-suspenders: confirm it reads blank via the same rule as on-close.
+    if (!trailingBlankChecklistIds(items, (it) => widget.controllerFor(it).text)
+        .contains(item.id)) {
+      return;
+    }
+    widget.repo.deleteItem(item.id);
+    widget.onForgetController(item.id);
+    final node = _focusNodes.remove(item.id);
+    if (node != null) {
+      // Deferred: this runs from the node's own focus listener, and a FocusNode
+      // can't be disposed while it's still notifying.
+      WidgetsBinding.instance.addPostFrameCallback((_) => node.dispose());
+    }
+  }
+
   Future<void> _addAndFocus({String content = ''}) async {
     final newId = await widget.repo
         .addItem(widget.noteId, content: content);
@@ -1194,7 +1272,7 @@ class _ChecklistEditorState extends ConsumerState<_ChecklistEditor> {
         Expanded(
           child: TextField(
             controller: widget.controllerFor(it),
-            focusNode: _focusNodeFor(it.id),
+            focusNode: _focusNodeForItem(it),
             readOnly: widget.readOnly,
             // Multi-line so long items wrap and stay fully visible; Enter is
             // intercepted in _onItemChanged to add the next item instead of a
