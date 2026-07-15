@@ -428,5 +428,7 @@
   "lockAnotherMember": "Tuto poznámku upravuje jiný člen.",
   "enterYourEmail": "Zadejte svůj e-mail",
   "unlockNoteesek": "Odemknout Noteesek",
-  "forgotPasswordEmailPrompt": "Zadejte e-mail svého účtu a pošleme vám odkaz pro obnovení."
+  "forgotPasswordEmailPrompt": "Zadejte e-mail svého účtu a pošleme vám odkaz pro obnovení.",
+  "sessionExpiredTitle": "Odhlášeno",
+  "sessionExpiredBody": "Byli jste odhlášeni, obvykle proto, že se změnilo vaše heslo. Přihlaste se prosím znovu."
 }
