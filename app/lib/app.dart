@@ -36,6 +36,18 @@ class _NoteesekAppState extends ConsumerState<NoteesekApp>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // Web has no sync loop to renew the token, so refresh it once on launch:
+    // PocketBase tokens have a fixed TTL and are otherwise never refreshed, so
+    // without this a web user is logged out one token lifetime after signing in.
+    // Fail-soft — a network error leaves the existing token in place; a genuine
+    // 401 is cleared by the auth-guard http client. (Mobile is covered by the
+    // sync engine's periodic refresh.)
+    if (kIsWeb) {
+      final pb = ref.read(pocketBaseProvider);
+      if (pb.authStore.isValid) {
+        pb.collection('users').authRefresh().then((_) {}, onError: (_) {});
+      }
+    }
   }
 
   @override

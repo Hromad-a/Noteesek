@@ -26,7 +26,21 @@ class SyncEngine {
   static const _notebooks = 'notebooks';
   static const _backgrounds = 'backgrounds';
 
+  /// The auth collection whose token authenticates every request.
+  static const _users = 'users';
+
+  /// How stale the token may get before a sync cycle renews it. PocketBase
+  /// tokens have a fixed TTL (7 days by default) and are otherwise never
+  /// refreshed, so without this the user is silently logged out one token
+  /// lifetime after signing in. Refreshing well inside the TTL keeps a session
+  /// alive indefinitely as long as the app is opened occasionally.
+  static const _authRefreshInterval = Duration(hours: 6);
+
   bool _running = false;
+
+  /// When the token was last successfully renewed (in-memory; null until the
+  /// first refresh this run, so a fresh launch always renews once).
+  DateTime? _lastAuthRefresh;
 
   /// Runs one full sync cycle. Safe to call concurrently — overlapping calls
   /// are ignored. Returns true if it ran, false if skipped (already running or
@@ -46,6 +60,12 @@ class SyncEngine {
     if (_running || !_pb.authStore.isValid) return false;
     _running = true;
     try {
+      // Keep the session alive before doing any work: renew the token if it's
+      // getting old so a long-lived session doesn't silently expire out from
+      // under the user. If the token was genuinely rejected it's cleared here,
+      // so bail rather than fire a cycle's worth of doomed 401s.
+      await _maybeRefreshAuth();
+      if (!_pb.authStore.isValid) return false;
       // Push labels and notebooks first so a note's `labels`/`notebook`
       // relations resolve, then parents before children; pull in the same order.
       final steps = <(String, String)>[
@@ -95,6 +115,31 @@ class SyncEngine {
       return true;
     } finally {
       _running = false;
+    }
+  }
+
+  /// Renews the auth token when it's older than [_authRefreshInterval], so a
+  /// long-running or frequently-reopened session never ages past the server's
+  /// token TTL. Throttled so it doesn't fire on every 30s cycle.
+  ///
+  /// Fail-soft by design: a connectivity error leaves the current (still
+  /// locally-valid) token untouched to retry next cycle, so a flaky network
+  /// can't log the user out. A genuine 401 means the token is truly dead — the
+  /// auth-guard http client clears the session for us, and [syncOnce] then bails.
+  Future<void> _maybeRefreshAuth() async {
+    if (!_pb.authStore.isValid) return;
+    final now = DateTime.now();
+    final last = _lastAuthRefresh;
+    if (last != null && now.difference(last) < _authRefreshInterval) return;
+    try {
+      await _pb.collection(_users).authRefresh();
+      _lastAuthRefresh = now;
+    } catch (e) {
+      // 401 → token rejected and already cleared by the auth guard; nothing to
+      // do. Network/other errors are transient: keep the token and retry later.
+      if (_isConnectivityError(e)) return;
+      // ignore: avoid_print
+      print('SyncEngine: auth refresh failed: $e');
     }
   }
 
