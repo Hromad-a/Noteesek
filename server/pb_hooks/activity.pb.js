@@ -23,33 +23,35 @@ cronAdd("noteesek_activity_prune", "30 3 * * *", () => {
   }
 });
 
-function actorOf(e) {
-  return e.auth ? { id: e.auth.id, email: e.auth.getString("email") } : null;
-}
+// Use the REQUEST hooks (not the AfterSuccess ones): only these carry the
+// authenticated actor (e.auth) — the *Success events also fire for programmatic
+// writes and have no request auth. e.next() performs the actual save, so we log
+// after it (and only if it didn't throw). No feed row for anonymous/programmatic
+// writes, which is intended. Each handler runs in its own isolated runtime with
+// no access to this file's top-level scope, so everything is read inline / via
+// require() inside the handler (same rule the snapshots hook follows).
 
-onRecordAfterCreateSuccess((e) => {
+onRecordCreateRequest((e) => {
+  e.next(); // create the record
   try {
-    const a = actorOf(e);
-    if (a) {
+    if (e.auth) {
       require(`${__hooks}/activity_lib.js`).logActivity(
-        $app, e.record, a.id, a.email, "created");
+        $app, e.record, e.auth.id, e.auth.getString("email"), "created");
     }
   } catch (err) {
     $app.logger().error("activity log (create) failed", "error", String(err));
   }
-  e.next();
 }, "notes");
 
-onRecordAfterUpdateSuccess((e) => {
+onRecordUpdateRequest((e) => {
+  e.next(); // apply the update
   try {
-    const a = actorOf(e);
-    if (a) {
+    if (e.auth) {
       const action = e.record.getBool("deleted") ? "deleted" : "edited";
       require(`${__hooks}/activity_lib.js`).logActivity(
-        $app, e.record, a.id, a.email, action);
+        $app, e.record, e.auth.id, e.auth.getString("email"), action);
     }
   } catch (err) {
     $app.logger().error("activity log (update) failed", "error", String(err));
   }
-  e.next();
 }, "notes");
