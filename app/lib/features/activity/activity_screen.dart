@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../data/local/database.dart';
+import '../../data/notes_repository.dart';
 import '../../l10n/l10n.dart';
+import '../notes/note_editor_screen.dart';
 import 'activity_service.dart';
 
 /// The shared-notebook activity feed: an "Inbox" of recent changes other members
@@ -141,6 +144,33 @@ class _ActivityTile extends ConsumerWidget {
         _ => context.l10n.activityActionEdited,
       };
 
+  /// Open the note this entry refers to, if it still exists. A note that was
+  /// hard-deleted (or a shared note not present on this device) can't be opened,
+  /// so we surface a short message instead of a blank editor.
+  Future<void> _openNote(BuildContext context, WidgetRef ref) async {
+    if (entry.note.isEmpty) return;
+    final repo = ref.read(notesRepositoryProvider);
+    NoteRow? note;
+    try {
+      note = await repo
+          .watchNote(entry.note)
+          .first
+          .timeout(const Duration(seconds: 2));
+    } catch (_) {
+      note = null;
+    }
+    if (!context.mounted) return;
+    if (note == null || note.deleted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.l10n.activityNoteUnavailable)),
+      );
+      return;
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => NoteEditorScreen(noteId: entry.note)),
+    );
+  }
+
   String _time(BuildContext context) {
     final at = entry.createdAt?.toLocal();
     if (at == null) return '';
@@ -168,6 +198,7 @@ class _ActivityTile extends ConsumerWidget {
         entry.actorEmail.trim().isEmpty ? l10n.activityUnknownMember : entry.actorEmail;
 
     return ListTile(
+      onTap: () => _openNote(context, ref),
       leading: CircleAvatar(
         backgroundColor: unread
             ? scheme.primaryContainer

@@ -579,5 +579,6 @@
   "activityActionEdited": "Edited",
   "activityActionDeleted": "Deleted",
   "activityUntitledNote": "Untitled note",
-  "activityUnknownMember": "A member"
+  "activityUnknownMember": "A member",
+  "activityNoteUnavailable": "This note is no longer available"
 }

@@ -438,5 +438,6 @@
   "activityActionEdited": "Upraveno",
   "activityActionDeleted": "Smazáno",
   "activityUntitledNote": "Poznámka bez názvu",
-  "activityUnknownMember": "Člen"
+  "activityUnknownMember": "Člen",
+  "activityNoteUnavailable": "Tato poznámka už není dostupná"
 }
