@@ -106,6 +106,13 @@ responding" indicator + snackbar.
 
 ## Features (current)
 Multi-user auth · offline-first mobile + optional sync · web online/realtime ·
+**shared-notebook activity feed** (bell + unread badge on the notes screen;
+`features/activity/`. Server writes a `notebook_activity` row on every member
+change to a note in a shared notebook — migration `1700000027`, hook
+`activity.pb.js`/`activity_lib.js`, with 60s per-actor edit coalescing. Read
+state is a per-user watermark (`activity_seen`, "mark all read"); archive is a
+sparse per-user set (`activity_archives`). Entries auto-archive after a week by
+age — nothing is pruned. Server-only, like snapshots: web + mobile-with-server) ·
 text + checklist notes · pin · **archive** (drawer) · **trash** (restore /
 delete-forever / empty) · image attachments (protected) · offline substring
 search (title/body/checklist) · **note colors** (curated themed palette,

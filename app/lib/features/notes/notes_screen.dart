@@ -12,6 +12,8 @@ import '../../l10n/l10n.dart';
 import '../../providers.dart';
 import '../../sync/sync_controller.dart';
 import '../../ui/app_messenger.dart';
+import '../activity/activity_screen.dart';
+import '../activity/activity_service.dart';
 import '../auth/login_screen.dart';
 import '../capture/quick_capture.dart';
 import '../auth/settings_screen.dart';
@@ -157,6 +159,9 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
             : AppBar(
                 title: Text(context.l10n.notesTitle),
                 actions: [
+          // Shared-notebook activity feed (bell). Server-only, so it appears
+          // only once connected to an account.
+          if (connected) const _ActivityBell(),
           IconButton(
             // Shows the current layout; tapping cycles grid → column → carousel.
             tooltip: switch (viewMode) {
@@ -313,6 +318,26 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
         ),
       ),
     );
+  }
+}
+
+/// App-bar bell that opens the shared-notebook activity feed, badged with the
+/// number of unread changes made by other members.
+class _ActivityBell extends ConsumerWidget {
+  const _ActivityBell();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final unread = ref.watch(activityUnreadCountProvider);
+    final bell = IconButton(
+      tooltip: context.l10n.activityTitle,
+      icon: const Icon(Icons.notifications_none),
+      onPressed: () => Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const ActivityScreen()),
+      ),
+    );
+    if (unread == 0) return bell;
+    return Badge.count(count: unread, child: bell);
   }
 }
 

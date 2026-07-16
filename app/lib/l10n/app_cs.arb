@@ -428,5 +428,15 @@
   "lockAnotherMember": "Tuto poznámku upravuje jiný člen.",
   "enterYourEmail": "Zadejte svůj e-mail",
   "unlockNoteesek": "Odemknout Noteesek",
-  "forgotPasswordEmailPrompt": "Zadejte e-mail svého účtu a pošleme vám odkaz pro obnovení."
+  "forgotPasswordEmailPrompt": "Zadejte e-mail svého účtu a pošleme vám odkaz pro obnovení.",
+  "activityTitle": "Aktivita",
+  "activityInboxTab": "Nové",
+  "markAllRead": "Označit vše jako přečtené",
+  "activityEmptyInbox": "Žádná nová aktivita",
+  "activityEmptyArchive": "Nic v archivu",
+  "activityActionCreated": "Vytvořeno",
+  "activityActionEdited": "Upraveno",
+  "activityActionDeleted": "Smazáno",
+  "activityUntitledNote": "Poznámka bez názvu",
+  "activityUnknownMember": "Člen"
 }
