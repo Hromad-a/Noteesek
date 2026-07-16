@@ -9,6 +9,18 @@
 // doesn't flood the feed.
 const COALESCE_SECONDS = 60;
 
+// Feed rows older than this are deleted by the daily prune cron. Entries
+// auto-archive by age after a week (client-side, no deletion); this is the far
+// outer bound where an archived row is finally discarded. Deleting the feed row
+// cascade-removes its per-user archive marks (activity_archives.activity).
+const PRUNE_AFTER_DAYS = 180;
+
+// PocketBase timestamps ("2026-06-18 14:43:00.123Z", space not T) sort
+// lexicographically, so a formatted cutoff works directly in a `created <` filter.
+function toPbTime(date) {
+  return date.toISOString().replace("T", " ");
+}
+
 function fromPbTime(s) {
   return new Date(String(s || "").replace(" ", "T"));
 }
@@ -81,4 +93,24 @@ function logActivity(app, note, actorId, actorEmail, action) {
   app.save(rec);
 }
 
-module.exports = { logActivity };
+// Delete feed rows older than PRUNE_AFTER_DAYS, in batches (a cascade on each
+// delete removes any per-user archive marks that referenced them). Bounded so a
+// backlog can't spin the cron forever — leftovers go on the next daily run.
+function prune(app) {
+  const cutoff = toPbTime(new Date(Date.now() - PRUNE_AFTER_DAYS * 86400 * 1000));
+  for (let batch = 0; batch < 50; batch++) {
+    const rows = app.findRecordsByFilter(
+      "notebook_activity",
+      "created < {:c}",
+      "created",
+      200,
+      0,
+      { c: cutoff }
+    );
+    if (rows.length === 0) break;
+    for (const r of rows) app.delete(r);
+    if (rows.length < 200) break;
+  }
+}
+
+module.exports = { logActivity, prune };

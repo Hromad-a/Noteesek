@@ -112,7 +112,9 @@ change to a note in a shared notebook — migration `1700000027`, hook
 `activity.pb.js`/`activity_lib.js`, with 60s per-actor edit coalescing. Read
 state is a per-user watermark (`activity_seen`, "mark all read"); archive is a
 sparse per-user set (`activity_archives`). Entries auto-archive after a week by
-age — nothing is pruned. Server-only, like snapshots: web + mobile-with-server) ·
+age, then a daily cron prunes feed rows past ~6 months
+(`activity_lib.PRUNE_AFTER_DAYS`; cascade clears their archive marks). Server-only,
+like snapshots: web + mobile-with-server) ·
 text + checklist notes · pin · **archive** (drawer) · **trash** (restore /
 delete-forever / empty) · image attachments (protected) · offline substring
 search (title/body/checklist) · **note colors** (curated themed palette,

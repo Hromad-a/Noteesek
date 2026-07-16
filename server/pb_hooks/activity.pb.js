@@ -12,6 +12,17 @@
 // "deleted". Hard delete ("delete forever") is a real record delete; it cascades
 // the note's feed rows away, so there's nothing to log — hence no delete hook.
 
+// Daily at 03:30: discard feed rows older than the retention window (see
+// activity_lib.PRUNE_AFTER_DAYS). This is the only place feed rows are deleted;
+// everything short of it just ages into the client's archive view.
+cronAdd("noteesek_activity_prune", "30 3 * * *", () => {
+  try {
+    require(`${__hooks}/activity_lib.js`).prune($app);
+  } catch (err) {
+    $app.logger().error("activity prune failed", "error", String(err));
+  }
+});
+
 function actorOf(e) {
   return e.auth ? { id: e.auth.id, email: e.auth.getString("email") } : null;
 }

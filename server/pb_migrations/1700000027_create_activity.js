@@ -6,9 +6,10 @@
 //   notebook_activity — the shared, append-only feed. One row per change to a
 //     note in a shared notebook (create / edit / delete), written ONLY by the
 //     server hook (pb_hooks/activity.pb.js). Every member of the notebook can
-//     read it; nobody writes it via the API. Rows are never pruned — old ones
-//     just fall into the client's "archive" view (see below), so no change is
-//     ever lost.
+//     read it; nobody writes it via the API. Rows age into the client's
+//     "archive" view after a week and are finally pruned by a daily cron after
+//     ~6 months (activity_lib.PRUNE_AFTER_DAYS) — well beyond the archive window,
+//     so nothing is lost prematurely.
 //   activity_seen — a per-user read watermark (one row per user): the timestamp
 //     the user last marked the feed read. Unread = feed rows newer than this.
 //     Global (not per-notebook), owner-scoped, client-written ("mark all read").
@@ -48,6 +49,8 @@ migrate((app) => {
         collectionId: notebooks.id,
         cascadeDelete: true, // deleting the notebook forever clears its feed
       },
+      // deleteRule stays null: clients never delete feed rows; the daily prune
+      // cron in activity.pb.js uses $app.delete (bypasses API rules).
       {
         type: "relation",
         name: "note",
