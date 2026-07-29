@@ -325,8 +325,8 @@ class _ChecklistPreview extends ConsumerWidget {
   }
 }
 
-/// Compact leaderboard preview for a game note: the top few players by total,
-/// each with their rank and score. Parsed from the note body (the game JSON).
+/// Compact preview for a game note: the first few players in their added order,
+/// each with their rank number and total. Parsed from the note body (game JSON).
 class _GamePreview extends StatelessWidget {
   const _GamePreview({required this.note});
 
@@ -341,8 +341,8 @@ class _GamePreview extends StatelessWidget {
           style: theme.textTheme.bodyMedium
               ?.copyWith(color: theme.disabledColor));
     }
-    final board = game.leaderboard;
-    final shown = board.take(5).toList();
+    // Players stay in their added order; the rank is only shown as a number.
+    final shown = game.players.take(5).toList();
     final ranks = game.ranksByTotal();
 
     return Column(
@@ -374,10 +374,11 @@ class _GamePreview extends StatelessWidget {
               ],
             ),
           ),
-        if (board.length > shown.length)
+        if (game.players.length > shown.length)
           Padding(
             padding: const EdgeInsets.only(top: 2),
-            child: Text(context.l10n.moreItems(board.length - shown.length),
+            child: Text(
+                context.l10n.moreItems(game.players.length - shown.length),
                 style: theme.textTheme.bodySmall),
           ),
       ],

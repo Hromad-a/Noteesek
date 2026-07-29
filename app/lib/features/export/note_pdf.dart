@@ -89,13 +89,13 @@ Future<Uint8List> buildNotePdf({
   return doc.save();
 }
 
-/// A game note as a leaderboard: each player ranked by total (highest first).
+/// A game note as a score list: each player in their added order, prefixed with
+/// their rank number and followed by their total.
 List<pw.Widget> _gameWidgets(GameState game) {
   if (game.players.isEmpty) return const [];
-  final board = game.leaderboard;
   final ranks = game.ranksByTotal();
   return [
-    for (final p in board)
+    for (final p in game.players)
       pw.Padding(
         padding: const pw.EdgeInsets.symmetric(vertical: 2),
         child: pw.Row(

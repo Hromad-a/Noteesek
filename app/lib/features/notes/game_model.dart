@@ -65,10 +65,6 @@ class GameState {
     return result;
   }
 
-  /// Players ordered by total (highest first) — for a leaderboard preview.
-  List<GamePlayer> get leaderboard =>
-      [...players]..sort((a, b) => b.total.compareTo(a.total));
-
   /// True when the note holds nothing worth keeping: no players, or only blank
   /// players with no non-zero scores. Drives the "empty note auto-trash" rule.
   bool get isEmpty => players.every(
@@ -153,14 +149,15 @@ String gameMarkdownTable(GameState game) {
   return buf.toString();
 }
 
-/// Renders a game as a simple plain-text leaderboard (for the "share as text"
-/// action): each player with their total, highest first. Empty when no players.
+/// Renders a game as plain text (for the "share as text" action): each player
+/// in their added order, prefixed with their rank number. Empty when no players.
 String gamePlainText(GameState game) {
   if (game.players.isEmpty) return '';
+  final ranks = game.ranksByTotal();
   final buf = StringBuffer();
-  for (final p in game.leaderboard) {
+  for (final p in game.players) {
     final name = p.name.trim().isEmpty ? '—' : p.name.trim();
-    buf.writeln('$name: ${formatGameScore(p.total)}');
+    buf.writeln('${ranks[p.id]}. $name: ${formatGameScore(p.total)}');
   }
   return buf.toString().trimRight();
 }

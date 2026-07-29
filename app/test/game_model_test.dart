@@ -118,12 +118,13 @@ void main() {
     expect(md, contains('| Total | 15 | 16 |'));
   });
 
-  test('gamePlainText lists players by total, highest first', () {
+  test('gamePlainText keeps added order and prefixes the rank number', () {
     final g = GameState(players: [
-      GamePlayer(id: 'a', name: 'Alice', scores: [10]),
-      GamePlayer(id: 'b', name: 'Bob', scores: [16]),
+      GamePlayer(id: 'a', name: 'Alice', scores: [10]), // rank 2
+      GamePlayer(id: 'b', name: 'Bob', scores: [16]), // rank 1
     ]);
-    expect(gamePlainText(g), 'Bob: 16\nAlice: 10');
+    // Players stay in their added order (Alice then Bob), each with its rank.
+    expect(gamePlainText(g), '2. Alice: 10\n1. Bob: 16');
   });
 
   test('empty game renders empty export strings', () {

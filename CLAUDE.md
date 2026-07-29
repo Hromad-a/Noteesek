@@ -172,8 +172,9 @@ the `notes.type` select to include `game`.
   implicit columns**: the round count is the longest player's `scores` list; a
   shorter list means 0 in the missing rounds. Totals = sum; `ranksByTotal()`
   ranks players by total (**highest = rank 1**, ties share a rank) while the
-  players themselves keep their added order. Also renders the Markdown table /
-  plain-text / PDF leaderboard used by the exporters.
+  players themselves **always keep their added order** everywhere (editor, card,
+  exports) — the rank is only ever shown as a number. Also renders the Markdown
+  table / plain-text / PDF score views used by the exporters.
 - `game_board.dart` — the scoresheet editor (`GameBoard`): a horizontally
   scrollable rounds×players grid with a Totals row and per-player rank badges;
   add/remove player, add/remove round, decimal + negative score entry. Every
@@ -181,7 +182,7 @@ the `notes.type` select to include `game`.
   note's normal autosave). Seeds state once from the body (like the text
   editor's controller); renders a static view when `readOnly` (shared note).
 - The editor branches on `type == 'game'` to show `GameBoard` (convert is hidden
-  for games); the note card shows a compact leaderboard preview; the new-note
+  for games); the note card shows a compact score preview; the new-note
   bottom bar has a third "New game" button; an empty game (no named/scored
   players) auto-trashes on close like any empty note.
 
