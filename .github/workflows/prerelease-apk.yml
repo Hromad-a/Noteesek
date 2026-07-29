@@ -1,0 +1,121 @@
+name: Prerelease APK
+
+# Manual-only: build a prerelease Android APK from the branch/ref you pick in the
+# Actions tab and publish it to a single **rolling** "prerelease" GitHub Release
+# (marked as a prerelease). Open Releases on your phone and tap the .apk to
+# install ("allow unknown sources"). The `prerelease` tag is moved to the built
+# commit on every run, so there is always exactly one latest prerelease APK.
+#
+# NOTE: GitHub only shows the "Run workflow" button for a workflow_dispatch
+# workflow once the file exists on the repository's DEFAULT branch (main). After
+# it's on main you can still dispatch it against any branch (it uses that
+# branch's copy of this file).
+#
+# Signing mirrors release-apk.yml: uses the ANDROID_KEYSTORE_* secrets when set
+# (so installs update in place), else falls back to debug signing.
+on:
+  workflow_dispatch:
+    inputs:
+      notes:
+        description: "Optional note to show on the prerelease release"
+        required: false
+        default: ""
+
+# One prerelease build at a time so concurrent runs can't race on the tag.
+concurrency:
+  group: prerelease-apk
+  cancel-in-progress: true
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # move the rolling tag + publish the prerelease Release
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Build metadata
+        id: meta
+        run: |
+          echo "sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          echo "date=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+
+      # Decode the release keystore from secrets so prereleases are signed with
+      # the SAME key as releases (installs update in place, no uninstall). If the
+      # secret is unset the build falls back to debug signing — see
+      # app/android/app/build.gradle.kts.
+      # Optional repo secrets: ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD,
+      # ANDROID_KEY_PASSWORD, ANDROID_KEY_ALIAS.
+      - name: Configure release signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::warning::ANDROID_KEYSTORE_BASE64 not set — building debug-signed APK (will require uninstall to update)."
+            exit 0
+          fi
+          echo "$KEYSTORE_BASE64" | base64 --decode > app/android/app/release.jks
+          cat > app/android/key.properties <<EOF
+          storeFile=release.jks
+          storePassword=$STORE_PASSWORD
+          keyPassword=$KEY_PASSWORD
+          keyAlias=$KEY_ALIAS
+          EOF
+
+      - name: Build prerelease APK
+        working-directory: app
+        run: |
+          flutter pub get
+          dart run build_runner build --delete-conflicting-outputs
+          # BUILD_SOURCE=prerelease shows "Prerelease build" in Settings → About
+          # (distinct from an official `ci` release or a local build).
+          flutter build apk --release \
+            --dart-define=BUILD_SOURCE=prerelease \
+            --dart-define=GIT_SHA="${{ steps.meta.outputs.sha }}" \
+            --dart-define=BUILD_DATE="${{ steps.meta.outputs.date }}"
+
+      - name: Stage APK
+        run: |
+          mkdir -p dist
+          cp app/build/app/outputs/flutter-apk/app-release.apk \
+             "dist/noteesek-prerelease-${{ steps.meta.outputs.sha }}.apk"
+
+      - name: Publish rolling prerelease Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXTRA_NOTES: ${{ github.event.inputs.notes }}
+        run: |
+          TAG=prerelease
+          NOTES="Automated prerelease build from \`${{ github.ref_name }}\` (${{ steps.meta.outputs.sha }}, ${{ steps.meta.outputs.date }})."
+          if [ -n "$EXTRA_NOTES" ]; then
+            NOTES="$NOTES"$'\n\n'"$EXTRA_NOTES"
+          fi
+          # Move the rolling tag to this commit: drop the old release + tag, then
+          # recreate it pointing at the built ref. `|| true` so the very first run
+          # (no existing release/tag) doesn't fail; the sleep lets the tag
+          # deletion propagate before we recreate it.
+          gh release delete "$TAG" --yes --cleanup-tag || true
+          sleep 3
+          gh release create "$TAG" \
+            --title "Prerelease (${{ github.ref_name }} @ ${{ steps.meta.outputs.sha }})" \
+            --notes "$NOTES" \
+            --prerelease \
+            --target "${{ github.sha }}" \
+            dist/*.apk

@@ -1149,11 +1149,14 @@ class _AboutSectionState extends ConsumerState<_AboutSection> {
       if (_installerStore == 'com.android.vending') {
         return context.l10n.buildGooglePlay;
       }
-      // A release APK installed outside Play: an official CI build (marked via
-      // BUILD_SOURCE) vs one built locally on a dev machine.
-      return _kBuildSource == 'ci'
-          ? context.l10n.buildReleaseOfficial
-          : context.l10n.buildReleaseLocal;
+      // A release APK installed outside Play, distinguished by BUILD_SOURCE:
+      // an official CI release, a CI prerelease build, or one built locally on a
+      // dev machine.
+      return switch (_kBuildSource) {
+        'ci' => context.l10n.buildReleaseOfficial,
+        'prerelease' => context.l10n.buildReleasePrerelease,
+        _ => context.l10n.buildReleaseLocal,
+      };
     }
 
     return Column(

@@ -222,6 +222,7 @@
   "buildDebug": "Developer (debug)",
   "buildProfile": "Profile",
   "buildReleaseOfficial": "Official release",
+  "buildReleasePrerelease": "Prerelease build",
   "buildReleaseLocal": "Local build",
   "buildGooglePlay": "Google Play",
   "buildWeb": "Web",
