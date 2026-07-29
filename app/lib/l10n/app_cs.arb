@@ -428,5 +428,17 @@
   "lockAnotherMember": "Tuto poznámku upravuje jiný člen.",
   "enterYourEmail": "Zadejte svůj e-mail",
   "unlockNoteesek": "Odemknout Noteesek",
-  "forgotPasswordEmailPrompt": "Zadejte e-mail svého účtu a pošleme vám odkaz pro obnovení."
+  "forgotPasswordEmailPrompt": "Zadejte e-mail svého účtu a pošleme vám odkaz pro obnovení.",
+
+  "newGame": "Nová hra",
+  "typeGame": "Hra",
+  "gameAddPlayer": "Přidat hráče",
+  "gameAddRound": "Přidat kolo",
+  "gameTotal": "Celkem",
+  "gamePlayerHint": "Hráč",
+  "gameRound": "Kolo",
+  "gameRemovePlayer": "Odebrat hráče",
+  "gameRemoveRound": "Odebrat kolo",
+  "gameNoPlayers": "Přidejte hráče a začněte počítat skóre.",
+  "gameNoPlayersShort": "Zatím žádní hráči"
 }

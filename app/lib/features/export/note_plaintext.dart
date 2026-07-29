@@ -1,4 +1,5 @@
 import '../../data/local/database.dart';
+import '../notes/game_model.dart';
 
 /// Pure plain-text rendering of a single note, for the "share as text" action.
 /// Title on its own line, then the body, or the checklist as ☑/☐ lines. No
@@ -21,6 +22,8 @@ String buildNotePlainText({
     for (final item in live) {
       buf.writeln('${item.checked ? '☑' : '☐'} ${item.content}');
     }
+  } else if (note.type == 'game') {
+    buf.writeln(gamePlainText(parseGame(note.body)));
   } else if (note.body.trim().isNotEmpty) {
     buf.writeln(note.body.trimRight());
   }

@@ -569,5 +569,17 @@
   "lockAnotherMember": "Another member is editing this note.",
   "enterYourEmail": "Enter your email",
   "unlockNoteesek": "Unlock Noteesek",
-  "forgotPasswordEmailPrompt": "Enter your account email and we'll send a reset link."
+  "forgotPasswordEmailPrompt": "Enter your account email and we'll send a reset link.",
+
+  "newGame": "New game",
+  "typeGame": "Game",
+  "gameAddPlayer": "Add player",
+  "gameAddRound": "Add round",
+  "gameTotal": "Total",
+  "gamePlayerHint": "Player",
+  "gameRound": "Round",
+  "gameRemovePlayer": "Remove player",
+  "gameRemoveRound": "Remove round",
+  "gameNoPlayers": "Add players to start scoring.",
+  "gameNoPlayersShort": "No players yet"
 }

@@ -5,6 +5,7 @@ import 'package:pdf/widgets.dart' as pw;
 
 import '../../data/local/database.dart';
 import '../../data/notes_repository.dart' show labelIdsOf;
+import '../notes/game_model.dart';
 import 'markdown_pdf.dart';
 import 'pdf_fonts.dart';
 
@@ -72,6 +73,8 @@ Future<Uint8List> buildNotePdf({
               ),
             ),
           )
+        else if (note.type == 'game')
+          ..._gameWidgets(parseGame(note.body))
         else if (note.body.trim().isNotEmpty)
           ...markdownToPdfWidgets(note.body, mono: fonts.mono),
         for (final img in images)
@@ -84,6 +87,31 @@ Future<Uint8List> buildNotePdf({
   );
 
   return doc.save();
+}
+
+/// A game note as a leaderboard: each player ranked by total (highest first).
+List<pw.Widget> _gameWidgets(GameState game) {
+  if (game.players.isEmpty) return const [];
+  final board = game.leaderboard;
+  final ranks = game.ranksByTotal();
+  return [
+    for (final p in board)
+      pw.Padding(
+        padding: const pw.EdgeInsets.symmetric(vertical: 2),
+        child: pw.Row(
+          children: [
+            pw.SizedBox(
+                width: 24,
+                child: pw.Text('${ranks[p.id] ?? ''}.',
+                    style: const pw.TextStyle(color: PdfColors.grey700))),
+            pw.Expanded(
+                child: pw.Text(p.name.trim().isEmpty ? '—' : p.name.trim())),
+            pw.Text(formatGameScore(p.total),
+                style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+          ],
+        ),
+      ),
+  ];
 }
 
 /// A drawn checkbox (a bordered square, with a tick when [checked]) — drawn

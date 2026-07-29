@@ -310,6 +310,7 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
         bottomNavigationBar: _BottomBar(
           onText: () => _create(context, ref, 'text'),
           onChecklist: () => _create(context, ref, 'checklist'),
+          onGame: () => _create(context, ref, 'game'),
         ),
       ),
     );
@@ -677,10 +678,14 @@ class _SortMenu extends ConsumerWidget {
 /// Bottom bar: the notebook selector on the left (switch / create / manage),
 /// the new-checklist and new-note buttons on the right.
 class _BottomBar extends ConsumerWidget {
-  const _BottomBar({required this.onText, required this.onChecklist});
+  const _BottomBar(
+      {required this.onText,
+      required this.onChecklist,
+      required this.onGame});
 
   final VoidCallback onText;
   final VoidCallback onChecklist;
+  final VoidCallback onGame;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -709,6 +714,17 @@ class _BottomBar extends ConsumerWidget {
       child: Row(
         children: [
           const Expanded(child: _NotebookSelector()),
+          const SizedBox(width: 8),
+          Opacity(
+            opacity: blocked ? 0.4 : 1,
+            child: IconButton.filledTonal(
+              tooltip: blocked
+                  ? context.l10n.offlineSharedNotebook
+                  : context.l10n.newGame,
+              onPressed: blocked ? offlineSnack : onGame,
+              icon: const Icon(Icons.scoreboard_outlined),
+            ),
+          ),
           const SizedBox(width: 8),
           Opacity(
             opacity: blocked ? 0.4 : 1,
@@ -1226,6 +1242,11 @@ class _FilterSheet extends ConsumerWidget {
                   label: Text(context.l10n.typeChecklist),
                   selected: filters.type == 'checklist',
                   onSelected: (s) => notifier.setType(s ? 'checklist' : null),
+                ),
+                ChoiceChip(
+                  label: Text(context.l10n.typeGame),
+                  selected: filters.type == 'game',
+                  onSelected: (s) => notifier.setType(s ? 'game' : null),
                 ),
               ],
             ),
