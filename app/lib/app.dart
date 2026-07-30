@@ -32,10 +32,25 @@ class NoteesekApp extends ConsumerStatefulWidget {
 
 class _NoteesekAppState extends ConsumerState<NoteesekApp>
     with WidgetsBindingObserver {
+  // Guards against stacking the "you've been signed out" dialog while one is
+  // already up (build can run several times before it's dismissed).
+  bool _sessionPromptShowing = false;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // Probe the session once on launch: hit authRefresh so a token the server
+    // has since rejected (password changed elsewhere / "sign out everywhere")
+    // is caught right away — the auth-guard http client clears it on the 401 and
+    // flags the session invalidated, driving the sign-in prompt below, instead
+    // of the user meeting a silent, unsyncable screen. Fail-soft: a network
+    // error leaves the existing token untouched. Runs on every platform (mobile
+    // sync also refreshes, but this makes the prompt appear promptly on open).
+    final pb = ref.read(pocketBaseProvider);
+    if (pb.authStore.isValid) {
+      pb.collection('users').authRefresh().then((_) {}, onError: (_) {});
+    }
   }
 
   @override
@@ -54,8 +69,53 @@ class _NoteesekAppState extends ConsumerState<NoteesekApp>
     }
   }
 
+  /// Show the one-time "you've been signed out" prompt when the session was
+  /// invalidated server-side. Scheduled post-frame so it can run from build; the
+  /// root navigator key gives it a context even before any screen is mounted.
+  void _promptSignedOut() {
+    if (_sessionPromptShowing) return;
+    _sessionPromptShowing = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final ctx = appNavigatorKey.currentContext;
+      if (ctx == null || !mounted) {
+        _sessionPromptShowing = false;
+        return;
+      }
+      final l10n = ctx.l10n;
+      await showDialog<void>(
+        context: ctx,
+        barrierDismissible: false,
+        builder: (dialogCtx) => AlertDialog(
+          title: Text(l10n.sessionExpiredTitle),
+          content: Text(l10n.sessionExpiredBody),
+          actions: [
+            TextButton(
+              onPressed: () {
+                ref.read(sessionInvalidatedProvider.notifier).acknowledge();
+                Navigator.of(dialogCtx).pop();
+                // On web the login gate is already the home once auth cleared;
+                // on mobile (local-first) push the connect/login screen.
+                if (!kIsWeb) {
+                  appNavigatorKey.currentState?.push(
+                    MaterialPageRoute(builder: (_) => const LoginScreen()),
+                  );
+                }
+              },
+              child: Text(l10n.signIn),
+            ),
+          ],
+        ),
+      );
+      _sessionPromptShowing = false;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    // A server-invalidated session (password changed / signed out everywhere)
+    // surfaces a prompt to sign in again, on top of whatever screen is showing.
+    if (ref.watch(sessionInvalidatedProvider)) _promptSignedOut();
+
     // Web is an online, server-backed client → login required. Mobile is
     // local-first → opens straight to local notes.
     final Widget home;
@@ -89,6 +149,7 @@ class _NoteesekAppState extends ConsumerState<NoteesekApp>
     return MaterialApp(
       title: 'Noteesek',
       scaffoldMessengerKey: scaffoldMessengerKey,
+      navigatorKey: appNavigatorKey,
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         // `vibrant` keeps the lavender hue but with more chroma than the default

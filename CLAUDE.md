@@ -108,6 +108,15 @@ responding" indicator + snackbar.
 
 ## Features (current)
 Multi-user auth · offline-first mobile + optional sync · web online/realtime ·
+**shared-notebook activity feed** (bell + unread badge on the notes screen;
+`features/activity/`. Server writes a `notebook_activity` row on every member
+change to a note in a shared notebook — migration `1700000027`, hook
+`activity.pb.js`/`activity_lib.js`, with 60s per-actor edit coalescing. Read
+state is a per-user watermark (`activity_seen`, "mark all read"); archive is a
+sparse per-user set (`activity_archives`). Entries auto-archive after a week by
+age, then a daily cron prunes feed rows past ~6 months
+(`activity_lib.PRUNE_AFTER_DAYS`; cascade clears their archive marks). Server-only,
+like snapshots: web + mobile-with-server) ·
 text + checklist + **game** (score counter) notes · pin · **archive** (drawer) · **trash** (restore /
 delete-forever / empty) · image attachments (protected) · offline substring
 search (title/body/checklist) · **note colors** (curated themed palette,
@@ -115,7 +124,13 @@ search (title/body/checklist) · **note colors** (curated themed palette,
 `ManageLabelsScreen`) · **notebooks** (optional, at-most-one-per-note
 collections; "All notes" / "No notebook" / per-notebook scopes via the grid
 bottom-bar selector, manage on `ManageNotebooksScreen`) ·
-**account settings** (change password / server URL / sign out) · **Markdown
+**account settings** (change password / server URL / sign out) ·
+**long-lived sessions** (users auth-token TTL extended to 1 year via migration
+`1700000026`, so time never signs you out; only a password change / "sign out
+everywhere" — both rotate the tokenKey — ends a session. The client probes with
+`authRefresh` on launch, and the auth-guard http client flags a rejected-token
+401 so `app.dart` shows a one-time "you've been signed out" prompt
+(`sessionInvalidatedProvider`)) · **Markdown
 export** (bulk: all active+archived notes → one zip of `notes/*.md` +
 `attachments/*`, share sheet on mobile / download on web) · **single-note
 share/export** (Markdown / plain text / PDF, from the editor overflow) ·
@@ -165,7 +180,7 @@ A **game** note (`notes.type == 'game'`) is a scoresheet for playing games. Its
 entire state is a small JSON document stored in the note's **`body`**, so it
 rides the existing note last-write-wins sync, JSON/zip backup, server snapshots
 and restore with **no new collection, no drift table, no sync/backup changes** —
-only a one-line server migration (`1700000026_add_game_note_type.js`) widening
+only a one-line server migration (`1700000028_add_game_note_type.js`) widening
 the `notes.type` select to include `game`.
 - `game_model.dart` — pure, unit-tested model + (de)serialization. A `GameState`
   is a list of `GamePlayer`s (`id`, `name`, `scores: List<double>`). **Rounds are
