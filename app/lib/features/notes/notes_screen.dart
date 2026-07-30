@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import 'package:receive_sharing_intent/receive_sharing_intent.dart';
@@ -740,17 +741,7 @@ class _BottomBar extends ConsumerWidget {
         children: [
           const Expanded(child: _NotebookSelector()),
           const SizedBox(width: 8),
-          Opacity(
-            opacity: blocked ? 0.4 : 1,
-            child: IconButton.filledTonal(
-              tooltip: blocked
-                  ? context.l10n.offlineSharedNotebook
-                  : context.l10n.newGame,
-              onPressed: blocked ? offlineSnack : onGame,
-              icon: const Icon(Icons.scoreboard_outlined),
-            ),
-          ),
-          const SizedBox(width: 8),
+          // Checklist stays as its own quick-button — it's used often.
           Opacity(
             opacity: blocked ? 0.4 : 1,
             child: IconButton.filledTonal(
@@ -762,17 +753,102 @@ class _BottomBar extends ConsumerWidget {
             ),
           ),
           const SizedBox(width: 8),
+          // Main create button: tap = new text note; hold = pick a note type
+          // (text / checklist / game). The little up-caret hints the menu.
           Opacity(
             opacity: blocked ? 0.4 : 1,
-            child: IconButton.filled(
-              tooltip: blocked ? context.l10n.offlineSharedNotebook : context.l10n.newNote,
-              onPressed: blocked ? offlineSnack : onText,
-              icon: const Icon(Icons.edit),
+            child: Builder(
+              builder: (btnContext) => GestureDetector(
+                onLongPress:
+                    blocked ? offlineSnack : () => _showCreateMenu(btnContext),
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    IconButton.filled(
+                      tooltip: blocked
+                          ? context.l10n.offlineSharedNotebook
+                          : context.l10n.newNote,
+                      onPressed: blocked ? offlineSnack : onText,
+                      icon: const Icon(Icons.edit),
+                    ),
+                    Positioned(
+                      top: 1,
+                      left: 0,
+                      right: 0,
+                      child: IgnorePointer(
+                        child: Icon(
+                          Icons.arrow_drop_up,
+                          size: 16,
+                          color: Theme.of(context).colorScheme.onPrimary,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
         ],
       ),
     );
+  }
+
+  /// Opens the note-type menu just above the main create button. Anchored to the
+  /// button's box so it pops from the right spot regardless of screen size.
+  Future<void> _showCreateMenu(BuildContext btnContext) async {
+    HapticFeedback.selectionClick();
+    final box = btnContext.findRenderObject() as RenderBox;
+    final overlay =
+        Overlay.of(btnContext).context.findRenderObject() as RenderBox;
+    final topLeft = box.localToGlobal(Offset.zero, ancestor: overlay);
+    final position = RelativeRect.fromLTRB(
+      topLeft.dx,
+      topLeft.dy,
+      overlay.size.width - topLeft.dx - box.size.width,
+      overlay.size.height - topLeft.dy,
+    );
+    final l10n = btnContext.l10n;
+    final selected = await showMenu<String>(
+      context: btnContext,
+      position: position,
+      items: [
+        PopupMenuItem(
+          value: 'text',
+          child: ListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.edit),
+            title: Text(l10n.newNote),
+          ),
+        ),
+        PopupMenuItem(
+          value: 'checklist',
+          child: ListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.checklist),
+            title: Text(l10n.newChecklist),
+          ),
+        ),
+        PopupMenuItem(
+          value: 'game',
+          child: ListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.scoreboard_outlined),
+            title: Text(l10n.newGame),
+          ),
+        ),
+      ],
+    );
+    switch (selected) {
+      case 'text':
+        onText();
+      case 'checklist':
+        onChecklist();
+      case 'game':
+        onGame();
+    }
   }
 }
 

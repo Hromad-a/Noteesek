@@ -13,6 +13,11 @@ import 'game_model.dart';
 /// [NotesRepository.updateNoteFields] (the note's normal autosave path), so a
 /// game rides the same sync/backup as any other note.
 ///
+/// Layout is width-aware (see [_ScoreLayout.forWidth]): with a few players the
+/// columns share the available width so nothing scrolls sideways; only when
+/// there are too many players to fit does the sheet scroll horizontally, and
+/// then the left "Round" column is frozen so it stays in view.
+///
 /// State is seeded once from [body]; thereafter the widget owns it (like the
 /// text editor's controller). When [readOnly] (a shared note someone else is
 /// editing) it renders a static view straight from [body] instead.
@@ -37,10 +42,31 @@ class GameBoard extends StatefulWidget {
   State<GameBoard> createState() => _GameBoardState();
 }
 
-class _GameBoardState extends State<GameBoard> {
-  static const double _leftW = 72;
-  static const double _colW = 108;
+/// Fixed left ("Round"/number/"Total") column width and the minimum a player
+/// column may shrink to before the sheet starts scrolling sideways. Row heights
+/// are fixed so the frozen left column and the scrolling player columns line up.
+const double _leftW = 56;
+const double _minColW = 64;
+const double _headerH = 86;
+const double _roundH = 54;
+const double _totalsH = 48;
 
+/// Resolved column width + whether the sheet has to scroll horizontally.
+class _ScoreLayout {
+  const _ScoreLayout(this.colW, this.scroll);
+  final double colW;
+  final bool scroll;
+
+  /// Share [avail] among [players] columns; if that would make columns narrower
+  /// than [_minColW], clamp to the minimum and scroll instead.
+  factory _ScoreLayout.forWidth(double avail, int players) {
+    final fit = (avail - _leftW) / players;
+    if (fit >= _minColW) return _ScoreLayout(fit, false);
+    return const _ScoreLayout(_minColW, true);
+  }
+}
+
+class _GameBoardState extends State<GameBoard> {
   late GameState _game;
   final Map<String, TextEditingController> _nameCtrls = {};
   final Map<String, TextEditingController> _scoreCtrls = {};
@@ -151,11 +177,46 @@ class _GameBoardState extends State<GameBoard> {
     _persist();
   }
 
+  /// Removing a round or player wipes a whole row/column of scores, so both are
+  /// gated behind a confirmation (an easy mis-tap otherwise loses data).
+  Future<bool> _confirm(String title) async =>
+      await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text(title),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(context.l10n.cancel),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(context.l10n.remove),
+            ),
+          ],
+        ),
+      ) ??
+      false;
+
+  Future<void> _confirmRemoveRound(int round) async {
+    if (await _confirm(context.l10n.gameRemoveRoundConfirm('${round + 1}'))) {
+      _removeRound(round);
+    }
+  }
+
+  Future<void> _confirmRemovePlayer(GamePlayer p) async {
+    final name = p.name.trim();
+    final prompt = name.isEmpty
+        ? context.l10n.gameRemovePlayerConfirmUnnamed
+        : context.l10n.gameRemovePlayerConfirm(name);
+    if (await _confirm(prompt)) _removePlayer(p);
+  }
+
   void _onNameChanged(GamePlayer p, String value) {
     p.name = value;
     _persist();
-    // Rebuild so nothing else is needed, but keep it cheap: names don't affect
-    // totals, so no setState is required here — the controller holds the text.
+    // Names don't affect totals, so no setState is required here — the
+    // controller holds the text.
   }
 
   void _onScoreChanged(GamePlayer p, int round, String value) {
@@ -178,171 +239,212 @@ class _GameBoardState extends State<GameBoard> {
       return _EmptyBoard(onAddPlayer: _addPlayer);
     }
 
+    final theme = Theme.of(context);
     final rounds = _game.rounds;
     final ranks = _game.ranksByTotal();
-    final theme = Theme.of(context);
+    final divider = BorderSide(color: theme.dividerColor);
 
-    Widget cell(double width, Widget child, {Alignment? align}) => SizedBox(
-          width: width,
-          child: Align(
-            alignment: align ?? Alignment.center,
-            child: child,
-          ),
+    // --- left ("Round" / number / "Total") column cells --------------------
+    Widget leftCell(double height, Widget child, {BoxBorder? border}) =>
+        Container(
+          width: _leftW,
+          height: height,
+          alignment: Alignment.centerLeft,
+          decoration: border == null ? null : BoxDecoration(border: border),
+          padding: const EdgeInsets.only(right: 4),
+          child: child,
         );
 
-    // Header: leftmost "Round" label, then each player's name + rank badge.
-    final header = Row(
-      children: [
-        cell(
-          _leftW,
-          Text(context.l10n.gameRound,
+    final headerLeft = leftCell(
+      _headerH,
+      Align(
+        alignment: Alignment.bottomLeft,
+        child: Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: Text(context.l10n.gameRound,
               style: theme.textTheme.labelMedium,
               maxLines: 1,
               overflow: TextOverflow.ellipsis),
-          align: Alignment.centerLeft,
         ),
-        for (final p in _game.players)
-          cell(
-            _colW,
-            Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    _RankBadge(rank: ranks[p.id] ?? 0),
-                    IconButton(
-                      visualDensity: VisualDensity.compact,
-                      padding: EdgeInsets.zero,
-                      constraints:
-                          const BoxConstraints(minWidth: 32, minHeight: 32),
-                      icon: const Icon(Icons.close, size: 16),
-                      tooltip: context.l10n.gameRemovePlayer,
-                      onPressed: () => _removePlayer(p),
-                    ),
-                  ],
-                ),
-                TextField(
-                  controller: _nameCtrl(p),
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.titleSmall,
-                  decoration: InputDecoration(
-                    isDense: true,
-                    border: InputBorder.none,
-                    hintText: context.l10n.gamePlayerHint,
-                  ),
-                  onChanged: (v) => _onNameChanged(p, v),
-                ),
-              ],
-            ),
-          ),
-      ],
+      ),
+      border: Border(bottom: divider),
     );
 
-    // One row per round: the round number (with a remove button) then a score
-    // field per player.
-    Widget roundRow(int r) => Padding(
-          padding: const EdgeInsets.symmetric(vertical: 2),
-          child: Row(
+    Widget roundLeft(int r) => leftCell(
+          _roundH,
+          Row(
             children: [
-              cell(
-                _leftW,
-                Row(
-                  children: [
-                    IconButton(
-                      visualDensity: VisualDensity.compact,
-                      padding: EdgeInsets.zero,
-                      constraints:
-                          const BoxConstraints(minWidth: 28, minHeight: 28),
-                      icon: const Icon(Icons.remove_circle_outline, size: 16),
-                      tooltip: context.l10n.gameRemoveRound,
-                      onPressed: () => _removeRound(r),
-                    ),
-                    Text('${r + 1}', style: theme.textTheme.bodyMedium),
-                  ],
-                ),
-                align: Alignment.centerLeft,
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints:
+                    const BoxConstraints(minWidth: 28, minHeight: 28),
+                icon: const Icon(Icons.remove_circle_outline, size: 16),
+                tooltip: context.l10n.gameRemoveRound,
+                onPressed: () => _confirmRemoveRound(r),
               ),
-              for (final p in _game.players)
-                cell(
-                  _colW,
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    child: TextField(
-                      controller: _scoreCtrl(p, r),
-                      textAlign: TextAlign.center,
-                      keyboardType: const TextInputType.numberWithOptions(
-                          signed: true, decimal: true),
-                      inputFormatters: [
-                        FilteringTextInputFormatter.allow(
-                            RegExp(r'[0-9.,\-]')),
-                      ],
-                      decoration: const InputDecoration(
-                        isDense: true,
-                        border: OutlineInputBorder(),
-                        contentPadding:
-                            EdgeInsets.symmetric(horizontal: 6, vertical: 8),
-                        hintText: '0',
-                      ),
-                      onChanged: (v) => _onScoreChanged(p, r, v),
-                    ),
-                  ),
-                ),
+              Text('${r + 1}', style: theme.textTheme.bodyMedium),
             ],
           ),
         );
 
-    // Totals row.
-    final totals = Container(
-      decoration: BoxDecoration(
-        border: Border(
-          top: BorderSide(color: theme.dividerColor),
-        ),
-      ),
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        children: [
-          cell(
-            _leftW,
-            Text(context.l10n.gameTotal,
-                style: theme.textTheme.labelLarge, maxLines: 1),
-            align: Alignment.centerLeft,
-          ),
-          for (final p in _game.players)
-            cell(
-              _colW,
-              Text(
-                formatGameScore(p.total),
-                style: theme.textTheme.titleMedium
-                    ?.copyWith(fontWeight: FontWeight.bold),
-              ),
-            ),
-        ],
-      ),
+    final totalsLeft = leftCell(
+      _totalsH,
+      Text(context.l10n.gameTotal, style: theme.textTheme.labelLarge, maxLines: 1),
+      border: Border(top: divider),
     );
 
-    final tableWidth = _leftW + _colW * _game.players.length;
+    // --- player column cells -----------------------------------------------
+    Widget playerCell(double width, double height, Widget child,
+            {BoxBorder? border}) =>
+        Container(
+          width: width,
+          height: height,
+          alignment: Alignment.center,
+          decoration: border == null ? null : BoxDecoration(border: border),
+          child: child,
+        );
+
+    Widget headerPlayer(GamePlayer p, double colW) => playerCell(
+          colW,
+          _headerH,
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  _RankBadge(rank: ranks[p.id] ?? 0),
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints:
+                        const BoxConstraints(minWidth: 32, minHeight: 32),
+                    icon: const Icon(Icons.close, size: 16),
+                    tooltip: context.l10n.gameRemovePlayer,
+                    onPressed: () => _confirmRemovePlayer(p),
+                  ),
+                ],
+              ),
+              TextField(
+                controller: _nameCtrl(p),
+                textAlign: TextAlign.center,
+                style: theme.textTheme.titleSmall,
+                decoration: InputDecoration(
+                  isDense: true,
+                  border: InputBorder.none,
+                  hintText: context.l10n.gamePlayerHint,
+                ),
+                onChanged: (v) => _onNameChanged(p, v),
+              ),
+            ],
+          ),
+          border: Border(bottom: divider),
+        );
+
+    Widget scorePlayer(GamePlayer p, int r, double colW) => playerCell(
+          colW,
+          _roundH,
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: TextField(
+              controller: _scoreCtrl(p, r),
+              textAlign: TextAlign.center,
+              keyboardType: const TextInputType.numberWithOptions(
+                  signed: true, decimal: true),
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'[0-9.,\-]')),
+              ],
+              decoration: const InputDecoration(
+                isDense: true,
+                border: OutlineInputBorder(),
+                contentPadding:
+                    EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                hintText: '0',
+              ),
+              onChanged: (v) => _onScoreChanged(p, r, v),
+            ),
+          ),
+        );
+
+    Widget totalsPlayer(GamePlayer p, double colW) => playerCell(
+          colW,
+          _totalsH,
+          Text(
+            formatGameScore(p.total),
+            style: theme.textTheme.titleMedium
+                ?.copyWith(fontWeight: FontWeight.bold),
+          ),
+          border: Border(top: divider),
+        );
+
+    final layout =
+        _ScoreLayout.forWidth(_tableWidth(context), _game.players.length);
+
+    Widget table;
+    if (!layout.scroll) {
+      // Everything fits: one plain table, no horizontal scroll.
+      final colW = layout.colW;
+      table = Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            headerLeft,
+            for (final p in _game.players) headerPlayer(p, colW),
+          ]),
+          for (var r = 0; r < rounds; r++)
+            Row(children: [
+              roundLeft(r),
+              for (final p in _game.players) scorePlayer(p, r, colW),
+            ]),
+          Row(children: [
+            totalsLeft,
+            for (final p in _game.players) totalsPlayer(p, colW),
+          ]),
+        ],
+      );
+    } else {
+      // Too many players: freeze the left column, scroll the players.
+      final colW = layout.colW;
+      table = Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              headerLeft,
+              for (var r = 0; r < rounds; r++) roundLeft(r),
+              totalsLeft,
+            ],
+          ),
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(children: [
+                    for (final p in _game.players) headerPlayer(p, colW),
+                  ]),
+                  for (var r = 0; r < rounds; r++)
+                    Row(children: [
+                      for (final p in _game.players) scorePlayer(p, r, colW),
+                    ]),
+                  Row(children: [
+                    for (final p in _game.players) totalsPlayer(p, colW),
+                  ]),
+                ],
+              ),
+            ),
+          ),
+        ],
+      );
+    }
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
       children: [
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: SizedBox(
-            width: tableWidth < MediaQuery.of(context).size.width - 32
-                ? null
-                : tableWidth,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                header,
-                const Divider(),
-                for (var r = 0; r < rounds; r++) roundRow(r),
-                totals,
-              ],
-            ),
-          ),
-        ),
+        table,
         const SizedBox(height: 16),
         Wrap(
           spacing: 12,
@@ -363,6 +465,11 @@ class _GameBoardState extends State<GameBoard> {
       ],
     );
   }
+
+  /// Width available to the table = the ListView's content box (screen minus its
+  /// 16px side padding).
+  double _tableWidth(BuildContext context) =>
+      MediaQuery.of(context).size.width - 32;
 }
 
 /// The small circular rank number shown next to a player.
@@ -430,13 +537,11 @@ class _EmptyBoard extends StatelessWidget {
   }
 }
 
-/// Static, non-editable render of a game (read-only shared note).
+/// Static, non-editable render of a game (read-only shared note). Uses the same
+/// fit / freeze-left-column layout as the editor.
 class _ReadOnlyBoard extends StatelessWidget {
   const _ReadOnlyBoard({required this.body});
   final String body;
-
-  static const double _leftW = 72;
-  static const double _colW = 108;
 
   @override
   Widget build(BuildContext context) {
@@ -448,81 +553,147 @@ class _ReadOnlyBoard extends StatelessWidget {
             style: TextStyle(color: theme.disabledColor)),
       );
     }
+    final rounds = game.rounds;
     final ranks = game.ranksByTotal();
+    final divider = BorderSide(color: theme.dividerColor);
 
-    Widget cell(Widget child, {double? width, Alignment align = Alignment.center}) =>
-        SizedBox(width: width, child: Align(alignment: align, child: child));
+    Widget leftCell(double height, Widget child, {BoxBorder? border}) =>
+        Container(
+          width: _leftW,
+          height: height,
+          alignment: Alignment.centerLeft,
+          decoration: border == null ? null : BoxDecoration(border: border),
+          padding: const EdgeInsets.only(right: 4),
+          child: child,
+        );
 
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-      children: [
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    Widget playerCell(double width, double height, Widget child,
+            {BoxBorder? border}) =>
+        Container(
+          width: width,
+          height: height,
+          alignment: Alignment.center,
+          decoration: border == null ? null : BoxDecoration(border: border),
+          child: child,
+        );
+
+    final headerLeft = leftCell(
+      _headerH,
+      Align(
+        alignment: Alignment.bottomLeft,
+        child: Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: Text(context.l10n.gameRound,
+              style: theme.textTheme.labelMedium),
+        ),
+      ),
+      border: Border(bottom: divider),
+    );
+    Widget roundLeft(int r) => leftCell(
+        _roundH,
+        Padding(
+          padding: const EdgeInsets.only(left: 8),
+          child: Text('${r + 1}', style: theme.textTheme.bodyMedium),
+        ));
+    final totalsLeft = leftCell(
+      _totalsH,
+      Text(context.l10n.gameTotal, style: theme.textTheme.labelLarge, maxLines: 1),
+      border: Border(top: divider),
+    );
+
+    Widget headerPlayer(GamePlayer p, double colW) => playerCell(
+          colW,
+          _headerH,
+          Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Row(
-                children: [
-                  cell(Text(context.l10n.gameRound,
-                      style: theme.textTheme.labelMedium),
-                      width: _leftW, align: Alignment.centerLeft),
-                  for (final p in game.players)
-                    cell(
-                      Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          _RankBadge(rank: ranks[p.id] ?? 0),
-                          Text(
-                            p.name.trim().isEmpty ? '—' : p.name.trim(),
-                            style: theme.textTheme.titleSmall,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
-                      ),
-                      width: _colW,
-                    ),
-                ],
-              ),
-              const Divider(),
-              for (var r = 0; r < game.rounds; r++)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 4),
-                  child: Row(
-                    children: [
-                      cell(Text('${r + 1}', style: theme.textTheme.bodyMedium),
-                          width: _leftW, align: Alignment.centerLeft),
-                      for (final p in game.players)
-                        cell(
-                            Text(formatGameScore(game.scoreAt(p, r)),
-                                style: theme.textTheme.bodyMedium),
-                            width: _colW),
-                    ],
-                  ),
-                ),
-              Container(
-                decoration: BoxDecoration(
-                  border: Border(top: BorderSide(color: theme.dividerColor)),
-                ),
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Row(
-                  children: [
-                    cell(Text(context.l10n.gameTotal,
-                        style: theme.textTheme.labelLarge),
-                        width: _leftW, align: Alignment.centerLeft),
-                    for (final p in game.players)
-                      cell(
-                          Text(formatGameScore(p.total),
-                              style: theme.textTheme.titleMedium
-                                  ?.copyWith(fontWeight: FontWeight.bold)),
-                          width: _colW),
-                  ],
-                ),
+              _RankBadge(rank: ranks[p.id] ?? 0),
+              Text(
+                p.name.trim().isEmpty ? '—' : p.name.trim(),
+                style: theme.textTheme.titleSmall,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
             ],
           ),
-        ),
-      ],
+          border: Border(bottom: divider),
+        );
+    Widget scorePlayer(GamePlayer p, int r, double colW) => playerCell(colW,
+        _roundH, Text(formatGameScore(game.scoreAt(p, r)), style: theme.textTheme.bodyMedium));
+    Widget totalsPlayer(GamePlayer p, double colW) => playerCell(
+          colW,
+          _totalsH,
+          Text(formatGameScore(p.total),
+              style: theme.textTheme.titleMedium
+                  ?.copyWith(fontWeight: FontWeight.bold)),
+          border: Border(top: divider),
+        );
+
+    final layout =
+        _ScoreLayout.forWidth(MediaQuery.of(context).size.width - 32,
+            game.players.length);
+
+    Widget table;
+    if (!layout.scroll) {
+      final colW = layout.colW;
+      table = Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            headerLeft,
+            for (final p in game.players) headerPlayer(p, colW),
+          ]),
+          for (var r = 0; r < rounds; r++)
+            Row(children: [
+              roundLeft(r),
+              for (final p in game.players) scorePlayer(p, r, colW),
+            ]),
+          Row(children: [
+            totalsLeft,
+            for (final p in game.players) totalsPlayer(p, colW),
+          ]),
+        ],
+      );
+    } else {
+      final colW = layout.colW;
+      table = Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              headerLeft,
+              for (var r = 0; r < rounds; r++) roundLeft(r),
+              totalsLeft,
+            ],
+          ),
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(children: [
+                    for (final p in game.players) headerPlayer(p, colW),
+                  ]),
+                  for (var r = 0; r < rounds; r++)
+                    Row(children: [
+                      for (final p in game.players) scorePlayer(p, r, colW),
+                    ]),
+                  Row(children: [
+                    for (final p in game.players) totalsPlayer(p, colW),
+                  ]),
+                ],
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+      children: [table],
     );
   }
 }

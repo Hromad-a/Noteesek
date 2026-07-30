@@ -594,5 +594,14 @@
   "gameRemovePlayer": "Remove player",
   "gameRemoveRound": "Remove round",
   "gameNoPlayers": "Add players to start scoring.",
-  "gameNoPlayersShort": "No players yet"
+  "gameNoPlayersShort": "No players yet",
+  "gameRemoveRoundConfirm": "Remove round {round} and its scores?",
+  "@gameRemoveRoundConfirm": {
+    "placeholders": { "round": { "type": "String" } }
+  },
+  "gameRemovePlayerConfirm": "Remove {name}?",
+  "@gameRemovePlayerConfirm": {
+    "placeholders": { "name": { "type": "String" } }
+  },
+  "gameRemovePlayerConfirmUnnamed": "Remove this player?"
 }

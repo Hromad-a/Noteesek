@@ -453,5 +453,8 @@
   "gameRemovePlayer": "Odebrat hráče",
   "gameRemoveRound": "Odebrat kolo",
   "gameNoPlayers": "Přidejte hráče a začněte počítat skóre.",
-  "gameNoPlayersShort": "Zatím žádní hráči"
+  "gameNoPlayersShort": "Zatím žádní hráči",
+  "gameRemoveRoundConfirm": "Odebrat kolo {round} a jeho skóre?",
+  "gameRemovePlayerConfirm": "Odebrat {name}?",
+  "gameRemovePlayerConfirmUnnamed": "Odebrat tohoto hráče?"
 }
