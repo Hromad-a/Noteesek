@@ -160,8 +160,13 @@ class _GameBoardState extends State<GameBoard> {
 
   void _addRound() {
     setState(() {
+      // Index the new round will occupy. A score controller may linger here from
+      // a previously-removed round (they're not disposed on removal), so clear
+      // its text — otherwise the fresh, zero-valued round shows the old number.
+      final newRound = _game.rounds;
       for (final p in _game.players) {
         p.scores = [...p.scores, 0.0];
+        _scoreCtrls['${p.id}:$newRound']?.text = '';
       }
     });
     _persist();
