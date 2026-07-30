@@ -430,5 +430,16 @@
   "unlockNoteesek": "Odemknout Noteesek",
   "forgotPasswordEmailPrompt": "Zadejte e-mail svého účtu a pošleme vám odkaz pro obnovení.",
   "sessionExpiredTitle": "Odhlášeno",
-  "sessionExpiredBody": "Byli jste odhlášeni, obvykle proto, že se změnilo vaše heslo. Přihlaste se prosím znovu."
+  "sessionExpiredBody": "Byli jste odhlášeni, obvykle proto, že se změnilo vaše heslo. Přihlaste se prosím znovu.",
+  "activityTitle": "Aktivita",
+  "activityInboxTab": "Nové",
+  "markAllRead": "Označit vše jako přečtené",
+  "activityEmptyInbox": "Žádná nová aktivita",
+  "activityEmptyArchive": "Nic v archivu",
+  "activityActionCreated": "Vytvořeno",
+  "activityActionEdited": "Upraveno",
+  "activityActionDeleted": "Smazáno",
+  "activityUntitledNote": "Poznámka bez názvu",
+  "activityUnknownMember": "Člen",
+  "activityNoteUnavailable": "Tato poznámka už není dostupná"
 }
