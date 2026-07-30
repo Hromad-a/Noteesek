@@ -570,6 +570,8 @@
   "enterYourEmail": "Enter your email",
   "unlockNoteesek": "Unlock Noteesek",
   "forgotPasswordEmailPrompt": "Enter your account email and we'll send a reset link.",
+  "sessionExpiredTitle": "Signed out",
+  "sessionExpiredBody": "You've been signed out, usually because your password was changed. Please sign in again.",
   "activityTitle": "Activity",
   "activityInboxTab": "New",
   "markAllRead": "Mark all read",

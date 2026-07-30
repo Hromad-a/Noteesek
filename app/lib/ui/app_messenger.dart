@@ -5,6 +5,11 @@ import 'package:flutter/material.dart';
 /// needing a BuildContext.
 final scaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
 
+/// App-wide [Navigator] key, wired into the root [MaterialApp]. Lets app-level
+/// flows (e.g. the "you've been signed out" prompt) show a dialog / push a route
+/// without threading a BuildContext down from a specific screen.
+final appNavigatorKey = GlobalKey<NavigatorState>();
+
 /// Shows [message] as a SnackBar, replacing any current one so transient
 /// failures (e.g. a burst of failed writes while offline) don't stack up.
 ///
