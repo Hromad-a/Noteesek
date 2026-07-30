@@ -331,19 +331,16 @@ class _GameBoardState extends State<GameBoard> {
           Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Remove (X) sits on top, then the rank badge, then the name —
-              // stacked so the rank isn't crowded against the remove button.
-              Align(
-                alignment: Alignment.centerRight,
-                child: IconButton(
-                  visualDensity: VisualDensity.compact,
-                  padding: EdgeInsets.zero,
-                  constraints:
-                      const BoxConstraints(minWidth: 28, minHeight: 28),
-                  icon: const Icon(Icons.close, size: 16),
-                  tooltip: context.l10n.gameRemovePlayer,
-                  onPressed: () => _confirmRemovePlayer(p),
-                ),
+              // Remove (X) on top, then the rank badge, then the name — all
+              // centered in the column.
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints:
+                    const BoxConstraints(minWidth: 28, minHeight: 28),
+                icon: const Icon(Icons.close, size: 16),
+                tooltip: context.l10n.gameRemovePlayer,
+                onPressed: () => _confirmRemovePlayer(p),
               ),
               _RankBadge(rank: ranks[p.id] ?? 0),
               const SizedBox(height: 2),
@@ -387,16 +384,20 @@ class _GameBoardState extends State<GameBoard> {
             ),
             decoration: InputDecoration(
               isDense: true,
-              // The row leader gets a subtle tint — tertiary, not primary, so it
-              // isn't mistaken for the focused/selected field's outline.
+              // The row leader's outline is only a hair warmer than a normal
+              // cell (a ~20% nudge toward tertiary) — enough to spot, not enough
+              // to look like the focused field's outline.
               filled: isBest,
               fillColor: isBest
-                  ? scheme.tertiary.withValues(alpha: 0.06)
+                  ? scheme.tertiary.withValues(alpha: 0.04)
                   : null,
               border: const OutlineInputBorder(),
               enabledBorder: OutlineInputBorder(
                 borderSide: isBest
-                    ? BorderSide(color: scheme.tertiary, width: 1.2)
+                    ? BorderSide(
+                        color: Color.lerp(
+                            scheme.outlineVariant, scheme.tertiary, 0.2)!,
+                        width: 1.2)
                     : BorderSide(color: scheme.outlineVariant),
               ),
               contentPadding:
@@ -699,9 +700,12 @@ class _ReadOnlyBoard extends StatelessWidget {
             alignment: Alignment.center,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(4),
-              color: isBest ? scheme.tertiary.withValues(alpha: 0.06) : null,
+              color: isBest ? scheme.tertiary.withValues(alpha: 0.04) : null,
               border: Border.all(
-                color: isBest ? scheme.tertiary : scheme.outlineVariant,
+                color: isBest
+                    ? Color.lerp(
+                        scheme.outlineVariant, scheme.tertiary, 0.2)!
+                    : scheme.outlineVariant,
                 width: isBest ? 1.2 : 1,
               ),
             ),
