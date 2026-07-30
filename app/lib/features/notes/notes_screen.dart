@@ -753,82 +753,162 @@ class _BottomBar extends ConsumerWidget {
             ),
           ),
           const SizedBox(width: 8),
-          // Main create button: tapping it opens a small menu to pick the note
-          // type (text / checklist / game).
-          Opacity(
-            opacity: blocked ? 0.4 : 1,
-            child: Builder(
-              builder: (btnContext) => IconButton.filled(
-                tooltip: blocked
-                    ? context.l10n.offlineSharedNotebook
-                    : context.l10n.newNote,
-                onPressed:
-                    blocked ? offlineSnack : () => _showCreateMenu(btnContext),
-                icon: const Icon(Icons.add),
-              ),
-            ),
+          // Main create button: tapping it expands a Keep-style set of labelled
+          // pills (above the button) to pick the note type.
+          _CreateMenuButton(
+            blocked: blocked,
+            onBlockedTap: offlineSnack,
+            onText: onText,
+            onChecklist: onChecklist,
+            onGame: onGame,
           ),
         ],
       ),
     );
   }
+}
 
-  /// Opens the note-type menu just above the main create button. Anchored to the
-  /// button's box so it pops from the right spot regardless of screen size.
-  Future<void> _showCreateMenu(BuildContext btnContext) async {
+/// The create button + its Keep-style speed-dial. Tapping expands labelled pill
+/// buttons stacked above the button (Text / Checklist / Game), morphs the button
+/// to an ✕, and dims the rest of the screen; tapping the scrim or the ✕ closes.
+class _CreateMenuButton extends StatefulWidget {
+  const _CreateMenuButton({
+    required this.blocked,
+    required this.onBlockedTap,
+    required this.onText,
+    required this.onChecklist,
+    required this.onGame,
+  });
+
+  final bool blocked;
+  final VoidCallback onBlockedTap;
+  final VoidCallback onText;
+  final VoidCallback onChecklist;
+  final VoidCallback onGame;
+
+  @override
+  State<_CreateMenuButton> createState() => _CreateMenuButtonState();
+}
+
+class _CreateMenuButtonState extends State<_CreateMenuButton> {
+  final LayerLink _link = LayerLink();
+  OverlayEntry? _entry;
+
+  bool get _isOpen => _entry != null;
+
+  @override
+  void dispose() {
+    _entry?.remove();
+    _entry = null;
+    super.dispose();
+  }
+
+  void _toggle() {
+    if (widget.blocked) {
+      widget.onBlockedTap();
+      return;
+    }
+    if (_isOpen) {
+      _close();
+    } else {
+      _open();
+    }
+  }
+
+  void _open() {
     HapticFeedback.selectionClick();
-    final box = btnContext.findRenderObject() as RenderBox;
-    final overlay =
-        Overlay.of(btnContext).context.findRenderObject() as RenderBox;
-    final topLeft = box.localToGlobal(Offset.zero, ancestor: overlay);
-    final position = RelativeRect.fromLTRB(
-      topLeft.dx,
-      topLeft.dy,
-      overlay.size.width - topLeft.dx - box.size.width,
-      overlay.size.height - topLeft.dy,
-    );
-    final l10n = btnContext.l10n;
-    final selected = await showMenu<String>(
-      context: btnContext,
-      position: position,
-      items: [
-        PopupMenuItem(
-          value: 'text',
-          child: ListTile(
-            dense: true,
-            contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.edit),
-            title: Text(l10n.newNote),
+    _entry = OverlayEntry(builder: _buildOverlay);
+    Overlay.of(context).insert(_entry!);
+    setState(() {});
+  }
+
+  void _close() {
+    _entry?.remove();
+    _entry = null;
+    if (mounted) setState(() {});
+  }
+
+  void _pick(VoidCallback action) {
+    _close();
+    action();
+  }
+
+  Widget _buildOverlay(BuildContext context) {
+    final l10n = context.l10n;
+    return Stack(
+      children: [
+        // Scrim: dims the screen and closes the menu when tapped.
+        Positioned.fill(
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: _close,
+            child: ColoredBox(color: Colors.black.withValues(alpha: 0.35)),
           ),
         ),
-        PopupMenuItem(
-          value: 'checklist',
-          child: ListTile(
-            dense: true,
-            contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.checklist),
-            title: Text(l10n.newChecklist),
-          ),
-        ),
-        PopupMenuItem(
-          value: 'game',
-          child: ListTile(
-            dense: true,
-            contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.scoreboard_outlined),
-            title: Text(l10n.newGame),
+        // Pills anchored to sit just above the button, right edges aligned.
+        CompositedTransformFollower(
+          link: _link,
+          targetAnchor: Alignment.topRight,
+          followerAnchor: Alignment.bottomRight,
+          offset: const Offset(0, -12),
+          child: TweenAnimationBuilder<double>(
+            duration: const Duration(milliseconds: 160),
+            curve: Curves.easeOutBack,
+            tween: Tween(begin: 0, end: 1),
+            builder: (context, t, child) => Opacity(
+              opacity: t.clamp(0.0, 1.0),
+              child: Transform.translate(
+                offset: Offset(0, (1 - t) * 12),
+                child: child,
+              ),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              // Nearest the button (bottom) first: Text, then Checklist, Game.
+              children: [
+                _pill(Icons.scoreboard_outlined, l10n.newGame,
+                    () => _pick(widget.onGame)),
+                const SizedBox(height: 10),
+                _pill(Icons.checklist, l10n.newChecklist,
+                    () => _pick(widget.onChecklist)),
+                const SizedBox(height: 10),
+                _pill(Icons.edit, l10n.newNote, () => _pick(widget.onText)),
+              ],
+            ),
           ),
         ),
       ],
     );
-    switch (selected) {
-      case 'text':
-        onText();
-      case 'checklist':
-        onChecklist();
-      case 'game':
-        onGame();
-    }
+  }
+
+  Widget _pill(IconData icon, String label, VoidCallback onTap) {
+    return FilledButton.tonalIcon(
+      onPressed: onTap,
+      icon: Icon(icon, size: 20),
+      label: Text(label),
+      style: FilledButton.styleFrom(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+        shape: const StadiumBorder(),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Opacity(
+      opacity: widget.blocked ? 0.4 : 1,
+      child: CompositedTransformTarget(
+        link: _link,
+        child: IconButton.filled(
+          tooltip: widget.blocked
+              ? context.l10n.offlineSharedNotebook
+              : context.l10n.newNote,
+          onPressed: _toggle,
+          icon: Icon(_isOpen ? Icons.close : Icons.add),
+        ),
+      ),
+    );
   }
 }
 

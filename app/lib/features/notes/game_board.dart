@@ -352,6 +352,11 @@ class _GameBoardState extends State<GameBoard> {
                   isDense: true,
                   border: InputBorder.none,
                   hintText: context.l10n.gamePlayerHint,
+                  // Faded so an unnamed player clearly still needs filling in.
+                  hintStyle: theme.textTheme.titleSmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant
+                        .withValues(alpha: 0.4),
+                  ),
                 ),
                 onChanged: (v) => _onNameChanged(p, v),
               ),
@@ -396,7 +401,7 @@ class _GameBoardState extends State<GameBoard> {
                 borderSide: isBest
                     ? BorderSide(
                         color: Color.lerp(
-                            scheme.outlineVariant, scheme.tertiary, 0.2)!,
+                            scheme.outlineVariant, scheme.tertiary, 0.3)!,
                         width: 1.2)
                     : BorderSide(color: scheme.outlineVariant),
               ),
@@ -704,7 +709,7 @@ class _ReadOnlyBoard extends StatelessWidget {
               border: Border.all(
                 color: isBest
                     ? Color.lerp(
-                        scheme.outlineVariant, scheme.tertiary, 0.2)!
+                        scheme.outlineVariant, scheme.tertiary, 0.3)!
                     : scheme.outlineVariant,
                 width: isBest ? 1.2 : 1,
               ),
