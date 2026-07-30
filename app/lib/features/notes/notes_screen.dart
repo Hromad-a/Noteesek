@@ -753,38 +753,18 @@ class _BottomBar extends ConsumerWidget {
             ),
           ),
           const SizedBox(width: 8),
-          // Main create button: tap = new text note; hold = pick a note type
-          // (text / checklist / game). The little up-caret hints the menu.
+          // Main create button: tapping it opens a small menu to pick the note
+          // type (text / checklist / game).
           Opacity(
             opacity: blocked ? 0.4 : 1,
             child: Builder(
-              builder: (btnContext) => GestureDetector(
-                onLongPress:
+              builder: (btnContext) => IconButton.filled(
+                tooltip: blocked
+                    ? context.l10n.offlineSharedNotebook
+                    : context.l10n.newNote,
+                onPressed:
                     blocked ? offlineSnack : () => _showCreateMenu(btnContext),
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    IconButton.filled(
-                      tooltip: blocked
-                          ? context.l10n.offlineSharedNotebook
-                          : context.l10n.newNote,
-                      onPressed: blocked ? offlineSnack : onText,
-                      icon: const Icon(Icons.edit),
-                    ),
-                    Positioned(
-                      top: 1,
-                      left: 0,
-                      right: 0,
-                      child: IgnorePointer(
-                        child: Icon(
-                          Icons.arrow_drop_up,
-                          size: 16,
-                          color: Theme.of(context).colorScheme.onPrimary,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+                icon: const Icon(Icons.add),
               ),
             ),
           ),
