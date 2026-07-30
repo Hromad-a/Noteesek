@@ -62,4 +62,10 @@ class AppConfig {
 
   /// Whether the one-time first-run intro has been shown (mobile).
   static const String kSeenOnboarding = 'seen_onboarding';
+
+  /// Set when a valid session is rejected by the server (a 401 while we still
+  /// held a locally-valid token — i.e. the password was changed elsewhere or
+  /// "sign out everywhere" was used). Persisted so the "you've been signed out"
+  /// prompt still appears on the next cold launch; cleared once acknowledged.
+  static const String kSessionInvalidated = 'session_invalidated';
 }

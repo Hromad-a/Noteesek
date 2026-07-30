@@ -83,22 +83,33 @@ final pocketBaseProvider = Provider<PocketBase>((ref) {
 
   // Globally detect an invalidated session: any API response of 401 means the
   // stored token is no longer accepted by this server (expired, or issued by a
-  // different server). Clear auth so the web app falls back to the login gate
-  // instead of silently showing an empty, unsyncable notes screen.
+  // different server, or the account's password was changed). Clear auth so the
+  // web app falls back to the login gate instead of silently showing an empty,
+  // unsyncable notes screen, and flag it so the app can explain why (a rejected
+  // token we *were* holding means the session was invalidated, not that the user
+  // simply never logged in).
   return PocketBase(
     baseUrl,
     authStore: authStore,
-    httpClientFactory: () => _AuthGuardClient(http.Client(), authStore),
+    httpClientFactory: () => _AuthGuardClient(
+      http.Client(),
+      authStore,
+      onInvalidated: () =>
+          ref.read(sessionInvalidatedProvider.notifier).markInvalidated(),
+    ),
   );
 });
 
 /// Wraps an [http.Client], clearing [_authStore] on any 401 response so an
-/// invalid/stale token can't strand the user on a dead session.
+/// invalid/stale token can't strand the user on a dead session. When it clears
+/// a token we were actually holding, [onInvalidated] fires so the UI can prompt
+/// the user to sign in again.
 class _AuthGuardClient extends http.BaseClient {
-  _AuthGuardClient(this._inner, this._authStore);
+  _AuthGuardClient(this._inner, this._authStore, {this.onInvalidated});
 
   final http.Client _inner;
   final AuthStore _authStore;
+  final void Function()? onInvalidated;
 
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) async {
@@ -108,12 +119,45 @@ class _AuthGuardClient extends http.BaseClient {
     // is 400, but guard against unauthenticated calls regardless).
     if (resp.statusCode == 401 && _authStore.isValid) {
       _authStore.clear();
+      onInvalidated?.call();
     }
     return resp;
   }
 
   @override
   void close() => _inner.close();
+}
+
+/// Whether the session was invalidated server-side (a 401 rejected a token we
+/// held — typically the password was changed on another device, or "sign out
+/// everywhere" was used). Drives the one-time "you've been signed out" prompt.
+/// Backed by SharedPreferences so it survives a cold launch until acknowledged.
+final sessionInvalidatedProvider =
+    NotifierProvider<SessionInvalidatedNotifier, bool>(
+        SessionInvalidatedNotifier.new);
+
+class SessionInvalidatedNotifier extends Notifier<bool> {
+  @override
+  bool build() =>
+      ref.watch(sharedPreferencesProvider).getBool(
+            AppConfig.kSessionInvalidated,
+          ) ??
+      false;
+
+  /// Mark the current session as invalidated (persist + notify).
+  void markInvalidated() {
+    ref
+        .read(sharedPreferencesProvider)
+        .setBool(AppConfig.kSessionInvalidated, true);
+    state = true;
+  }
+
+  /// Acknowledge the prompt (e.g. the user tapped "Sign in"): clear the flag so
+  /// it doesn't reappear on the next launch.
+  void acknowledge() {
+    ref.read(sharedPreferencesProvider).remove(AppConfig.kSessionInvalidated);
+    state = false;
+  }
 }
 
 /// Emits on every auth change (login/logout/token refresh). The widget tree

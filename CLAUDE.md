@@ -113,7 +113,13 @@ search (title/body/checklist) · **note colors** (curated themed palette,
 `ManageLabelsScreen`) · **notebooks** (optional, at-most-one-per-note
 collections; "All notes" / "No notebook" / per-notebook scopes via the grid
 bottom-bar selector, manage on `ManageNotebooksScreen`) ·
-**account settings** (change password / server URL / sign out) · **Markdown
+**account settings** (change password / server URL / sign out) ·
+**long-lived sessions** (users auth-token TTL extended to 1 year via migration
+`1700000026`, so time never signs you out; only a password change / "sign out
+everywhere" — both rotate the tokenKey — ends a session. The client probes with
+`authRefresh` on launch, and the auth-guard http client flags a rejected-token
+401 so `app.dart` shows a one-time "you've been signed out" prompt
+(`sessionInvalidatedProvider`)) · **Markdown
 export** (bulk: all active+archived notes → one zip of `notes/*.md` +
 `attachments/*`, share sheet on mobile / download on web) · **single-note
 share/export** (Markdown / plain text / PDF, from the editor overflow) ·
