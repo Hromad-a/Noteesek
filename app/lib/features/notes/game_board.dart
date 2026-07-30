@@ -47,7 +47,7 @@ class GameBoard extends StatefulWidget {
 /// are fixed so the frozen left column and the scrolling player columns line up.
 const double _leftW = 56;
 const double _minColW = 64;
-const double _headerH = 86;
+const double _headerH = 98;
 const double _roundH = 54;
 const double _totalsH = 48;
 
@@ -331,21 +331,22 @@ class _GameBoardState extends State<GameBoard> {
           Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  _RankBadge(rank: ranks[p.id] ?? 0),
-                  IconButton(
-                    visualDensity: VisualDensity.compact,
-                    padding: EdgeInsets.zero,
-                    constraints:
-                        const BoxConstraints(minWidth: 32, minHeight: 32),
-                    icon: const Icon(Icons.close, size: 16),
-                    tooltip: context.l10n.gameRemovePlayer,
-                    onPressed: () => _confirmRemovePlayer(p),
-                  ),
-                ],
+              // Remove (X) sits on top, then the rank badge, then the name —
+              // stacked so the rank isn't crowded against the remove button.
+              Align(
+                alignment: Alignment.centerRight,
+                child: IconButton(
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints:
+                      const BoxConstraints(minWidth: 28, minHeight: 28),
+                  icon: const Icon(Icons.close, size: 16),
+                  tooltip: context.l10n.gameRemovePlayer,
+                  onPressed: () => _confirmRemovePlayer(p),
+                ),
               ),
+              _RankBadge(rank: ranks[p.id] ?? 0),
+              const SizedBox(height: 2),
               TextField(
                 controller: _nameCtrl(p),
                 textAlign: TextAlign.center,
@@ -386,15 +387,16 @@ class _GameBoardState extends State<GameBoard> {
             ),
             decoration: InputDecoration(
               isDense: true,
-              // The row leader gets a slight tint on its outline + fill.
+              // The row leader gets a subtle tint — tertiary, not primary, so it
+              // isn't mistaken for the focused/selected field's outline.
               filled: isBest,
               fillColor: isBest
-                  ? scheme.primary.withValues(alpha: 0.07)
+                  ? scheme.tertiary.withValues(alpha: 0.06)
                   : null,
               border: const OutlineInputBorder(),
               enabledBorder: OutlineInputBorder(
                 borderSide: isBest
-                    ? BorderSide(color: scheme.primary, width: 1.6)
+                    ? BorderSide(color: scheme.tertiary, width: 1.2)
                     : BorderSide(color: scheme.outlineVariant),
               ),
               contentPadding:
@@ -485,28 +487,34 @@ class _GameBoardState extends State<GameBoard> {
       );
     }
 
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-      children: [
-        table,
-        const SizedBox(height: 16),
-        Wrap(
-          spacing: 12,
-          runSpacing: 8,
-          children: [
-            OutlinedButton.icon(
-              icon: const Icon(Icons.person_add_alt_1),
-              label: Text(context.l10n.gameAddPlayer),
-              onPressed: _addPlayer,
-            ),
-            FilledButton.tonalIcon(
-              icon: const Icon(Icons.add),
-              label: Text(context.l10n.gameAddRound),
-              onPressed: _addRound,
-            ),
-          ],
-        ),
-      ],
+    // Tapping empty space (anywhere not a field/button) drops focus out of the
+    // score/name field being edited and dismisses the keyboard.
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onTap: () => FocusScope.of(context).unfocus(),
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+        children: [
+          table,
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 12,
+            runSpacing: 8,
+            children: [
+              OutlinedButton.icon(
+                icon: const Icon(Icons.person_add_alt_1),
+                label: Text(context.l10n.gameAddPlayer),
+                onPressed: _addPlayer,
+              ),
+              FilledButton.tonalIcon(
+                icon: const Icon(Icons.add),
+                label: Text(context.l10n.gameAddRound),
+                onPressed: _addRound,
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
@@ -691,10 +699,10 @@ class _ReadOnlyBoard extends StatelessWidget {
             alignment: Alignment.center,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(4),
-              color: isBest ? scheme.primary.withValues(alpha: 0.07) : null,
+              color: isBest ? scheme.tertiary.withValues(alpha: 0.06) : null,
               border: Border.all(
-                color: isBest ? scheme.primary : scheme.outlineVariant,
-                width: isBest ? 1.6 : 1,
+                color: isBest ? scheme.tertiary : scheme.outlineVariant,
+                width: isBest ? 1.2 : 1,
               ),
             ),
             child: Text(
