@@ -236,6 +236,21 @@ class _GameBoardState extends State<GameBoard> {
     setState(() {}); // refresh totals + rank badges
   }
 
+  /// The highest score in round [r], or null when no cell should be marked as
+  /// the row leader — fewer than 2 players, or every value is equal (e.g. an
+  /// untouched all-zero round). Cells equal to this value get the leader tint.
+  double? _bestInRound(int r) {
+    if (_game.players.length < 2) return null;
+    double? maxV, minV;
+    for (final p in _game.players) {
+      final v = _game.scoreAt(p, r);
+      maxV = (maxV == null || v > maxV) ? v : maxV;
+      minV = (minV == null || v < minV) ? v : minV;
+    }
+    if (maxV == null || maxV == minV) return null;
+    return maxV;
+  }
+
   @override
   Widget build(BuildContext context) {
     if (widget.readOnly) return _ReadOnlyBoard(body: widget.body);
@@ -347,30 +362,54 @@ class _GameBoardState extends State<GameBoard> {
           border: Border(bottom: divider),
         );
 
-    Widget scorePlayer(GamePlayer p, int r, double colW) => playerCell(
-          colW,
-          _roundH,
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: TextField(
-              controller: _scoreCtrl(p, r),
-              textAlign: TextAlign.center,
-              keyboardType: const TextInputType.numberWithOptions(
-                  signed: true, decimal: true),
-              inputFormatters: [
-                FilteringTextInputFormatter.allow(RegExp(r'[0-9.,\-]')),
-              ],
-              decoration: const InputDecoration(
-                isDense: true,
-                border: OutlineInputBorder(),
-                contentPadding:
-                    EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-                hintText: '0',
-              ),
-              onChanged: (v) => _onScoreChanged(p, r, v),
+    Widget scorePlayer(GamePlayer p, int r, double colW) {
+      final best = _bestInRound(r);
+      final isBest = best != null && _game.scoreAt(p, r) == best;
+      final scheme = theme.colorScheme;
+      return playerCell(
+        colW,
+        _roundH,
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: TextField(
+            controller: _scoreCtrl(p, r),
+            textAlign: TextAlign.center,
+            keyboardType: const TextInputType.numberWithOptions(
+                signed: true, decimal: true),
+            inputFormatters: [
+              FilteringTextInputFormatter.allow(RegExp(r'[0-9.,\-]')),
+            ],
+            // Entered values read stronger; the "0" placeholder is faded.
+            style: theme.textTheme.bodyLarge?.copyWith(
+              fontWeight: FontWeight.w600,
+              color: scheme.onSurface,
             ),
+            decoration: InputDecoration(
+              isDense: true,
+              // The row leader gets a slight tint on its outline + fill.
+              filled: isBest,
+              fillColor: isBest
+                  ? scheme.primary.withValues(alpha: 0.07)
+                  : null,
+              border: const OutlineInputBorder(),
+              enabledBorder: OutlineInputBorder(
+                borderSide: isBest
+                    ? BorderSide(color: scheme.primary, width: 1.6)
+                    : BorderSide(color: scheme.outlineVariant),
+              ),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+              hintText: '0',
+              hintStyle: TextStyle(
+                color: scheme.onSurfaceVariant.withValues(alpha: 0.35),
+                fontWeight: FontWeight.w400,
+              ),
+            ),
+            onChanged: (v) => _onScoreChanged(p, r, v),
           ),
-        );
+        ),
+      );
+    }
 
     Widget totalsPlayer(GamePlayer p, double colW) => playerCell(
           colW,
@@ -561,6 +600,21 @@ class _ReadOnlyBoard extends StatelessWidget {
     final rounds = game.rounds;
     final ranks = game.ranksByTotal();
     final divider = BorderSide(color: theme.dividerColor);
+    final scheme = theme.colorScheme;
+
+    // Highest value in a round, or null when nothing should be marked (see the
+    // editor's _bestInRound).
+    double? bestInRound(int r) {
+      if (game.players.length < 2) return null;
+      double? maxV, minV;
+      for (final p in game.players) {
+        final v = game.scoreAt(p, r);
+        maxV = (maxV == null || v > maxV) ? v : maxV;
+        minV = (minV == null || v < minV) ? v : minV;
+      }
+      if (maxV == null || maxV == minV) return null;
+      return maxV;
+    }
 
     Widget leftCell(double height, Widget child, {BoxBorder? border}) =>
         Container(
@@ -623,8 +677,39 @@ class _ReadOnlyBoard extends StatelessWidget {
           ),
           border: Border(bottom: divider),
         );
-    Widget scorePlayer(GamePlayer p, int r, double colW) => playerCell(colW,
-        _roundH, Text(formatGameScore(game.scoreAt(p, r)), style: theme.textTheme.bodyMedium));
+    Widget scorePlayer(GamePlayer p, int r, double colW) {
+      final v = game.scoreAt(p, r);
+      final best = bestInRound(r);
+      final isBest = best != null && v == best;
+      final isZero = v == 0;
+      return playerCell(
+        colW,
+        _roundH,
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+          child: Container(
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(4),
+              color: isBest ? scheme.primary.withValues(alpha: 0.07) : null,
+              border: Border.all(
+                color: isBest ? scheme.primary : scheme.outlineVariant,
+                width: isBest ? 1.6 : 1,
+              ),
+            ),
+            child: Text(
+              formatGameScore(v),
+              style: theme.textTheme.bodyLarge?.copyWith(
+                fontWeight: isZero ? FontWeight.w400 : FontWeight.w600,
+                color: isZero
+                    ? scheme.onSurfaceVariant.withValues(alpha: 0.35)
+                    : scheme.onSurface,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
     Widget totalsPlayer(GamePlayer p, double colW) => playerCell(
           colW,
           _totalsH,
