@@ -9,6 +9,7 @@ import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 
 import '../../data/local/database.dart';
 import '../../data/notes_repository.dart';
+import '../../data/version_check.dart';
 import '../../l10n/l10n.dart';
 import '../../providers.dart';
 import '../../sync/sync_controller.dart';
@@ -221,6 +222,7 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
         body: SafeArea(
         child: Column(
           children: [
+            const _VersionMismatchBanner(),
             const Padding(
               padding: EdgeInsets.fromLTRB(12, 8, 12, 4),
               child: _SearchField(),
@@ -317,6 +319,62 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
           onText: () => _create(context, ref, 'text'),
           onChecklist: () => _create(context, ref, 'checklist'),
           onGame: () => _create(context, ref, 'game'),
+        ),
+      ),
+    );
+  }
+}
+
+/// Dismissed-for-this-session flag for the version-mismatch banner. Not
+/// persisted, so it reappears on the next launch until the versions match.
+class _VersionBannerDismiss extends Notifier<bool> {
+  @override
+  bool build() => false;
+  void dismiss() => state = true;
+}
+
+final _versionBannerDismissedProvider =
+    NotifierProvider<_VersionBannerDismiss, bool>(_VersionBannerDismiss.new);
+
+/// A dismissible banner shown when this app and the connected server are on
+/// different versions — the usual cause of features (e.g. game notes) not
+/// syncing. Mobile-only: on web the app is served by the server, so the two can
+/// never disagree ([VersionStatus.mismatch] is always false there).
+class _VersionMismatchBanner extends ConsumerWidget {
+  const _VersionMismatchBanner();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final status = ref.watch(versionStatusProvider).value;
+    final dismissed = ref.watch(_versionBannerDismissedProvider);
+    if (status == null || !status.mismatch || dismissed) {
+      return const SizedBox.shrink();
+    }
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: scheme.errorContainer,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+        child: Row(
+          children: [
+            Icon(Icons.warning_amber_rounded,
+                color: scheme.onErrorContainer, size: 20),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                context.l10n.versionMismatchAbout(
+                    status.appVersion ?? '?', status.serverVersion ?? '?'),
+                style: TextStyle(color: scheme.onErrorContainer, fontSize: 13),
+              ),
+            ),
+            IconButton(
+              tooltip: context.l10n.gotIt,
+              icon: Icon(Icons.close, size: 18, color: scheme.onErrorContainer),
+              onPressed: () => ref
+                  .read(_versionBannerDismissedProvider.notifier)
+                  .dismiss(),
+            ),
+          ],
         ),
       ),
     );
