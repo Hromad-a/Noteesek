@@ -107,6 +107,7 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
       SyncOutcome.unreachable => l10n.snackServerNotResponding,
       SyncOutcome.failed =>
         ref.read(syncControllerProvider).message ?? l10n.snackSyncFailed,
+      SyncOutcome.versionMismatch => l10n.snackSyncVersionMismatch,
     };
     // Route through the app messenger (atomic clear+show) so it never piles up
     // with or gets stuck behind another snackbar (e.g. an undo).
@@ -143,6 +144,10 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
     final sync = kIsWeb ? null : ref.watch(syncControllerProvider);
     final hasPending =
         kIsWeb ? false : ref.watch(hasPendingChangesProvider).value ?? false;
+    // Sync is blocked while the app/server versions differ; the cloud button
+    // shows a warning variant instead of the usual state.
+    final versionMismatch =
+        ref.watch(versionStatusProvider).value?.mismatch ?? false;
     final selectionMode = ref.watch(selectionModeProvider);
     final viewMode = ref.watch(noteViewModeProvider);
     final sort = ref.watch(noteSortProvider);
@@ -197,6 +202,24 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
                 tooltip: context.l10n.syncConnectToSync,
                 icon: const Icon(Icons.cloud_off_outlined),
                 onPressed: null,
+              )
+            else if (versionMismatch)
+              IconButton(
+                tooltip: context.l10n.versionsDiffer,
+                icon: Stack(
+                  clipBehavior: Clip.none,
+                  alignment: Alignment.center,
+                  children: [
+                    Icon(Icons.cloud_outlined,
+                        color: Colors.orange.shade700),
+                    Positioned(
+                      top: 8,
+                      child: Icon(Icons.priority_high,
+                          size: 10, color: Colors.orange.shade700),
+                    ),
+                  ],
+                ),
+                onPressed: () => _manualSync(context, ref),
               )
             else if (!sync.reachable)
               IconButton(
@@ -320,6 +343,7 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
           onText: () => _create(context, ref, 'text'),
           onChecklist: () => _create(context, ref, 'checklist'),
           onGame: () => _create(context, ref, 'game'),
+          onFarkle: () => _create(context, ref, 'farkle'),
         ),
       ),
     );
@@ -769,11 +793,13 @@ class _BottomBar extends ConsumerWidget {
   const _BottomBar(
       {required this.onText,
       required this.onChecklist,
-      required this.onGame});
+      required this.onGame,
+      required this.onFarkle});
 
   final VoidCallback onText;
   final VoidCallback onChecklist;
   final VoidCallback onGame;
+  final VoidCallback onFarkle;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -823,6 +849,7 @@ class _BottomBar extends ConsumerWidget {
             onText: onText,
             onChecklist: onChecklist,
             onGame: onGame,
+            onFarkle: onFarkle,
           ),
         ],
       ),
@@ -840,6 +867,7 @@ class _CreateMenuButton extends StatefulWidget {
     required this.onText,
     required this.onChecklist,
     required this.onGame,
+    required this.onFarkle,
   });
 
   final bool blocked;
@@ -847,6 +875,7 @@ class _CreateMenuButton extends StatefulWidget {
   final VoidCallback onText;
   final VoidCallback onChecklist;
   final VoidCallback onGame;
+  final VoidCallback onFarkle;
 
   @override
   State<_CreateMenuButton> createState() => _CreateMenuButtonState();
@@ -927,8 +956,11 @@ class _CreateMenuButtonState extends State<_CreateMenuButton> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.end,
-              // Nearest the button (bottom) first: Text, then Checklist, Game.
+              // Nearest the button (bottom) first: Text, Checklist, Game, Farkle.
               children: [
+                _pill(Icons.casino, l10n.newFarkle,
+                    () => _pick(widget.onFarkle)),
+                const SizedBox(height: 10),
                 _pill(Icons.scoreboard_outlined, l10n.newGame,
                     () => _pick(widget.onGame)),
                 const SizedBox(height: 10),
@@ -1622,6 +1654,11 @@ class _FilterSheet extends ConsumerWidget {
                   label: Text(context.l10n.typeGame),
                   selected: filters.type == 'game',
                   onSelected: (s) => notifier.setType(s ? 'game' : null),
+                ),
+                ChoiceChip(
+                  label: Text(context.l10n.typeFarkle),
+                  selected: filters.type == 'farkle',
+                  onSelected: (s) => notifier.setType(s ? 'farkle' : null),
                 ),
               ],
             ),

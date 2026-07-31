@@ -6,6 +6,7 @@ import 'package:markdown_widget/markdown_widget.dart';
 
 import '../../data/local/database.dart';
 import '../../data/notes_repository.dart';
+import 'farkle_model.dart';
 import 'game_model.dart';
 import 'note_background.dart';
 import 'note_colors.dart';
@@ -112,6 +113,8 @@ class _NoteCardState extends ConsumerState<NoteCard> {
                     _ChecklistPreview(noteId: note.id)
                   else if (note.type == 'game')
                     _GamePreview(note: note)
+                  else if (note.type == 'farkle')
+                    _FarklePreview(note: note)
                   else if (note.body.trim().isNotEmpty)
                     (markdownOn
                         ? ClipRect(
@@ -149,21 +152,37 @@ class _NoteCardState extends ConsumerState<NoteCard> {
       ),
     );
 
-    // Overlay a checkmark badge in the corner when this card is selected.
-    final card = selected
+    // A small type badge in the bottom-right corner for game/farkle notes so
+    // their kind reads at a glance (text/checklist stay unmarked).
+    final IconData? typeIcon = switch (note.type) {
+      'game' => Icons.scoreboard_outlined,
+      'farkle' => Icons.casino,
+      _ => null,
+    };
+
+    // Overlay a checkmark badge in the corner when selected, plus the type badge.
+    final card = (selected || typeIcon != null)
         ? Stack(
             children: [
               cardContent,
-              Positioned(
-                top: 6,
-                right: 6,
-                child: CircleAvatar(
-                  radius: 12,
-                  backgroundColor: theme.colorScheme.primary,
-                  child: Icon(Icons.check,
-                      size: 16, color: theme.colorScheme.onPrimary),
+              if (typeIcon != null)
+                Positioned(
+                  bottom: 9,
+                  right: 9,
+                  child: Icon(typeIcon,
+                      size: 16, color: theme.colorScheme.onSurfaceVariant),
                 ),
-              ),
+              if (selected)
+                Positioned(
+                  top: 6,
+                  right: 6,
+                  child: CircleAvatar(
+                    radius: 12,
+                    backgroundColor: theme.colorScheme.primary,
+                    child: Icon(Icons.check,
+                        size: 16, color: theme.colorScheme.onPrimary),
+                  ),
+                ),
             ],
           )
         : cardContent;
@@ -379,6 +398,64 @@ class _GamePreview extends StatelessWidget {
             padding: const EdgeInsets.only(top: 2),
             child: Text(
                 context.l10n.moreItems(game.players.length - shown.length),
+                style: theme.textTheme.bodySmall),
+          ),
+      ],
+    );
+  }
+}
+
+/// A compact preview of a farkle note: the standings (place / name / score).
+class _FarklePreview extends StatelessWidget {
+  const _FarklePreview({required this.note});
+
+  final NoteRow note;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final state = parseFarkle(note.body);
+    if (state.players.isEmpty) {
+      return Text(context.l10n.gameNoPlayersShort,
+          style: theme.textTheme.bodyMedium
+              ?.copyWith(color: theme.disabledColor));
+    }
+    final order = state.standings();
+    final shown = order.take(5).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var i = 0; i < shown.length; i++)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 1),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 20,
+                  child:
+                      Text('${i + 1}.', style: theme.textTheme.bodySmall),
+                ),
+                Expanded(
+                  child: Text(
+                    shown[i].name.trim().isEmpty ? '—' : shown[i].name.trim(),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Text(formatFarkleScore(shown[i].score),
+                    style: theme.textTheme.bodyMedium
+                        ?.copyWith(fontWeight: FontWeight.bold)),
+              ],
+            ),
+          ),
+        if (order.length > shown.length)
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Text(context.l10n.moreItems(order.length - shown.length),
                 style: theme.textTheme.bodySmall),
           ),
       ],
