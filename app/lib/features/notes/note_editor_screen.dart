@@ -15,6 +15,8 @@ import 'note_background.dart';
 import '../../sync/sync_controller.dart';
 import '../../ui/app_messenger.dart';
 import '../export/share_note_sheet.dart';
+import 'farkle_board.dart';
+import 'farkle_model.dart';
 import 'game_board.dart';
 import 'game_model.dart';
 import 'note_colors.dart';
@@ -235,6 +237,8 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
     } else if (note.type == 'game') {
       // A game with no (named/scored) players is treated as empty.
       contentEmpty = parseGame(note.body).isEmpty;
+    } else if (note.type == 'farkle') {
+      contentEmpty = parseFarkle(note.body).isEmpty;
     } else {
       contentEmpty = _bodyCtrl.text.trim().isEmpty;
     }
@@ -586,8 +590,8 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
                     }
                   },
                   itemBuilder: (context) => [
-                    // A game note has no text/checklist body to convert.
-                    if (note.type != 'game')
+                    // A game/farkle note has no text/checklist body to convert.
+                    if (note.type != 'game' && note.type != 'farkle')
                       PopupMenuItem(
                         value: _OverflowAction.convert,
                         child: ListTile(
@@ -689,6 +693,13 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
                         )
                       : note.type == 'game'
                       ? GameBoard(
+                          noteId: note.id,
+                          repo: _repo,
+                          body: note.body,
+                          readOnly: readOnly,
+                        )
+                      : note.type == 'farkle'
+                      ? FarkleBoard(
                           noteId: note.id,
                           repo: _repo,
                           body: note.body,

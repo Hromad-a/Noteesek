@@ -5,6 +5,7 @@ import 'package:pdf/widgets.dart' as pw;
 
 import '../../data/local/database.dart';
 import '../../data/notes_repository.dart' show labelIdsOf;
+import '../notes/farkle_model.dart';
 import '../notes/game_model.dart';
 import 'markdown_pdf.dart';
 import 'pdf_fonts.dart';
@@ -75,6 +76,8 @@ Future<Uint8List> buildNotePdf({
           )
         else if (note.type == 'game')
           ..._gameWidgets(parseGame(note.body))
+        else if (note.type == 'farkle')
+          ..._farkleWidgets(parseFarkle(note.body))
         else if (note.body.trim().isNotEmpty)
           ...markdownToPdfWidgets(note.body, mono: fonts.mono),
         for (final img in images)
@@ -107,6 +110,31 @@ List<pw.Widget> _gameWidgets(GameState game) {
             pw.Expanded(
                 child: pw.Text(p.name.trim().isEmpty ? '—' : p.name.trim())),
             pw.Text(formatGameScore(p.total),
+                style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+          ],
+        ),
+      ),
+  ];
+}
+
+List<pw.Widget> _farkleWidgets(FarkleState state) {
+  if (state.players.isEmpty) return const [];
+  final order = state.standings();
+  return [
+    for (var i = 0; i < order.length; i++)
+      pw.Padding(
+        padding: const pw.EdgeInsets.symmetric(vertical: 2),
+        child: pw.Row(
+          children: [
+            pw.SizedBox(
+                width: 24,
+                child: pw.Text('${i + 1}.',
+                    style: const pw.TextStyle(color: PdfColors.grey700))),
+            pw.Expanded(
+                child: pw.Text(order[i].name.trim().isEmpty
+                    ? '—'
+                    : order[i].name.trim())),
+            pw.Text(formatFarkleScore(order[i].score),
                 style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
           ],
         ),

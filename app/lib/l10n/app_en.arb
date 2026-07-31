@@ -605,5 +605,16 @@
   "@gameRemovePlayerConfirm": {
     "placeholders": { "name": { "type": "String" } }
   },
-  "gameRemovePlayerConfirmUnnamed": "Remove this player?"
+  "gameRemovePlayerConfirmUnnamed": "Remove this player?",
+  "newFarkle": "New Farkle",
+  "typeFarkle": "Farkle",
+  "farkleTarget": "Target score",
+  "farkleNewGame": "New game",
+  "farkleNewGameConfirm": "Start a new game? Everyone's score will be reset.",
+  "farkleOnTurn": "On turn",
+  "farkleThisTurn": "This turn",
+  "farkleConfirm": "Confirm",
+  "farkleBust": "Farkle",
+  "farkleCustom": "custom",
+  "farkleResults": "Final standings"
 }

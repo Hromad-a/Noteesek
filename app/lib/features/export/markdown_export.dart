@@ -1,5 +1,6 @@
 import '../../data/local/database.dart';
 import '../../data/notes_repository.dart' show labelIdsOf;
+import '../notes/farkle_model.dart';
 import '../notes/game_model.dart';
 
 /// Pure Markdown rendering for note export. No I/O here so it stays trivially
@@ -84,6 +85,11 @@ String buildNoteMarkdown({
     if (live.isNotEmpty) buf.writeln();
   } else if (note.type == 'game') {
     final table = gameMarkdownTable(parseGame(note.body));
+    if (table.isNotEmpty) {
+      buf.writeln(table);
+    }
+  } else if (note.type == 'farkle') {
+    final table = farkleMarkdownTable(parseFarkle(note.body));
     if (table.isNotEmpty) {
       buf.writeln(table);
     }

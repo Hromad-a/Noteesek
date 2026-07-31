@@ -458,5 +458,16 @@
   "gameNoPlayersShort": "Zatím žádní hráči",
   "gameRemoveRoundConfirm": "Odebrat kolo {round} a jeho skóre?",
   "gameRemovePlayerConfirm": "Odebrat {name}?",
-  "gameRemovePlayerConfirmUnnamed": "Odebrat tohoto hráče?"
+  "gameRemovePlayerConfirmUnnamed": "Odebrat tohoto hráče?",
+  "newFarkle": "Nová Farkle",
+  "typeFarkle": "Farkle",
+  "farkleTarget": "Cílové skóre",
+  "farkleNewGame": "Nová hra",
+  "farkleNewGameConfirm": "Začít novou hru? Skóre všech hráčů bude vynulováno.",
+  "farkleOnTurn": "Na tahu",
+  "farkleThisTurn": "Toto kolo",
+  "farkleConfirm": "Potvrdit",
+  "farkleBust": "Farkle",
+  "farkleCustom": "vlastní",
+  "farkleResults": "Konečné pořadí"
 }

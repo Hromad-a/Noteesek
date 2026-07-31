@@ -320,6 +320,7 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
           onText: () => _create(context, ref, 'text'),
           onChecklist: () => _create(context, ref, 'checklist'),
           onGame: () => _create(context, ref, 'game'),
+          onFarkle: () => _create(context, ref, 'farkle'),
         ),
       ),
     );
@@ -769,11 +770,13 @@ class _BottomBar extends ConsumerWidget {
   const _BottomBar(
       {required this.onText,
       required this.onChecklist,
-      required this.onGame});
+      required this.onGame,
+      required this.onFarkle});
 
   final VoidCallback onText;
   final VoidCallback onChecklist;
   final VoidCallback onGame;
+  final VoidCallback onFarkle;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -823,6 +826,7 @@ class _BottomBar extends ConsumerWidget {
             onText: onText,
             onChecklist: onChecklist,
             onGame: onGame,
+            onFarkle: onFarkle,
           ),
         ],
       ),
@@ -840,6 +844,7 @@ class _CreateMenuButton extends StatefulWidget {
     required this.onText,
     required this.onChecklist,
     required this.onGame,
+    required this.onFarkle,
   });
 
   final bool blocked;
@@ -847,6 +852,7 @@ class _CreateMenuButton extends StatefulWidget {
   final VoidCallback onText;
   final VoidCallback onChecklist;
   final VoidCallback onGame;
+  final VoidCallback onFarkle;
 
   @override
   State<_CreateMenuButton> createState() => _CreateMenuButtonState();
@@ -927,8 +933,11 @@ class _CreateMenuButtonState extends State<_CreateMenuButton> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.end,
-              // Nearest the button (bottom) first: Text, then Checklist, Game.
+              // Nearest the button (bottom) first: Text, Checklist, Game, Farkle.
               children: [
+                _pill(Icons.casino, l10n.newFarkle,
+                    () => _pick(widget.onFarkle)),
+                const SizedBox(height: 10),
                 _pill(Icons.scoreboard_outlined, l10n.newGame,
                     () => _pick(widget.onGame)),
                 const SizedBox(height: 10),
@@ -1622,6 +1631,11 @@ class _FilterSheet extends ConsumerWidget {
                   label: Text(context.l10n.typeGame),
                   selected: filters.type == 'game',
                   onSelected: (s) => notifier.setType(s ? 'game' : null),
+                ),
+                ChoiceChip(
+                  label: Text(context.l10n.typeFarkle),
+                  selected: filters.type == 'farkle',
+                  onSelected: (s) => notifier.setType(s ? 'farkle' : null),
                 ),
               ],
             ),

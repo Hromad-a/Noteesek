@@ -1,4 +1,5 @@
 import '../../data/local/database.dart';
+import '../notes/farkle_model.dart';
 import '../notes/game_model.dart';
 
 /// Pure plain-text rendering of a single note, for the "share as text" action.
@@ -24,6 +25,8 @@ String buildNotePlainText({
     }
   } else if (note.type == 'game') {
     buf.writeln(gamePlainText(parseGame(note.body)));
+  } else if (note.type == 'farkle') {
+    buf.writeln(farklePlainText(parseFarkle(note.body)));
   } else if (note.body.trim().isNotEmpty) {
     buf.writeln(note.body.trimRight());
   }
