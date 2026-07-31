@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import 'package:receive_sharing_intent/receive_sharing_intent.dart';
@@ -315,6 +316,7 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
         bottomNavigationBar: _BottomBar(
           onText: () => _create(context, ref, 'text'),
           onChecklist: () => _create(context, ref, 'checklist'),
+          onGame: () => _create(context, ref, 'game'),
         ),
       ),
     );
@@ -702,10 +704,14 @@ class _SortMenu extends ConsumerWidget {
 /// Bottom bar: the notebook selector on the left (switch / create / manage),
 /// the new-checklist and new-note buttons on the right.
 class _BottomBar extends ConsumerWidget {
-  const _BottomBar({required this.onText, required this.onChecklist});
+  const _BottomBar(
+      {required this.onText,
+      required this.onChecklist,
+      required this.onGame});
 
   final VoidCallback onText;
   final VoidCallback onChecklist;
+  final VoidCallback onGame;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -735,6 +741,7 @@ class _BottomBar extends ConsumerWidget {
         children: [
           const Expanded(child: _NotebookSelector()),
           const SizedBox(width: 8),
+          // Checklist stays as its own quick-button — it's used often.
           Opacity(
             opacity: blocked ? 0.4 : 1,
             child: IconButton.filledTonal(
@@ -746,13 +753,14 @@ class _BottomBar extends ConsumerWidget {
             ),
           ),
           const SizedBox(width: 8),
-          Opacity(
-            opacity: blocked ? 0.4 : 1,
-            child: IconButton.filled(
-              tooltip: blocked ? context.l10n.offlineSharedNotebook : context.l10n.newNote,
-              onPressed: blocked ? offlineSnack : onText,
-              icon: const Icon(Icons.edit),
-            ),
+          // Main create button: tapping it expands a Keep-style set of labelled
+          // pills (above the button) to pick the note type.
+          _CreateMenuButton(
+            blocked: blocked,
+            onBlockedTap: offlineSnack,
+            onText: onText,
+            onChecklist: onChecklist,
+            onGame: onGame,
           ),
         ],
       ),
@@ -760,20 +768,201 @@ class _BottomBar extends ConsumerWidget {
   }
 }
 
-/// A pill showing the current notebook scope; tapping opens a menu to switch
-/// scope ("All notes" / "No notebook" / a notebook), create one, or manage them.
-class _NotebookSelector extends ConsumerWidget {
+/// The create button + its Keep-style speed-dial. Tapping expands labelled pill
+/// buttons stacked above the button (Text / Checklist / Game), morphs the button
+/// to an ✕, and dims the rest of the screen; tapping the scrim or the ✕ closes.
+class _CreateMenuButton extends StatefulWidget {
+  const _CreateMenuButton({
+    required this.blocked,
+    required this.onBlockedTap,
+    required this.onText,
+    required this.onChecklist,
+    required this.onGame,
+  });
+
+  final bool blocked;
+  final VoidCallback onBlockedTap;
+  final VoidCallback onText;
+  final VoidCallback onChecklist;
+  final VoidCallback onGame;
+
+  @override
+  State<_CreateMenuButton> createState() => _CreateMenuButtonState();
+}
+
+class _CreateMenuButtonState extends State<_CreateMenuButton> {
+  final LayerLink _link = LayerLink();
+  OverlayEntry? _entry;
+
+  bool get _isOpen => _entry != null;
+
+  @override
+  void dispose() {
+    _entry?.remove();
+    _entry = null;
+    super.dispose();
+  }
+
+  void _toggle() {
+    if (widget.blocked) {
+      widget.onBlockedTap();
+      return;
+    }
+    if (_isOpen) {
+      _close();
+    } else {
+      _open();
+    }
+  }
+
+  void _open() {
+    HapticFeedback.selectionClick();
+    _entry = OverlayEntry(builder: _buildOverlay);
+    Overlay.of(context).insert(_entry!);
+    setState(() {});
+  }
+
+  void _close() {
+    _entry?.remove();
+    _entry = null;
+    if (mounted) setState(() {});
+  }
+
+  void _pick(VoidCallback action) {
+    _close();
+    action();
+  }
+
+  Widget _buildOverlay(BuildContext context) {
+    final l10n = context.l10n;
+    return Stack(
+      children: [
+        // Scrim: dims the screen and closes the menu when tapped.
+        Positioned.fill(
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: _close,
+            child: ColoredBox(color: Colors.black.withValues(alpha: 0.35)),
+          ),
+        ),
+        // Pills anchored to sit just above the button, right edges aligned.
+        CompositedTransformFollower(
+          link: _link,
+          targetAnchor: Alignment.topRight,
+          followerAnchor: Alignment.bottomRight,
+          offset: const Offset(0, -12),
+          child: TweenAnimationBuilder<double>(
+            duration: const Duration(milliseconds: 160),
+            curve: Curves.easeOutBack,
+            tween: Tween(begin: 0, end: 1),
+            builder: (context, t, child) => Opacity(
+              opacity: t.clamp(0.0, 1.0),
+              child: Transform.translate(
+                offset: Offset(0, (1 - t) * 12),
+                child: child,
+              ),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              // Nearest the button (bottom) first: Text, then Checklist, Game.
+              children: [
+                _pill(Icons.scoreboard_outlined, l10n.newGame,
+                    () => _pick(widget.onGame)),
+                const SizedBox(height: 10),
+                _pill(Icons.checklist, l10n.newChecklist,
+                    () => _pick(widget.onChecklist)),
+                const SizedBox(height: 10),
+                _pill(Icons.edit, l10n.newNote, () => _pick(widget.onText)),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _pill(IconData icon, String label, VoidCallback onTap) {
+    return FilledButton.tonalIcon(
+      onPressed: onTap,
+      icon: Icon(icon, size: 20),
+      label: Text(label),
+      style: FilledButton.styleFrom(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+        shape: const StadiumBorder(),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Opacity(
+      opacity: widget.blocked ? 0.4 : 1,
+      child: CompositedTransformTarget(
+        link: _link,
+        child: IconButton.filled(
+          tooltip: widget.blocked
+              ? context.l10n.offlineSharedNotebook
+              : context.l10n.newNote,
+          onPressed: _toggle,
+          icon: Icon(_isOpen ? Icons.close : Icons.add),
+        ),
+      ),
+    );
+  }
+}
+
+/// A pill showing the current notebook scope; tapping expands a Keep-style set
+/// of pills ABOVE the chip to switch scope ("All notes" / "No notebook" / a
+/// notebook), create one, or manage them.
+class _NotebookSelector extends ConsumerStatefulWidget {
   const _NotebookSelector();
 
-  // Sentinel values for the action menu entries.
-  static const _newValue = '__new_notebook__';
-  static const _manageValue = '__manage_notebooks__';
+  @override
+  ConsumerState<_NotebookSelector> createState() => _NotebookSelectorState();
+}
+
+class _NotebookSelectorState extends ConsumerState<_NotebookSelector> {
+  final LayerLink _link = LayerLink();
+  final ScrollController _scrollCtrl = ScrollController();
+  OverlayEntry? _entry;
+
+  bool get _isOpen => _entry != null;
 
   static IconData _scopeIcon(String scope) => switch (scope) {
         kAllNotes => Icons.notes_outlined,
         kNoNotebook => Icons.label_off_outlined,
         _ => Icons.book_outlined,
       };
+
+  @override
+  void dispose() {
+    _entry?.remove();
+    _entry = null;
+    _scrollCtrl.dispose();
+    super.dispose();
+  }
+
+  void _toggle() {
+    if (_isOpen) {
+      _close();
+    } else {
+      _open();
+    }
+  }
+
+  void _open() {
+    HapticFeedback.selectionClick();
+    _entry = OverlayEntry(builder: _buildOverlay);
+    Overlay.of(context).insert(_entry!);
+    setState(() {});
+  }
+
+  void _close() {
+    _entry?.remove();
+    _entry = null;
+    if (mounted) setState(() {});
+  }
 
   Future<void> _createNotebook(BuildContext context, WidgetRef ref) async {
     final ctrl = TextEditingController();
@@ -805,8 +994,170 @@ class _NotebookSelector extends ConsumerWidget {
     await ref.read(selectedNotebookIdProvider.notifier).set(id);
   }
 
+  void _selectScope(String id) {
+    _close();
+    ref.read(selectedNotebookIdProvider.notifier).set(id);
+  }
+
+  Widget _buildOverlay(BuildContext overlayContext) {
+    final media = MediaQuery.of(overlayContext);
+    final scheme = Theme.of(overlayContext).colorScheme;
+    final maxW = media.size.width * 0.85;
+    return Stack(
+      children: [
+        // Scrim closes the menu when tapped.
+        Positioned.fill(
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: _close,
+            child: ColoredBox(color: Colors.black.withValues(alpha: 0.35)),
+          ),
+        ),
+        // A surface card sits above the chip: it gives the scroll area a clear
+        // background/edge. The scope list scrolls; the New/Manage actions are
+        // pinned in a footer so they stay reachable.
+        CompositedTransformFollower(
+          link: _link,
+          targetAnchor: Alignment.topLeft,
+          followerAnchor: Alignment.bottomLeft,
+          offset: const Offset(0, -12),
+          child: TweenAnimationBuilder<double>(
+            duration: const Duration(milliseconds: 160),
+            curve: Curves.easeOutBack,
+            tween: Tween(begin: 0, end: 1),
+            builder: (context, t, child) => Opacity(
+              opacity: t.clamp(0.0, 1.0),
+              child: Transform.translate(
+                offset: Offset(0, (1 - t) * 12),
+                child: child,
+              ),
+            ),
+            child: Material(
+              elevation: 6,
+              color: scheme.surfaceContainerHigh,
+              borderRadius: BorderRadius.circular(20),
+              clipBehavior: Clip.antiAlias,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  minWidth: maxW.clamp(0, 260),
+                  maxWidth: maxW,
+                  maxHeight: media.size.height * 0.78,
+                ),
+                child: Consumer(
+                  builder: (context, ref, _) {
+                    final notebooks =
+                        ref.watch(notebooksProvider).asData?.value ?? const [];
+                    final activeId = ref.watch(activeNotebookIdProvider);
+                    final l10n = context.l10n;
+                    return Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Flexible(
+                          child: Scrollbar(
+                            controller: _scrollCtrl,
+                            child: SingleChildScrollView(
+                              controller: _scrollCtrl,
+                              // reverse keeps the primary scopes (All notes /
+                              // No notebook) nearest the chip/footer.
+                              reverse: true,
+                              padding: const EdgeInsets.fromLTRB(10, 12, 10, 6),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  for (final nb in notebooks.reversed) ...[
+                                    _scopePill(
+                                      nb.id,
+                                      sharedWithIds(nb.sharedWith).isNotEmpty
+                                          ? Icons.group_outlined
+                                          : Icons.book_outlined,
+                                      nb.name,
+                                      nb.id == activeId,
+                                    ),
+                                    const SizedBox(height: 8),
+                                  ],
+                                  _scopePill(
+                                      kNoNotebook,
+                                      Icons.label_off_outlined,
+                                      l10n.noNotebook,
+                                      kNoNotebook == activeId),
+                                  const SizedBox(height: 8),
+                                  _scopePill(kAllNotes, Icons.notes_outlined,
+                                      l10n.allNotes, kAllNotes == activeId),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                        const Divider(height: 1),
+                        // Pinned actions, always visible, bottom-right.
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(8, 4, 8, 6),
+                          child: Wrap(
+                            alignment: WrapAlignment.end,
+                            spacing: 4,
+                            runSpacing: 4,
+                            children: [
+                              _footerAction(Icons.add, l10n.newNotebook,
+                                  () async {
+                                _close();
+                                await _createNotebook(this.context, this.ref);
+                              }),
+                              _footerAction(
+                                  Icons.edit_outlined, l10n.manageNotebooks, () {
+                                _close();
+                                Navigator.of(this.context).push(
+                                    MaterialPageRoute(
+                                        builder: (_) =>
+                                            const ManageNotebooksScreen()));
+                              }),
+                            ],
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _scopePill(String id, IconData icon, String text, bool selected) {
+    final style = FilledButton.styleFrom(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+      shape: const StadiumBorder(),
+    );
+    final icn = Icon(icon, size: 20);
+    final label = Text(text, maxLines: 1, overflow: TextOverflow.ellipsis);
+    return selected
+        ? FilledButton.icon(
+            onPressed: () => _selectScope(id),
+            style: style,
+            icon: icn,
+            label: label,
+          )
+        : FilledButton.tonalIcon(
+            onPressed: () => _selectScope(id),
+            style: style,
+            icon: icn,
+            label: label,
+          );
+  }
+
+  Widget _footerAction(IconData icon, String text, VoidCallback onTap) =>
+      TextButton.icon(
+        onPressed: onTap,
+        icon: Icon(icon, size: 18),
+        label: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis),
+      );
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final notebooks = ref.watch(notebooksProvider).asData?.value ?? const [];
     final activeId = ref.watch(activeNotebookIdProvider);
     final activeNb = notebooks.where((n) => n.id == activeId).firstOrNull;
@@ -819,92 +1170,32 @@ class _NotebookSelector extends ConsumerWidget {
     };
     final chipIcon = activeNbShared ? Icons.group_outlined : _scopeIcon(activeId);
 
-    // Shared notebooks aren't visually coloured — the people icon is the only
-    // (quiet) cue. The selected scope is marked by a trailing checkmark so it
-    // reads clearly without changing the row's colour.
-    PopupMenuItem<String> scopeItem(String value, IconData icon, String text) {
-      final selected = value == activeId;
-      return PopupMenuItem(
-        value: value,
-        child: ListTile(
-          dense: true,
-          contentPadding: EdgeInsets.zero,
-          leading: Icon(icon),
-          title: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis),
-          trailing: selected ? const Icon(Icons.check) : null,
-        ),
-      );
-    }
-
-    return PopupMenuButton<String>(
-      tooltip: context.l10n.switchNotebook,
-      position: PopupMenuPosition.over,
-      constraints: const BoxConstraints(minWidth: 240, maxWidth: 320),
-      onSelected: (value) async {
-        if (value == _newValue) {
-          await _createNotebook(context, ref);
-        } else if (value == _manageValue) {
-          if (context.mounted) {
-            Navigator.of(context).push(MaterialPageRoute(
-              builder: (_) => const ManageNotebooksScreen(),
-            ));
-          }
-        } else {
-          await ref.read(selectedNotebookIdProvider.notifier).set(value);
-        }
-      },
-      itemBuilder: (context) => [
-        scopeItem(kAllNotes, Icons.notes_outlined, context.l10n.allNotes),
-        scopeItem(kNoNotebook, Icons.label_off_outlined, context.l10n.noNotebook),
-        if (notebooks.isNotEmpty) const PopupMenuDivider(),
-        for (final nb in notebooks)
-          scopeItem(
-            nb.id,
-            sharedWithIds(nb.sharedWith).isNotEmpty
-                ? Icons.group_outlined
-                : Icons.book_outlined,
-            nb.name,
+    return CompositedTransformTarget(
+      link: _link,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: _toggle,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Theme.of(context).colorScheme.outline),
           ),
-        const PopupMenuDivider(),
-        PopupMenuItem(
-          value: _newValue,
-          child: ListTile(
-            dense: true,
-            contentPadding: EdgeInsets.zero,
-            leading: Icon(Icons.add),
-            title: Text(context.l10n.newNotebook),
-          ),
-        ),
-        PopupMenuItem(
-          value: _manageValue,
-          child: ListTile(
-            dense: true,
-            contentPadding: EdgeInsets.zero,
-            leading: Icon(Icons.edit_outlined),
-            title: Text(context.l10n.manageNotebooks),
-          ),
-        ),
-      ],
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: Theme.of(context).colorScheme.outline),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(chipIcon, size: 18),
-            const SizedBox(width: 8),
-            Flexible(
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(chipIcon, size: 18),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
-            ),
-            const Icon(Icons.arrow_drop_down),
-          ],
+              Icon(_isOpen ? Icons.arrow_drop_up : Icons.arrow_drop_down),
+            ],
+          ),
         ),
       ),
     );
@@ -1251,6 +1542,11 @@ class _FilterSheet extends ConsumerWidget {
                   label: Text(context.l10n.typeChecklist),
                   selected: filters.type == 'checklist',
                   onSelected: (s) => notifier.setType(s ? 'checklist' : null),
+                ),
+                ChoiceChip(
+                  label: Text(context.l10n.typeGame),
+                  selected: filters.type == 'game',
+                  onSelected: (s) => notifier.setType(s ? 'game' : null),
                 ),
               ],
             ),

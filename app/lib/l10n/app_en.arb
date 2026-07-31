@@ -222,6 +222,7 @@
   "buildDebug": "Developer (debug)",
   "buildProfile": "Profile",
   "buildReleaseOfficial": "Official release",
+  "buildReleasePrerelease": "Prerelease build",
   "buildReleaseLocal": "Local build",
   "buildGooglePlay": "Google Play",
   "buildWeb": "Web",
@@ -582,5 +583,25 @@
   "activityActionDeleted": "Deleted",
   "activityUntitledNote": "Untitled note",
   "activityUnknownMember": "A member",
-  "activityNoteUnavailable": "This note is no longer available"
+  "activityNoteUnavailable": "This note is no longer available",
+  "newGame": "New game",
+  "typeGame": "Game",
+  "gameAddPlayer": "Add player",
+  "gameAddRound": "Add round",
+  "gameTotal": "Total",
+  "gamePlayerHint": "Player",
+  "gameRound": "Round",
+  "gameRemovePlayer": "Remove player",
+  "gameRemoveRound": "Remove round",
+  "gameNoPlayers": "Add players to start scoring.",
+  "gameNoPlayersShort": "No players yet",
+  "gameRemoveRoundConfirm": "Remove round {round} and its scores?",
+  "@gameRemoveRoundConfirm": {
+    "placeholders": { "round": { "type": "String" } }
+  },
+  "gameRemovePlayerConfirm": "Remove {name}?",
+  "@gameRemovePlayerConfirm": {
+    "placeholders": { "name": { "type": "String" } }
+  },
+  "gameRemovePlayerConfirmUnnamed": "Remove this player?"
 }

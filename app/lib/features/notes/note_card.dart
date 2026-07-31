@@ -6,6 +6,7 @@ import 'package:markdown_widget/markdown_widget.dart';
 
 import '../../data/local/database.dart';
 import '../../data/notes_repository.dart';
+import 'game_model.dart';
 import 'note_background.dart';
 import 'note_colors.dart';
 import 'note_markdown_config.dart';
@@ -109,6 +110,8 @@ class _NoteCardState extends ConsumerState<NoteCard> {
                     ),
                   if (note.type == 'checklist')
                     _ChecklistPreview(noteId: note.id)
+                  else if (note.type == 'game')
+                    _GamePreview(note: note)
                   else if (note.body.trim().isNotEmpty)
                     (markdownOn
                         ? ClipRect(
@@ -318,6 +321,67 @@ class _ChecklistPreview extends ConsumerWidget {
         );
       },
       orElse: () => const SizedBox.shrink(),
+    );
+  }
+}
+
+/// Compact preview for a game note: the first few players in their added order,
+/// each with their rank number and total. Parsed from the note body (game JSON).
+class _GamePreview extends StatelessWidget {
+  const _GamePreview({required this.note});
+
+  final NoteRow note;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final game = parseGame(note.body);
+    if (game.players.isEmpty) {
+      return Text(context.l10n.gameNoPlayersShort,
+          style: theme.textTheme.bodyMedium
+              ?.copyWith(color: theme.disabledColor));
+    }
+    // Players stay in their added order; the rank is only shown as a number.
+    final shown = game.players.take(5).toList();
+    final ranks = game.ranksByTotal();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (final p in shown)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 1),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 20,
+                  child: Text('${ranks[p.id] ?? ''}.',
+                      style: theme.textTheme.bodySmall),
+                ),
+                Expanded(
+                  child: Text(
+                    p.name.trim().isEmpty ? '—' : p.name.trim(),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Text(formatGameScore(p.total),
+                    style: theme.textTheme.bodyMedium
+                        ?.copyWith(fontWeight: FontWeight.bold)),
+              ],
+            ),
+          ),
+        if (game.players.length > shown.length)
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Text(
+                context.l10n.moreItems(game.players.length - shown.length),
+                style: theme.textTheme.bodySmall),
+          ),
+      ],
     );
   }
 }

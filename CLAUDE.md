@@ -65,8 +65,10 @@ Noteesek/
 ### Backend (PocketBase v0.39, single binary)
 Collections, all **owner-scoped** (`owner = @request.auth.id`, or `note.owner`
 for children):
-- `notes`: type (text|checklist), title, body, pinned, archived, **color**,
-  **labels (multi-rel → labels)**, deleted, created, updated
+- `notes`: type (text|checklist|**game**), title, body, pinned, archived,
+  **color**, **labels (multi-rel → labels)**, deleted, created, updated. A
+  **game** note is a score counter whose whole state (players + per-round
+  scores) lives in `body` as JSON — see Game notes below; no new collection.
 - `checklist_items`: note (rel), text, checked, position, deleted, …
 - `attachments`: note (rel), **file (protected)**, deleted, … (image bytes)
 - `labels`: name, deleted, created, updated (user tags; assigned via
@@ -115,7 +117,7 @@ sparse per-user set (`activity_archives`). Entries auto-archive after a week by
 age, then a daily cron prunes feed rows past ~6 months
 (`activity_lib.PRUNE_AFTER_DAYS`; cascade clears their archive marks). Server-only,
 like snapshots: web + mobile-with-server) ·
-text + checklist notes · pin · **archive** (drawer) · **trash** (restore /
+text + checklist + **game** (score counter) notes · pin · **archive** (drawer) · **trash** (restore /
 delete-forever / empty) · image attachments (protected) · offline substring
 search (title/body/checklist) · **note colors** (curated themed palette,
 `note_colors.dart`) · **labels** (create/assign/filter via drawer, manage on
@@ -172,6 +174,32 @@ close.
   `is_default` column is dropped by a drift v7→v8 migration + the
   `1700000013_drop_notebook_default.js` PocketBase migration (both also empty the
   old default notebook out to "no notebook").
+
+### Game notes / score counter (`features/notes/`)
+A **game** note (`notes.type == 'game'`) is a scoresheet for playing games. Its
+entire state is a small JSON document stored in the note's **`body`**, so it
+rides the existing note last-write-wins sync, JSON/zip backup, server snapshots
+and restore with **no new collection, no drift table, no sync/backup changes** —
+only a one-line server migration (`1700000028_add_game_note_type.js`) widening
+the `notes.type` select to include `game`.
+- `game_model.dart` — pure, unit-tested model + (de)serialization. A `GameState`
+  is a list of `GamePlayer`s (`id`, `name`, `scores: List<double>`). **Rounds are
+  implicit columns**: the round count is the longest player's `scores` list; a
+  shorter list means 0 in the missing rounds. Totals = sum; `ranksByTotal()`
+  ranks players by total (**highest = rank 1**, ties share a rank) while the
+  players themselves **always keep their added order** everywhere (editor, card,
+  exports) — the rank is only ever shown as a number. Also renders the Markdown
+  table / plain-text / PDF score views used by the exporters.
+- `game_board.dart` — the scoresheet editor (`GameBoard`): a horizontally
+  scrollable rounds×players grid with a Totals row and per-player rank badges;
+  add/remove player, add/remove round, decimal + negative score entry. Every
+  edit re-encodes the game and saves it via `updateNoteFields(body:)` (the
+  note's normal autosave). Seeds state once from the body (like the text
+  editor's controller); renders a static view when `readOnly` (shared note).
+- The editor branches on `type == 'game'` to show `GameBoard` (convert is hidden
+  for games); the note card shows a compact score preview; the new-note
+  bottom bar has a third "New game" button; an empty game (no named/scored
+  players) auto-trashes on close like any empty note.
 
 ### Markdown export (`features/export/`)
 - `markdown_export.dart` — pure renderer: YAML frontmatter (title, labels,

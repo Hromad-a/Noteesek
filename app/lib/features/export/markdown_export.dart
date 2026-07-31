@@ -1,5 +1,6 @@
 import '../../data/local/database.dart';
 import '../../data/notes_repository.dart' show labelIdsOf;
+import '../notes/game_model.dart';
 
 /// Pure Markdown rendering for note export. No I/O here so it stays trivially
 /// unit-testable; [NoteExportService] handles gathering data and zipping.
@@ -81,6 +82,11 @@ String buildNoteMarkdown({
       buf.writeln('- [${item.checked ? 'x' : ' '}] ${item.content}');
     }
     if (live.isNotEmpty) buf.writeln();
+  } else if (note.type == 'game') {
+    final table = gameMarkdownTable(parseGame(note.body));
+    if (table.isNotEmpty) {
+      buf.writeln(table);
+    }
   } else if (note.body.trim().isNotEmpty) {
     buf.writeln(note.body.trimRight());
     buf.writeln();

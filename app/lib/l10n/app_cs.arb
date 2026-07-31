@@ -165,6 +165,7 @@
   "buildDebug": "Vývojářské (debug)",
   "buildProfile": "Profilovací",
   "buildReleaseOfficial": "Oficiální release",
+  "buildReleasePrerelease": "Předběžné sestavení",
   "buildReleaseLocal": "Místní sestavení",
   "buildGooglePlay": "Google Play",
   "buildWeb": "Web",
@@ -441,5 +442,19 @@
   "activityActionDeleted": "Smazáno",
   "activityUntitledNote": "Poznámka bez názvu",
   "activityUnknownMember": "Člen",
-  "activityNoteUnavailable": "Tato poznámka už není dostupná"
+  "activityNoteUnavailable": "Tato poznámka už není dostupná",
+  "newGame": "Nová hra",
+  "typeGame": "Hra",
+  "gameAddPlayer": "Přidat hráče",
+  "gameAddRound": "Přidat kolo",
+  "gameTotal": "Celkem",
+  "gamePlayerHint": "Hráč",
+  "gameRound": "Kolo",
+  "gameRemovePlayer": "Odebrat hráče",
+  "gameRemoveRound": "Odebrat kolo",
+  "gameNoPlayers": "Přidejte hráče a začněte počítat skóre.",
+  "gameNoPlayersShort": "Zatím žádní hráči",
+  "gameRemoveRoundConfirm": "Odebrat kolo {round} a jeho skóre?",
+  "gameRemovePlayerConfirm": "Odebrat {name}?",
+  "gameRemovePlayerConfirmUnnamed": "Odebrat tohoto hráče?"
 }

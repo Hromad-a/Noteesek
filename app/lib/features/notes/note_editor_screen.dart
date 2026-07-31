@@ -15,6 +15,8 @@ import 'note_background.dart';
 import '../../sync/sync_controller.dart';
 import '../../ui/app_messenger.dart';
 import '../export/share_note_sheet.dart';
+import 'game_board.dart';
+import 'game_model.dart';
 import 'note_colors.dart';
 import 'note_lock_controller.dart';
 import 'note_markdown_config.dart';
@@ -229,6 +231,9 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
       final items =
           ref.read(checklistItemsProvider(note.id)).asData?.value ?? const [];
       contentEmpty = items.every((i) => i.content.trim().isEmpty);
+    } else if (note.type == 'game') {
+      // A game with no (named/scored) players is treated as empty.
+      contentEmpty = parseGame(note.body).isEmpty;
     } else {
       contentEmpty = _bodyCtrl.text.trim().isEmpty;
     }
@@ -577,18 +582,20 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
                     }
                   },
                   itemBuilder: (context) => [
-                    PopupMenuItem(
-                      value: _OverflowAction.convert,
-                      child: ListTile(
-                        leading: Icon(note.type == 'checklist'
-                            ? Icons.notes_outlined
-                            : Icons.checklist_outlined),
-                        title: Text(note.type == 'checklist'
-                            ? context.l10n.convertToText
-                            : context.l10n.convertToChecklist),
-                        contentPadding: EdgeInsets.zero,
+                    // A game note has no text/checklist body to convert.
+                    if (note.type != 'game')
+                      PopupMenuItem(
+                        value: _OverflowAction.convert,
+                        child: ListTile(
+                          leading: Icon(note.type == 'checklist'
+                              ? Icons.notes_outlined
+                              : Icons.checklist_outlined),
+                          title: Text(note.type == 'checklist'
+                              ? context.l10n.convertToText
+                              : context.l10n.convertToChecklist),
+                          contentPadding: EdgeInsets.zero,
+                        ),
                       ),
-                    ),
                     if (note.type == 'checklist')
                       PopupMenuItem(
                         value: _OverflowAction.autoSort,
@@ -675,6 +682,13 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
                           readOnly: readOnly,
                           onForgetController: (id) =>
                               _itemCtrls.remove(id)?.dispose(),
+                        )
+                      : note.type == 'game'
+                      ? GameBoard(
+                          noteId: note.id,
+                          repo: _repo,
+                          body: note.body,
+                          readOnly: readOnly,
                         )
                       : (markdownOn && _previewMarkdown)
                           ? _MarkdownPreview(text: note.body)
