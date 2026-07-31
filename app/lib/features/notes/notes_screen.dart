@@ -213,9 +213,9 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
                     Icon(Icons.cloud_outlined,
                         color: Colors.orange.shade700),
                     Positioned(
-                      top: 5,
+                      top: 9,
                       child: Icon(Icons.priority_high,
-                          size: 11, color: Colors.orange.shade700),
+                          size: 10, color: Colors.orange.shade700),
                     ),
                   ],
                 ),
