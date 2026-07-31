@@ -167,8 +167,8 @@ class _NoteCardState extends ConsumerState<NoteCard> {
               cardContent,
               if (typeIcon != null)
                 Positioned(
-                  bottom: 6,
-                  right: 6,
+                  bottom: 9,
+                  right: 9,
                   child: Icon(typeIcon,
                       size: 16, color: theme.colorScheme.onSurfaceVariant),
                 ),

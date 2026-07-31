@@ -55,6 +55,7 @@
   "snackSynced": "Synced",
   "snackSyncInProgress": "Sync already in progress",
   "snackServerNotResponding": "Server not responding — your notes are saved on this device",
+  "snackSyncVersionMismatch": "Sync paused — the app and server are on different versions. Update them to match, then sync.",
   "snackSyncFailed": "Sync failed",
 
   "selectedCount": "{count} selected",

@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pocketbase/pocketbase.dart';
 
+import '../data/version_check.dart';
 import '../providers.dart';
 import 'sync_engine.dart';
 
@@ -30,6 +31,10 @@ enum SyncOutcome {
 
   /// A sync was already in progress.
   busy,
+
+  /// The app and the connected server are on different versions — syncing is
+  /// blocked (it would push data an out-of-date server can't accept).
+  versionMismatch,
 }
 
 class SyncStatus {
@@ -165,6 +170,15 @@ class SyncController extends Notifier<SyncStatus> {
       return SyncOutcome.notConnected;
     }
     if (state.syncing) return SyncOutcome.busy;
+
+    // Don't sync against a server on a different version: it can't accept newer
+    // data (e.g. a farkle/game note type it doesn't know) and would fail
+    // partway. Only blocks when the mismatch is actually known (the notes screen
+    // keeps the version check alive); an unknown/absent version proceeds.
+    final versionStatus = ref.read(versionStatusProvider).value;
+    if (versionStatus != null && versionStatus.mismatch) {
+      return SyncOutcome.versionMismatch;
+    }
 
     final wasUnreachable = !state.reachable;
     state = state.copyWith(syncing: true, message: null);

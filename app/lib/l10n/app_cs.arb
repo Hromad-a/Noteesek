@@ -44,6 +44,7 @@
   "snackSynced": "Synchronizováno",
   "snackSyncInProgress": "Synchronizace už probíhá",
   "snackServerNotResponding": "Server neodpovídá — vaše poznámky jsou uložené v tomto zařízení",
+  "snackSyncVersionMismatch": "Synchronizace pozastavena — aplikace a server mají různé verze. Sjednoťte je a pak synchronizujte.",
   "snackSyncFailed": "Synchronizace selhala",
 
   "selectedCount": "Vybráno: {count}",

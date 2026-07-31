@@ -107,6 +107,7 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
       SyncOutcome.unreachable => l10n.snackServerNotResponding,
       SyncOutcome.failed =>
         ref.read(syncControllerProvider).message ?? l10n.snackSyncFailed,
+      SyncOutcome.versionMismatch => l10n.snackSyncVersionMismatch,
     };
     // Route through the app messenger (atomic clear+show) so it never piles up
     // with or gets stuck behind another snackbar (e.g. an undo).
