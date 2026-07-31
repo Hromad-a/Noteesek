@@ -606,7 +606,7 @@
     "placeholders": { "name": { "type": "String" } }
   },
   "gameRemovePlayerConfirmUnnamed": "Remove this player?",
-  "newFarkle": "New Farkle",
+  "newFarkle": "Farkle",
   "typeFarkle": "Farkle",
   "farkleTarget": "Target score",
   "farkleNewGame": "New game",

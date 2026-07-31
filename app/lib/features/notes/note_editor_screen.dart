@@ -764,9 +764,11 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
                     updated: note.updated,
                     color: bg,
                   ),
-            // Hide the check button while the toolbar is up so it doesn't
-            // cover the bar (back still saves; it returns when typing stops).
-            floatingActionButton: showEditingBar
+            // Hide the check button while the toolbar is up so it doesn't cover
+            // the bar (back still saves; it returns when typing stops). Also hide
+            // it for a farkle note, where it would sit over the Confirm/Farkle
+            // controls (back still saves).
+            floatingActionButton: showEditingBar || note.type == 'farkle'
                 ? null
                 : FloatingActionButton(
                     tooltip: context.l10n.saveAndClose,

@@ -459,7 +459,7 @@
   "gameRemoveRoundConfirm": "Odebrat kolo {round} a jeho skóre?",
   "gameRemovePlayerConfirm": "Odebrat {name}?",
   "gameRemovePlayerConfirmUnnamed": "Odebrat tohoto hráče?",
-  "newFarkle": "Nová Farkle",
+  "newFarkle": "Farkle",
   "typeFarkle": "Farkle",
   "farkleTarget": "Cílové skóre",
   "farkleNewGame": "Nová hra",
