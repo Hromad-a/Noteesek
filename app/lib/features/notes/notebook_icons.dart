@@ -38,55 +38,21 @@ const IconData kNotebookDefaultIcon = Icons.book_outlined;
 IconData notebookIconData(String key) =>
     kNotebookIcons[key] ?? kNotebookDefaultIcon;
 
-/// Renders a notebook's icon, overlaying a small people badge in the corner when
-/// the notebook is [shared] (so a custom icon still signals sharing). Used in the
-/// notebook selector, its scope pills, and the Manage Notebooks list.
+/// Renders a notebook's chosen icon. Used in the notebook selector, its scope
+/// pills, the Manage Notebooks list, and the notebook-picker sheets.
 class NotebookIcon extends StatelessWidget {
   const NotebookIcon({
     super.key,
     required this.iconKey,
-    this.shared = false,
     this.size = 20,
     this.color,
   });
 
   final String iconKey;
-  final bool shared;
   final double size;
   final Color? color;
 
   @override
-  Widget build(BuildContext context) {
-    final icon = Icon(notebookIconData(iconKey), size: size, color: color);
-    if (!shared) return icon;
-    // A small badge in the corner. `inverseSurface` always contrasts with the
-    // surface below (light chip in dark mode, dark chip in light mode) with
-    // `onInverseSurface` for the glyph — so it reads on any background.
-    final scheme = Theme.of(context).colorScheme;
-    final badge = size * 0.66;
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        icon,
-        Positioned(
-          right: -3,
-          bottom: -3,
-          child: Container(
-            width: badge,
-            height: badge,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: scheme.inverseSurface,
-            ),
-            child: Icon(
-              Icons.people,
-              size: badge * 0.68,
-              color: scheme.onInverseSurface,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
+  Widget build(BuildContext context) =>
+      Icon(notebookIconData(iconKey), size: size, color: color);
 }

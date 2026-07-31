@@ -249,7 +249,7 @@ class _ManageNotebooksScreenState extends ConsumerState<ManageNotebooksScreen> {
     final locallyHidden = ref.watch(locallyHiddenNotebooksProvider);
     // The owner can tap the icon to change it; for a notebook shared *to* you
     // it's read-only (the owner controls it).
-    final iconWidget = NotebookIcon(iconKey: nb.icon, shared: shared, size: 22);
+    final iconWidget = NotebookIcon(iconKey: nb.icon, size: 22);
     return ListTile(
       leading: ownedByMe
           ? IconButton(

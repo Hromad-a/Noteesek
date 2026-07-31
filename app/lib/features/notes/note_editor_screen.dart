@@ -380,12 +380,10 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
                     ListTile(
                       leading: nb.id == current
                           ? const Icon(Icons.check)
-                          : NotebookIcon(
-                              iconKey: nb.icon,
-                              shared:
-                                  sharedWithIds(nb.sharedWith).isNotEmpty,
-                              size: 22,
-                            ),
+                          : NotebookIcon(iconKey: nb.icon, size: 22),
+                      trailing: sharedWithIds(nb.sharedWith).isNotEmpty
+                          ? const Icon(Icons.people_outline, size: 18)
+                          : null,
                       title: Text(nb.name),
                       onTap: () => Navigator.of(sheetContext).pop(nb.id),
                     ),
