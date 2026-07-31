@@ -924,6 +924,7 @@ class _NotebookSelector extends ConsumerStatefulWidget {
 
 class _NotebookSelectorState extends ConsumerState<_NotebookSelector> {
   final LayerLink _link = LayerLink();
+  final ScrollController _scrollCtrl = ScrollController();
   OverlayEntry? _entry;
 
   bool get _isOpen => _entry != null;
@@ -938,6 +939,7 @@ class _NotebookSelectorState extends ConsumerState<_NotebookSelector> {
   void dispose() {
     _entry?.remove();
     _entry = null;
+    _scrollCtrl.dispose();
     super.dispose();
   }
 
@@ -999,6 +1001,8 @@ class _NotebookSelectorState extends ConsumerState<_NotebookSelector> {
 
   Widget _buildOverlay(BuildContext overlayContext) {
     final media = MediaQuery.of(overlayContext);
+    final scheme = Theme.of(overlayContext).colorScheme;
+    final maxW = media.size.width * 0.85;
     return Stack(
       children: [
         // Scrim closes the menu when tapped.
@@ -1009,7 +1013,9 @@ class _NotebookSelectorState extends ConsumerState<_NotebookSelector> {
             child: ColoredBox(color: Colors.black.withValues(alpha: 0.35)),
           ),
         ),
-        // Pills float above the chip, left edges aligned.
+        // A surface card sits above the chip: it gives the scroll area a clear
+        // background/edge. The scope list scrolls; the New/Manage actions are
+        // pinned in a footer so they stay reachable.
         CompositedTransformFollower(
           link: _link,
           targetAnchor: Alignment.topLeft,
@@ -1026,58 +1032,94 @@ class _NotebookSelectorState extends ConsumerState<_NotebookSelector> {
                 child: child,
               ),
             ),
-            child: Consumer(
-              builder: (context, ref, _) {
-                final notebooks =
-                    ref.watch(notebooksProvider).asData?.value ?? const [];
-                final activeId = ref.watch(activeNotebookIdProvider);
-                final l10n = context.l10n;
-                return ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxWidth: media.size.width * 0.82,
-                    maxHeight: media.size.height * 0.6,
-                  ),
-                  // reverse keeps the primary scopes (All notes / No notebook)
-                  // pinned nearest the chip; actions sit at the top.
-                  child: SingleChildScrollView(
-                    reverse: true,
-                    child: Column(
+            child: Material(
+              elevation: 6,
+              color: scheme.surfaceContainerHigh,
+              borderRadius: BorderRadius.circular(20),
+              clipBehavior: Clip.antiAlias,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  minWidth: maxW.clamp(0, 260),
+                  maxWidth: maxW,
+                  maxHeight: media.size.height * 0.78,
+                ),
+                child: Consumer(
+                  builder: (context, ref, _) {
+                    final notebooks =
+                        ref.watch(notebooksProvider).asData?.value ?? const [];
+                    final activeId = ref.watch(activeNotebookIdProvider);
+                    final l10n = context.l10n;
+                    return Column(
                       mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        _actionPill(Icons.edit_outlined, l10n.manageNotebooks,
-                            () {
-                          _close();
-                          Navigator.of(this.context).push(MaterialPageRoute(
-                              builder: (_) => const ManageNotebooksScreen()));
-                        }),
-                        const SizedBox(height: 10),
-                        _actionPill(Icons.add, l10n.newNotebook, () async {
-                          _close();
-                          await _createNotebook(this.context, this.ref);
-                        }),
-                        const SizedBox(height: 10),
-                        for (final nb in notebooks.reversed) ...[
-                          _scopePill(
-                            nb.id,
-                            sharedWithIds(nb.sharedWith).isNotEmpty
-                                ? Icons.group_outlined
-                                : Icons.book_outlined,
-                            nb.name,
-                            nb.id == activeId,
+                        Flexible(
+                          child: Scrollbar(
+                            controller: _scrollCtrl,
+                            child: SingleChildScrollView(
+                              controller: _scrollCtrl,
+                              // reverse keeps the primary scopes (All notes /
+                              // No notebook) nearest the chip/footer.
+                              reverse: true,
+                              padding: const EdgeInsets.fromLTRB(10, 12, 10, 6),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  for (final nb in notebooks.reversed) ...[
+                                    _scopePill(
+                                      nb.id,
+                                      sharedWithIds(nb.sharedWith).isNotEmpty
+                                          ? Icons.group_outlined
+                                          : Icons.book_outlined,
+                                      nb.name,
+                                      nb.id == activeId,
+                                    ),
+                                    const SizedBox(height: 8),
+                                  ],
+                                  _scopePill(
+                                      kNoNotebook,
+                                      Icons.label_off_outlined,
+                                      l10n.noNotebook,
+                                      kNoNotebook == activeId),
+                                  const SizedBox(height: 8),
+                                  _scopePill(kAllNotes, Icons.notes_outlined,
+                                      l10n.allNotes, kAllNotes == activeId),
+                                ],
+                              ),
+                            ),
                           ),
-                          const SizedBox(height: 10),
-                        ],
-                        _scopePill(kNoNotebook, Icons.label_off_outlined,
-                            l10n.noNotebook, kNoNotebook == activeId),
-                        const SizedBox(height: 10),
-                        _scopePill(kAllNotes, Icons.notes_outlined,
-                            l10n.allNotes, kAllNotes == activeId),
+                        ),
+                        const Divider(height: 1),
+                        // Pinned actions, always visible, bottom-right.
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(8, 4, 8, 6),
+                          child: Wrap(
+                            alignment: WrapAlignment.end,
+                            spacing: 4,
+                            runSpacing: 4,
+                            children: [
+                              _footerAction(Icons.add, l10n.newNotebook,
+                                  () async {
+                                _close();
+                                await _createNotebook(this.context, this.ref);
+                              }),
+                              _footerAction(
+                                  Icons.edit_outlined, l10n.manageNotebooks, () {
+                                _close();
+                                Navigator.of(this.context).push(
+                                    MaterialPageRoute(
+                                        builder: (_) =>
+                                            const ManageNotebooksScreen()));
+                              }),
+                            ],
+                          ),
+                        ),
                       ],
-                    ),
-                  ),
-                );
-              },
+                    );
+                  },
+                ),
+              ),
             ),
           ),
         ),
@@ -1107,16 +1149,11 @@ class _NotebookSelectorState extends ConsumerState<_NotebookSelector> {
           );
   }
 
-  Widget _actionPill(IconData icon, String text, VoidCallback onTap) =>
-      OutlinedButton.icon(
+  Widget _footerAction(IconData icon, String text, VoidCallback onTap) =>
+      TextButton.icon(
         onPressed: onTap,
-        icon: Icon(icon, size: 20),
+        icon: Icon(icon, size: 18),
         label: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis),
-        style: OutlinedButton.styleFrom(
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-          shape: const StadiumBorder(),
-          backgroundColor: Theme.of(context).colorScheme.surface,
-        ),
       );
 
   @override
