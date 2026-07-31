@@ -395,9 +395,11 @@
   "onboardSyncTitle": "Sync when you want",
   "onboardSyncBody": "Connect your own server to back up and sync across devices. Optional, and entirely yours.",
   "onboardShareTitle": "Share notebooks",
-  "onboardShareBody": "With a server connected, share a notebook with other people — everyone can view and edit its notes together, in real time.",
+  "onboardShareBody": "With a server connected, share a notebook with other people — everyone can view and edit its notes together in real time, with an activity feed of who changed what.",
   "onboardNotesTitle": "Notes, your way",
-  "onboardNotesBody": "Text and checklists, labels and colors, notebooks, images, search, and an app lock to keep them private.",
+  "onboardNotesBody": "Text and checklists, labels and colors, notebooks with custom icons, images, search, and an app lock to keep them private.",
+  "onboardScoreTitle": "Keep score",
+  "onboardScoreBody": "Track any game with a built-in score counter — or play a full turn-by-turn game of Farkle — right inside a note.",
 
   "snapshotsHeader": "Snapshots",
   "couldNotLoadSnapshots": "Could not load snapshots: {detail}",

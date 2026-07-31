@@ -41,6 +41,11 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           title: l10n.onboardNotesTitle,
           body: l10n.onboardNotesBody,
         ),
+        (
+          icon: Icons.casino_outlined,
+          title: l10n.onboardScoreTitle,
+          body: l10n.onboardScoreBody,
+        ),
       ];
 
   @override
