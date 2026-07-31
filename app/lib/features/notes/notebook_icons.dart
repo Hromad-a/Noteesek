@@ -59,26 +59,17 @@ class NotebookIcon extends StatelessWidget {
   Widget build(BuildContext context) {
     final icon = Icon(notebookIconData(iconKey), size: size, color: color);
     if (!shared) return icon;
-    final scheme = Theme.of(context).colorScheme;
+    // A small people glyph tucked in the corner, inheriting the icon's own
+    // colour (via [color] / the ambient IconTheme) so it fits on any background
+    // — no filled badge, which read as a dark blob over tonal surfaces.
     return Stack(
       clipBehavior: Clip.none,
       children: [
         icon,
         Positioned(
-          right: -4,
-          bottom: -4,
-          child: Container(
-            padding: const EdgeInsets.all(1),
-            decoration: BoxDecoration(
-              color: scheme.surface,
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              Icons.people,
-              size: size * 0.62,
-              color: color ?? scheme.onSurfaceVariant,
-            ),
-          ),
+          right: -3,
+          bottom: -3,
+          child: Icon(Icons.people, size: size * 0.5, color: color),
         ),
       ],
     );
