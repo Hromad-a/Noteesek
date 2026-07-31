@@ -147,6 +147,10 @@ class Notebooks extends Table {
   /// `notebooks.sharedWith` and rides the notebook's last-write-wins sync.
   TextColumn get sharedWith => text().withDefault(const Constant('[]'))();
 
+  /// A short icon key (see `features/notes/notebook_icons.dart`) chosen on the
+  /// Manage Notebooks screen. Empty = the default book icon. Rides LWW sync.
+  TextColumn get icon => text().withDefault(const Constant(''))();
+
   /// When true, this notebook's notes are excluded from the "All notes" view
   /// (they still show when the notebook is selected as the scope). Stored
   /// inverted (hidden, default false) so new/legacy rows default to visible.
@@ -226,7 +230,7 @@ class AppDatabase extends _$AppDatabase {
             ));
 
   @override
-  int get schemaVersion => 11;
+  int get schemaVersion => 12;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -284,6 +288,10 @@ class AppDatabase extends _$AppDatabase {
             // Image backgrounds: a per-account library + a note's chosen one.
             await m.createTable(backgrounds);
             await m.addColumn(notes, notes.background);
+          }
+          if (from < 12) {
+            // Per-notebook custom icon.
+            await m.addColumn(notebooks, notebooks.icon);
           }
         },
       );

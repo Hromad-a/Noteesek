@@ -291,6 +291,7 @@ class SyncEngine {
         'owner': nb.owner,
         'name': nb.name,
         'sharedWith': _decodeIds(nb.sharedWith),
+        'icon': nb.icon,
         'hidden_from_all': nb.hiddenFromAll,
         'deleted': nb.deleted,
       };
@@ -622,6 +623,7 @@ class SyncEngine {
               name: Value(rec.getStringValue('name')),
               sharedWith:
                   Value(jsonEncode(rec.getListValue<String>('sharedWith'))),
+              icon: Value(rec.getStringValue('icon')),
               hiddenFromAll: Value(rec.getBoolValue('hidden_from_all')),
               deleted: Value(rec.getBoolValue('deleted')),
               created: Value(rec.getStringValue('created')),

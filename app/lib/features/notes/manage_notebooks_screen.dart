@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/local/database.dart';
 import '../../data/notes_repository.dart';
 import '../../providers.dart';
+import 'notebook_icons.dart';
 import 'notebook_share_sheet.dart';
 import 'sharing_service.dart';
 
@@ -61,6 +62,64 @@ class _ManageNotebooksScreenState extends ConsumerState<ManageNotebooksScreen> {
     ctrl.dispose();
     if (name != null && name.isNotEmpty && name != notebook.name) {
       await ref.read(notesRepositoryProvider).renameNotebook(notebook.id, name);
+    }
+  }
+
+  Future<void> _pickIcon(NotebookRow nb) async {
+    // An unset icon renders as the book icon, so highlight 'book' in that case.
+    final current = nb.icon.isEmpty ? 'book' : nb.icon;
+    final selected = await showDialog<String>(
+      context: context,
+      builder: (ctx) {
+        final scheme = Theme.of(ctx).colorScheme;
+        return AlertDialog(
+          title: Text(context.l10n.chooseNotebookIcon),
+          content: SizedBox(
+            width: 320,
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final key in kNotebookIcons.keys)
+                  InkWell(
+                    borderRadius: BorderRadius.circular(10),
+                    onTap: () => Navigator.of(ctx).pop(key),
+                    child: Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: key == current
+                            ? scheme.primaryContainer
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: key == current
+                              ? scheme.primary
+                              : scheme.outlineVariant,
+                        ),
+                      ),
+                      child: Icon(
+                        notebookIconData(key),
+                        color: key == current
+                            ? scheme.onPrimaryContainer
+                            : scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: Text(context.l10n.cancel),
+            ),
+          ],
+        );
+      },
+    );
+    if (selected != null && selected != nb.icon) {
+      await ref.read(notesRepositoryProvider).setNotebookIcon(nb.id, selected);
     }
   }
 
@@ -188,8 +247,17 @@ class _ManageNotebooksScreenState extends ConsumerState<ManageNotebooksScreen> {
     final shared = sharedWithIds(nb.sharedWith).isNotEmpty;
     final ownedByMe = me.isEmpty || nb.owner == me;
     final locallyHidden = ref.watch(locallyHiddenNotebooksProvider);
+    // The owner can tap the icon to change it; for a notebook shared *to* you
+    // it's read-only (the owner controls it).
+    final iconWidget = NotebookIcon(iconKey: nb.icon, shared: shared, size: 22);
     return ListTile(
-      leading: Icon(shared ? Icons.group_outlined : Icons.book_outlined),
+      leading: ownedByMe
+          ? IconButton(
+              tooltip: context.l10n.chooseNotebookIcon,
+              icon: iconWidget,
+              onPressed: () => _pickIcon(nb),
+            )
+          : Padding(padding: const EdgeInsets.all(8), child: iconWidget),
       title: Text(nb.name),
       subtitle: shared && !ownedByMe ? Text(context.l10n.sharedWithYou) : null,
       trailing: Row(
