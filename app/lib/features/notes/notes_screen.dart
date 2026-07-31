@@ -26,6 +26,7 @@ import 'manage_labels_screen.dart';
 import 'manage_notebooks_screen.dart';
 import 'note_card.dart';
 import 'note_colors.dart';
+import 'notebook_icons.dart';
 import 'note_editor_screen.dart';
 import 'note_selection.dart';
 import 'sharing_service.dart';
@@ -496,7 +497,10 @@ class _SelectionAppBar extends ConsumerWidget implements PreferredSizeWidget {
                 children: [
                   for (final nb in notebooks)
                     ListTile(
-                      leading: const Icon(Icons.book_outlined),
+                      leading: NotebookIcon(iconKey: nb.icon, size: 22),
+                      trailing: sharedWithIds(nb.sharedWith).isNotEmpty
+                          ? const Icon(Icons.people_outline, size: 18)
+                          : null,
                       title: Text(nb.name),
                       onTap: () => Navigator.of(sheetContext).pop(nb.id),
                     ),
@@ -1127,22 +1131,26 @@ class _NotebookSelectorState extends ConsumerState<_NotebookSelector> {
                                   for (final nb in notebooks.reversed) ...[
                                     _scopePill(
                                       nb.id,
-                                      sharedWithIds(nb.sharedWith).isNotEmpty
-                                          ? Icons.group_outlined
-                                          : Icons.book_outlined,
+                                      NotebookIcon(iconKey: nb.icon, size: 20),
                                       nb.name,
                                       nb.id == activeId,
+                                      shared: sharedWithIds(nb.sharedWith)
+                                          .isNotEmpty,
                                     ),
                                     const SizedBox(height: 8),
                                   ],
                                   _scopePill(
                                       kNoNotebook,
-                                      Icons.label_off_outlined,
+                                      const Icon(Icons.label_off_outlined,
+                                          size: 20),
                                       l10n.noNotebook,
                                       kNoNotebook == activeId),
                                   const SizedBox(height: 8),
-                                  _scopePill(kAllNotes, Icons.notes_outlined,
-                                      l10n.allNotes, kAllNotes == activeId),
+                                  _scopePill(
+                                      kAllNotes,
+                                      const Icon(Icons.notes_outlined, size: 20),
+                                      l10n.allNotes,
+                                      kAllNotes == activeId),
                                 ],
                               ),
                             ),
@@ -1185,26 +1193,33 @@ class _NotebookSelectorState extends ConsumerState<_NotebookSelector> {
     );
   }
 
-  Widget _scopePill(String id, IconData icon, String text, bool selected) {
+  Widget _scopePill(String id, Widget icon, String text, bool selected,
+      {bool shared = false}) {
     final style = FilledButton.styleFrom(
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
       shape: const StadiumBorder(),
     );
-    final icn = Icon(icon, size: 20);
-    final label = Text(text, maxLines: 1, overflow: TextOverflow.ellipsis);
+    // Leading notebook/scope icon, the name, and a trailing "shared" people icon
+    // on the right for shared notebooks.
+    final child = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        icon,
+        const SizedBox(width: 10),
+        Flexible(
+          child: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis),
+        ),
+        if (shared) ...[
+          const SizedBox(width: 10),
+          const Icon(Icons.people_outline, size: 18),
+        ],
+      ],
+    );
     return selected
-        ? FilledButton.icon(
-            onPressed: () => _selectScope(id),
-            style: style,
-            icon: icn,
-            label: label,
-          )
-        : FilledButton.tonalIcon(
-            onPressed: () => _selectScope(id),
-            style: style,
-            icon: icn,
-            label: label,
-          );
+        ? FilledButton(
+            onPressed: () => _selectScope(id), style: style, child: child)
+        : FilledButton.tonal(
+            onPressed: () => _selectScope(id), style: style, child: child);
   }
 
   Widget _footerAction(IconData icon, String text, VoidCallback onTap) =>
@@ -1219,14 +1234,16 @@ class _NotebookSelectorState extends ConsumerState<_NotebookSelector> {
     final notebooks = ref.watch(notebooksProvider).asData?.value ?? const [];
     final activeId = ref.watch(activeNotebookIdProvider);
     final activeNb = notebooks.where((n) => n.id == activeId).firstOrNull;
-    final activeNbShared =
-        activeNb != null && sharedWithIds(activeNb.sharedWith).isNotEmpty;
     final label = switch (activeId) {
       kAllNotes => context.l10n.allNotes,
       kNoNotebook => context.l10n.noNotebook,
       _ => activeNb?.name ?? context.l10n.allNotes,
     };
-    final chipIcon = activeNbShared ? Icons.group_outlined : _scopeIcon(activeId);
+    // A real notebook shows its custom icon; the "All notes" / "No notebook"
+    // scopes keep their fixed icons.
+    final Widget chipIcon = activeNb != null
+        ? NotebookIcon(iconKey: activeNb.icon, size: 18)
+        : Icon(_scopeIcon(activeId), size: 18);
 
     return CompositedTransformTarget(
       link: _link,
@@ -1242,7 +1259,7 @@ class _NotebookSelectorState extends ConsumerState<_NotebookSelector> {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(chipIcon, size: 18),
+              chipIcon,
               const SizedBox(width: 8),
               Flexible(
                 child: Text(

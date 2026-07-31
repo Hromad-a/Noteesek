@@ -20,6 +20,7 @@ import 'game_model.dart';
 import 'note_colors.dart';
 import 'note_lock_controller.dart';
 import 'note_markdown_config.dart';
+import 'notebook_icons.dart';
 import 'notebook_share_sheet.dart';
 import 'sharing_service.dart';
 
@@ -377,9 +378,12 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
                   ),
                   for (final nb in notebooks)
                     ListTile(
-                      leading: Icon(nb.id == current
-                          ? Icons.check
-                          : Icons.book_outlined),
+                      leading: nb.id == current
+                          ? const Icon(Icons.check)
+                          : NotebookIcon(iconKey: nb.icon, size: 22),
+                      trailing: sharedWithIds(nb.sharedWith).isNotEmpty
+                          ? const Icon(Icons.people_outline, size: 18)
+                          : null,
                       title: Text(nb.name),
                       onTap: () => Navigator.of(sheetContext).pop(nb.id),
                     ),

@@ -165,6 +165,10 @@ abstract interface class NotesRepository {
   /// Set whether this notebook's notes are hidden from the "All notes" view.
   Future<void> setNotebookVisibility(String id, bool hidden);
 
+  /// Set this notebook's icon key (see `features/notes/notebook_icons.dart`);
+  /// empty string resets it to the default.
+  Future<void> setNotebookIcon(String id, String icon);
+
   /// Replace the set of users this notebook is shared with (owner-only; the
   /// server enforces that). [userIds] is the full member list, not a delta.
   /// Server-connected only — no-op semantics offline are the caller's concern.

@@ -279,6 +279,7 @@
 
   "rename": "Rename",
   "renameNotebook": "Rename notebook",
+  "chooseNotebookIcon": "Choose an icon",
   "renameLabel": "Rename label",
   "deleteEntityTitle": "Delete \"{name}\"?",
   "@deleteEntityTitle": {

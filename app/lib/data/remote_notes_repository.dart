@@ -534,6 +534,14 @@ class RemoteNotesRepository implements NotesRepository {
       });
 
   @override
+  Future<void> setNotebookIcon(String id, String icon) => _guardVoid(() async {
+        final r =
+            await _pb.collection('notebooks').update(id, body: {'icon': icon});
+        _notebooks[id] = _notebookFrom(r);
+        _events.add(null);
+      });
+
+  @override
   Future<void> setNotebookSharedWith(String id, List<String> userIds) =>
       _guardVoid(() async {
         final r = await _pb
@@ -860,6 +868,7 @@ class RemoteNotesRepository implements NotesRepository {
         owner: r.getStringValue('owner'),
         name: r.getStringValue('name'),
         sharedWith: encodeLabelIds(r.getListValue<String>('sharedWith')),
+        icon: r.getStringValue('icon'),
         hiddenFromAll: r.getBoolValue('hidden_from_all'),
         deleted: r.getBoolValue('deleted'),
         created: r.getStringValue('created'),

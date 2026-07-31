@@ -198,6 +198,7 @@
 
   "rename": "Přejmenovat",
   "renameNotebook": "Přejmenovat notýsek",
+  "chooseNotebookIcon": "Vyberte ikonu",
   "renameLabel": "Přejmenovat štítek",
   "deleteEntityTitle": "Smazat „{name}“?",
   "keepNotes": "Ponechat poznámky",

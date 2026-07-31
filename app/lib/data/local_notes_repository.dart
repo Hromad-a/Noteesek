@@ -491,6 +491,17 @@ class LocalNotesRepository implements NotesRepository {
   }
 
   @override
+  Future<void> setNotebookIcon(String id, String icon) async {
+    await (_db.update(_db.notebooks)..where((t) => t.id.equals(id))).write(
+      NotebooksCompanion(
+        icon: Value(icon),
+        updated: Value(pbNow()),
+        dirty: const Value(true),
+      ),
+    );
+  }
+
+  @override
   Future<void> setNotebookSharedWith(String id, List<String> userIds) async {
     await (_db.update(_db.notebooks)..where((t) => t.id.equals(id))).write(
       NotebooksCompanion(
