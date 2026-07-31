@@ -584,6 +584,7 @@
   "activityUntitledNote": "Untitled note",
   "activityUnknownMember": "A member",
   "activityNoteUnavailable": "This note is no longer available",
+  "activityUnavailable": "Activity isn't available right now.",
   "newGame": "New game",
   "typeGame": "Game",
   "gameAddPlayer": "Add player",

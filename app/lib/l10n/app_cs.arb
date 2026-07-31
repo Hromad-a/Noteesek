@@ -443,6 +443,7 @@
   "activityUntitledNote": "Poznámka bez názvu",
   "activityUnknownMember": "Člen",
   "activityNoteUnavailable": "Tato poznámka už není dostupná",
+  "activityUnavailable": "Aktivita teď není dostupná.",
   "newGame": "Nová hra",
   "typeGame": "Hra",
   "gameAddPlayer": "Přidat hráče",

@@ -124,8 +124,14 @@ class ActivityService {
           .update(existing.id, body: {'seenAt': now});
     } on ClientException catch (e) {
       if (e.statusCode == 404) {
-        await _pb.collection('activity_seen').create(
-            body: {'id': newPbId(), 'owner': me, 'seenAt': now});
+        try {
+          await _pb.collection('activity_seen').create(
+              body: {'id': newPbId(), 'owner': me, 'seenAt': now});
+        } on ClientException catch (e2) {
+          // 404 here means the collection itself is missing (older server) —
+          // there's nothing to persist, so ignore it.
+          if (e2.statusCode != 404) rethrow;
+        }
       } else {
         rethrow;
       }
@@ -144,8 +150,9 @@ class ActivityService {
       });
     } on ClientException catch (e) {
       // 400 = the UNIQUE(owner, activity) index rejected a duplicate: already
-      // archived, nothing to do.
-      if (e.statusCode != 400) rethrow;
+      // archived. 404 = the collection is missing (older server). Both are
+      // no-ops here.
+      if (e.statusCode != 400 && e.statusCode != 404) rethrow;
     }
   }
 
@@ -190,6 +197,16 @@ Stream<List<T>> _liveCollection<T>(
           .collection(collection)
           .getFullList(filter: filter, sort: sort);
       if (!controller.isClosed) controller.add(rows.map(build).toList());
+    } on ClientException catch (e, st) {
+      // A server that predates the activity feature has no such collection and
+      // answers 404 ("Missing collection context"). Treat that as an empty feed
+      // rather than surfacing a raw error — the feature is simply unavailable on
+      // that server.
+      if (e.statusCode == 404) {
+        if (!controller.isClosed) controller.add(const []);
+      } else if (!controller.isClosed) {
+        controller.addError(e, st);
+      }
     } catch (e, st) {
       if (!controller.isClosed) controller.addError(e, st);
     }

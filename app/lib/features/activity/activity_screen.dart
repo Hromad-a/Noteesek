@@ -60,8 +60,26 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
         ),
         body: async.when(
           loading: () => const Center(child: CircularProgressIndicator()),
-          error: (e, _) =>
-              Center(child: Text(l10n.errorWithDetail('$e'))),
+          // Never surface a raw exception here — the feed is a best-effort extra.
+          error: (e, _) => Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.cloud_off_outlined,
+                      size: 48, color: Theme.of(context).disabledColor),
+                  const SizedBox(height: 12),
+                  Text(
+                    l10n.activityUnavailable,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  ),
+                ],
+              ),
+            ),
+          ),
           data: (_) => TabBarView(
             children: [
               _ActivityList(
