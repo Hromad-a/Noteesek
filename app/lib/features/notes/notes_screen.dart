@@ -144,6 +144,10 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
     final sync = kIsWeb ? null : ref.watch(syncControllerProvider);
     final hasPending =
         kIsWeb ? false : ref.watch(hasPendingChangesProvider).value ?? false;
+    // Sync is blocked while the app/server versions differ; the cloud button
+    // shows a warning variant instead of the usual state.
+    final versionMismatch =
+        ref.watch(versionStatusProvider).value?.mismatch ?? false;
     final selectionMode = ref.watch(selectionModeProvider);
     final viewMode = ref.watch(noteViewModeProvider);
     final sort = ref.watch(noteSortProvider);
@@ -198,6 +202,24 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
                 tooltip: context.l10n.syncConnectToSync,
                 icon: const Icon(Icons.cloud_off_outlined),
                 onPressed: null,
+              )
+            else if (versionMismatch)
+              IconButton(
+                tooltip: context.l10n.versionsDiffer,
+                icon: Stack(
+                  clipBehavior: Clip.none,
+                  alignment: Alignment.center,
+                  children: [
+                    Icon(Icons.cloud_outlined,
+                        color: Colors.orange.shade700),
+                    Positioned(
+                      top: 5,
+                      child: Icon(Icons.priority_high,
+                          size: 11, color: Colors.orange.shade700),
+                    ),
+                  ],
+                ),
+                onPressed: () => _manualSync(context, ref),
               )
             else if (!sync.reachable)
               IconButton(
