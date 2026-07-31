@@ -152,21 +152,37 @@ class _NoteCardState extends ConsumerState<NoteCard> {
       ),
     );
 
-    // Overlay a checkmark badge in the corner when this card is selected.
-    final card = selected
+    // A small type badge in the bottom-right corner for game/farkle notes so
+    // their kind reads at a glance (text/checklist stay unmarked).
+    final IconData? typeIcon = switch (note.type) {
+      'game' => Icons.scoreboard_outlined,
+      'farkle' => Icons.casino,
+      _ => null,
+    };
+
+    // Overlay a checkmark badge in the corner when selected, plus the type badge.
+    final card = (selected || typeIcon != null)
         ? Stack(
             children: [
               cardContent,
-              Positioned(
-                top: 6,
-                right: 6,
-                child: CircleAvatar(
-                  radius: 12,
-                  backgroundColor: theme.colorScheme.primary,
-                  child: Icon(Icons.check,
-                      size: 16, color: theme.colorScheme.onPrimary),
+              if (typeIcon != null)
+                Positioned(
+                  bottom: 6,
+                  right: 6,
+                  child: Icon(typeIcon,
+                      size: 16, color: theme.colorScheme.onSurfaceVariant),
                 ),
-              ),
+              if (selected)
+                Positioned(
+                  top: 6,
+                  right: 6,
+                  child: CircleAvatar(
+                    radius: 12,
+                    backgroundColor: theme.colorScheme.primary,
+                    child: Icon(Icons.check,
+                        size: 16, color: theme.colorScheme.onPrimary),
+                  ),
+                ),
             ],
           )
         : cardContent;
