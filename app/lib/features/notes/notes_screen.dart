@@ -912,20 +912,55 @@ class _CreateMenuButtonState extends State<_CreateMenuButton> {
   }
 }
 
-/// A pill showing the current notebook scope; tapping opens a menu to switch
-/// scope ("All notes" / "No notebook" / a notebook), create one, or manage them.
-class _NotebookSelector extends ConsumerWidget {
+/// A pill showing the current notebook scope; tapping expands a Keep-style set
+/// of pills ABOVE the chip to switch scope ("All notes" / "No notebook" / a
+/// notebook), create one, or manage them.
+class _NotebookSelector extends ConsumerStatefulWidget {
   const _NotebookSelector();
 
-  // Sentinel values for the action menu entries.
-  static const _newValue = '__new_notebook__';
-  static const _manageValue = '__manage_notebooks__';
+  @override
+  ConsumerState<_NotebookSelector> createState() => _NotebookSelectorState();
+}
+
+class _NotebookSelectorState extends ConsumerState<_NotebookSelector> {
+  final LayerLink _link = LayerLink();
+  OverlayEntry? _entry;
+
+  bool get _isOpen => _entry != null;
 
   static IconData _scopeIcon(String scope) => switch (scope) {
         kAllNotes => Icons.notes_outlined,
         kNoNotebook => Icons.label_off_outlined,
         _ => Icons.book_outlined,
       };
+
+  @override
+  void dispose() {
+    _entry?.remove();
+    _entry = null;
+    super.dispose();
+  }
+
+  void _toggle() {
+    if (_isOpen) {
+      _close();
+    } else {
+      _open();
+    }
+  }
+
+  void _open() {
+    HapticFeedback.selectionClick();
+    _entry = OverlayEntry(builder: _buildOverlay);
+    Overlay.of(context).insert(_entry!);
+    setState(() {});
+  }
+
+  void _close() {
+    _entry?.remove();
+    _entry = null;
+    if (mounted) setState(() {});
+  }
 
   Future<void> _createNotebook(BuildContext context, WidgetRef ref) async {
     final ctrl = TextEditingController();
@@ -957,8 +992,135 @@ class _NotebookSelector extends ConsumerWidget {
     await ref.read(selectedNotebookIdProvider.notifier).set(id);
   }
 
+  void _selectScope(String id) {
+    _close();
+    ref.read(selectedNotebookIdProvider.notifier).set(id);
+  }
+
+  Widget _buildOverlay(BuildContext overlayContext) {
+    final media = MediaQuery.of(overlayContext);
+    return Stack(
+      children: [
+        // Scrim closes the menu when tapped.
+        Positioned.fill(
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: _close,
+            child: ColoredBox(color: Colors.black.withValues(alpha: 0.35)),
+          ),
+        ),
+        // Pills float above the chip, left edges aligned.
+        CompositedTransformFollower(
+          link: _link,
+          targetAnchor: Alignment.topLeft,
+          followerAnchor: Alignment.bottomLeft,
+          offset: const Offset(0, -12),
+          child: TweenAnimationBuilder<double>(
+            duration: const Duration(milliseconds: 160),
+            curve: Curves.easeOutBack,
+            tween: Tween(begin: 0, end: 1),
+            builder: (context, t, child) => Opacity(
+              opacity: t.clamp(0.0, 1.0),
+              child: Transform.translate(
+                offset: Offset(0, (1 - t) * 12),
+                child: child,
+              ),
+            ),
+            child: Consumer(
+              builder: (context, ref, _) {
+                final notebooks =
+                    ref.watch(notebooksProvider).asData?.value ?? const [];
+                final activeId = ref.watch(activeNotebookIdProvider);
+                final l10n = context.l10n;
+                return ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: media.size.width * 0.82,
+                    maxHeight: media.size.height * 0.6,
+                  ),
+                  // reverse keeps the primary scopes (All notes / No notebook)
+                  // pinned nearest the chip; actions sit at the top.
+                  child: SingleChildScrollView(
+                    reverse: true,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _actionPill(Icons.edit_outlined, l10n.manageNotebooks,
+                            () {
+                          _close();
+                          Navigator.of(this.context).push(MaterialPageRoute(
+                              builder: (_) => const ManageNotebooksScreen()));
+                        }),
+                        const SizedBox(height: 10),
+                        _actionPill(Icons.add, l10n.newNotebook, () async {
+                          _close();
+                          await _createNotebook(this.context, this.ref);
+                        }),
+                        const SizedBox(height: 10),
+                        for (final nb in notebooks.reversed) ...[
+                          _scopePill(
+                            nb.id,
+                            sharedWithIds(nb.sharedWith).isNotEmpty
+                                ? Icons.group_outlined
+                                : Icons.book_outlined,
+                            nb.name,
+                            nb.id == activeId,
+                          ),
+                          const SizedBox(height: 10),
+                        ],
+                        _scopePill(kNoNotebook, Icons.label_off_outlined,
+                            l10n.noNotebook, kNoNotebook == activeId),
+                        const SizedBox(height: 10),
+                        _scopePill(kAllNotes, Icons.notes_outlined,
+                            l10n.allNotes, kAllNotes == activeId),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _scopePill(String id, IconData icon, String text, bool selected) {
+    final style = FilledButton.styleFrom(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+      shape: const StadiumBorder(),
+    );
+    final icn = Icon(icon, size: 20);
+    final label = Text(text, maxLines: 1, overflow: TextOverflow.ellipsis);
+    return selected
+        ? FilledButton.icon(
+            onPressed: () => _selectScope(id),
+            style: style,
+            icon: icn,
+            label: label,
+          )
+        : FilledButton.tonalIcon(
+            onPressed: () => _selectScope(id),
+            style: style,
+            icon: icn,
+            label: label,
+          );
+  }
+
+  Widget _actionPill(IconData icon, String text, VoidCallback onTap) =>
+      OutlinedButton.icon(
+        onPressed: onTap,
+        icon: Icon(icon, size: 20),
+        label: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis),
+        style: OutlinedButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+          shape: const StadiumBorder(),
+          backgroundColor: Theme.of(context).colorScheme.surface,
+        ),
+      );
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final notebooks = ref.watch(notebooksProvider).asData?.value ?? const [];
     final activeId = ref.watch(activeNotebookIdProvider);
     final activeNb = notebooks.where((n) => n.id == activeId).firstOrNull;
@@ -971,92 +1133,32 @@ class _NotebookSelector extends ConsumerWidget {
     };
     final chipIcon = activeNbShared ? Icons.group_outlined : _scopeIcon(activeId);
 
-    // Shared notebooks aren't visually coloured — the people icon is the only
-    // (quiet) cue. The selected scope is marked by a trailing checkmark so it
-    // reads clearly without changing the row's colour.
-    PopupMenuItem<String> scopeItem(String value, IconData icon, String text) {
-      final selected = value == activeId;
-      return PopupMenuItem(
-        value: value,
-        child: ListTile(
-          dense: true,
-          contentPadding: EdgeInsets.zero,
-          leading: Icon(icon),
-          title: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis),
-          trailing: selected ? const Icon(Icons.check) : null,
-        ),
-      );
-    }
-
-    return PopupMenuButton<String>(
-      tooltip: context.l10n.switchNotebook,
-      position: PopupMenuPosition.over,
-      constraints: const BoxConstraints(minWidth: 240, maxWidth: 320),
-      onSelected: (value) async {
-        if (value == _newValue) {
-          await _createNotebook(context, ref);
-        } else if (value == _manageValue) {
-          if (context.mounted) {
-            Navigator.of(context).push(MaterialPageRoute(
-              builder: (_) => const ManageNotebooksScreen(),
-            ));
-          }
-        } else {
-          await ref.read(selectedNotebookIdProvider.notifier).set(value);
-        }
-      },
-      itemBuilder: (context) => [
-        scopeItem(kAllNotes, Icons.notes_outlined, context.l10n.allNotes),
-        scopeItem(kNoNotebook, Icons.label_off_outlined, context.l10n.noNotebook),
-        if (notebooks.isNotEmpty) const PopupMenuDivider(),
-        for (final nb in notebooks)
-          scopeItem(
-            nb.id,
-            sharedWithIds(nb.sharedWith).isNotEmpty
-                ? Icons.group_outlined
-                : Icons.book_outlined,
-            nb.name,
+    return CompositedTransformTarget(
+      link: _link,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: _toggle,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Theme.of(context).colorScheme.outline),
           ),
-        const PopupMenuDivider(),
-        PopupMenuItem(
-          value: _newValue,
-          child: ListTile(
-            dense: true,
-            contentPadding: EdgeInsets.zero,
-            leading: Icon(Icons.add),
-            title: Text(context.l10n.newNotebook),
-          ),
-        ),
-        PopupMenuItem(
-          value: _manageValue,
-          child: ListTile(
-            dense: true,
-            contentPadding: EdgeInsets.zero,
-            leading: Icon(Icons.edit_outlined),
-            title: Text(context.l10n.manageNotebooks),
-          ),
-        ),
-      ],
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: Theme.of(context).colorScheme.outline),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(chipIcon, size: 18),
-            const SizedBox(width: 8),
-            Flexible(
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(chipIcon, size: 18),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
-            ),
-            const Icon(Icons.arrow_drop_down),
-          ],
+              Icon(_isOpen ? Icons.arrow_drop_up : Icons.arrow_drop_down),
+            ],
+          ),
         ),
       ),
     );
